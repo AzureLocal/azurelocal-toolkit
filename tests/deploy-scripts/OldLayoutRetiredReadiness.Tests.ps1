@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
-# The old variables layout is retired: no script of scripts/deploy 03, 05, 06 and common, scripts/tools, scripts/lifecycle or scripts/common/utilities takes
+# The old variables layout is retired: no script of scripts/deploy 03, 05, 06, 07, 08 and common, scripts/tools or scripts/common/utilities takes
 # -ConfigPath or -ConfigFile (or an alias of them), asks for a credential or a value, or loads config-loader.ps1 or keyvault-helper.ps1. The scripts that a
 # schema 5 script replaces are gone. These tests read files; nothing is run.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/deploy-scripts/OldLayoutRetired.Tests.ps1
@@ -46,7 +46,7 @@ BeforeAll {
     $script:Repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Scopes = @(
         'scripts/deploy/03-onprem-readiness', 'scripts/deploy/05-operational-foundations', 'scripts/deploy/06-testing-validation', 'scripts/deploy/common',
-        'scripts/tools', 'scripts/lifecycle', 'scripts/common/utilities'
+        'scripts/deploy/07-validation-handover', 'scripts/deploy/08-day2-operations', 'scripts/tools', 'scripts/common/utilities'
     ) | ForEach-Object { Join-Path $script:Repo $_ }
     function Get-ScopeScript {
         foreach ($scope in $script:Scopes) { Get-ChildItem -LiteralPath $scope -Recurse -File -Filter '*.ps1' }

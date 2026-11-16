@@ -1,557 +1,349 @@
 <#
 .SYNOPSIS
-    Provides operational management functions for Azure Local clusters.
+    Day 2 operations on an Azure Local cluster: health check, maintenance mode of a node, live migration, CSV ownership, capacity and alerts.
 
 .DESCRIPTION
-    This script provides day-to-day operational functions including:
-    - Cluster health monitoring
-    - Node maintenance mode management
-    - Live migration operations
-    - Storage rebalancing
-    - Capacity monitoring
-    - Alert management
+    Day 2, stage 08 task 04. One action per run. The script connects to the cluster (cluster.name) or to one node with PowerShell remoting and runs the cluster cmdlets
+    there, so the machine that runs the script needs no failover clustering tools. HealthCheck, Capacity and Alerts only read. MaintenanceMode, LiveMigrate and
+    Rebalance change the cluster; each change is behind -WhatIf and -Confirm. The script does not sign in anywhere and asks nothing. It connects as the account that runs
+    it, or as -Credential.
 
-    HealthCheck, Capacity and Alerts only read. MaintenanceMode, LiveMigrate and Rebalance change the cluster; each change is behind -WhatIf and -Confirm.
-    The script does not sign in and asks nothing. Run it as an account that may manage the cluster.
+    Actions, and what Microsoft Learn says about each (Suspend and resume Azure Local machines for maintenance; Failover cluster maintenance procedures; Storage Spaces Direct):
 
-    Values come only from infrastructure.yml (read through Import-AzlInfrastructure): cluster.name.
+      HealthCheck       cluster nodes (all Up), storage pools and virtual disks (Healthy, OK), storage repair jobs (Get-StorageJob: no repair running), cluster networks (Up) and the
+                        Azure Arc agent of every node that is Up (azcmagent show). Exit code 1 when anything is not healthy.
+      MaintenanceMode   -Enable: checks that it is safe (the other nodes are Up, every virtual disk is Healthy and OK, no storage repair job is running), then
+                        Suspend-ClusterNode -Drain -Wait (the roles and virtual machines move to the other nodes and the node shows Paused), then Remove-MocPhysicalNode on that
+                        node, so that no new virtual machine is placed on it (the Azure Local step of Learn; it exists on 2311.2 or later and is done from PowerShell only).
+                        Without -Enable: Resume-ClusterNode -Failback Immediate, New-MocPhysicalNode (the node takes virtual machines again), and a read of the storage repair
+                        jobs: wait until they have finished before another node is taken offline (Get-StorageJob; Learn: it is not safe to take another server offline until the
+                        repair jobs finish). To reboot a node in one run, use task 03 (Invoke-NodeMaintenanceReboot.ps1), which also waits for the repair.
+      LiveMigrate       moves the clustered virtual machines of -NodeName to the other nodes that are Up, each to the node with the fewest virtual machines, with
+                        Move-ClusterVirtualMachineRole -MigrationType Live (the cmdlet for a clustered virtual machine; Move-VM is not used on a clustered one).
+      Rebalance         spreads the cluster shared volumes evenly over the nodes that are Up with Move-ClusterSharedVolume. A volume is moved only when a node owns more than its share.
+      Capacity          size and used space of the storage pools, memory and virtual processors assigned on every node that is Up.
+      Alerts            the faults of the Health Service (Debug-StorageSubSystem on the clustered subsystem), the storage health actions, and the Critical, Error and Warning events of the
+                        failover clustering operational log of the last 24 hours (at most 20).
 
-    Exit codes: 0 the action finished (or is planned under -WhatIf); 1 the action failed; 2 cluster.name is missing, the file cannot be read, or an
-    action that needs -NodeName has none.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name                                  the cluster to connect to
+        nodes[].name                                  -NodeName is matched against it (a name, a fully qualified name with identity.active_directory.domain_fqdn, or an address);
+                                                      a name that is not in the file is used as it is, with a warning
+
+    Output: one row per finding or step (Item, Action, Detail). With -OutputPath the rows are also written as JSON.
+
+    Exit codes: 0 the action finished (or is planned under -WhatIf) and HealthCheck or Alerts found nothing wrong; 1 a step failed, or HealthCheck or Alerts found something;
+    2 cluster.name is missing, the file cannot be read, or an action that needs -NodeName has none. Nothing is sent to the cluster on exit code 2.
 
 .PARAMETER InfrastructureFile
-    The master infrastructure.yml (schema 5). Only cluster.name is read; the whole file is not validated here.
+    The master infrastructure.yml (schema 5). Reads cluster.name and nodes[] (name, management address) and identity.active_directory.domain_fqdn (to match a fully qualified -NodeName); the whole file is not validated here.
 
 .PARAMETER Action
-    Action to perform: HealthCheck, MaintenanceMode, LiveMigrate, Rebalance, Capacity, Alerts
+    The action: HealthCheck, MaintenanceMode, LiveMigrate, Rebalance, Capacity or Alerts.
 
 .PARAMETER NodeName
-    Node name for node-specific operations.
+    The node of MaintenanceMode and LiveMigrate: host name, fully qualified name or management address.
 
 .PARAMETER Enable
-    Enable maintenance mode (used with MaintenanceMode action).
+    With MaintenanceMode: put the node into maintenance (suspend, drain, remove from the virtual machine configuration). Without it the node leaves maintenance.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions (an administrator of the cluster). Without it the account that runs the script is used.
 
 .PARAMETER OutputPath
-    Path to save operation reports.
+    Optional. Also write the rows as JSON to this file. Keep it out of the repository.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action HealthCheck
+    ./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action HealthCheck -OutputPath ./health.json
 
 .EXAMPLE
-    .\Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName iic-01-n01 -Enable
+    ./Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName node01 -Enable -WhatIf
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud Team
-    Version: 1.0.0
-    Created: 2026-02-01
+    Shows what entering maintenance mode would do. Changes nothing.
 #>
-
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)]
-    [string]$InfrastructureFile,
-
-    [Parameter(Mandatory = $true)]
-    [ValidateSet("HealthCheck", "MaintenanceMode", "LiveMigrate", "Rebalance", "Capacity", "Alerts")]
-    [string]$Action,
-
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [Parameter(Mandatory)][ValidateSet('HealthCheck', 'MaintenanceMode', 'LiveMigrate', 'Rebalance', 'Capacity', 'Alerts')][string]$Action,
     [string]$NodeName,
-
-    [Parameter(Mandatory = $false)]
     [switch]$Enable,
-
-    [Parameter(Mandatory = $false)]
-    [string]$OutputPath
+    [pscredential]$Credential,
+    [string]$OutputPath,
+    [string]$LogPath
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
+$remoteCredential = $Credential
+$enterMaintenance = $Enable.IsPresent
 
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+
+$rows = [System.Collections.Generic.List[object]]::new()
+function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
+    $rows.Add([pscustomobject][ordered]@{ Item = $Item; Action = $Action; Detail = $Detail })
+    $tag = switch -Regex ($Action) { '^(Failed|Critical)$' { '[failed] ' } '^Warning$' { '[warning]' } '^Would' { '[plan]    ' } '^(Healthy|OK|Info)$' { '[ok]      ' } default { '[done]    ' } }
+    Write-Line ('{0}{1}: {2}{3}' -f $tag, $Item, $Action, $(if ($Detail) { " ($Detail)" } else { '' }))
+}
+
+# One remote call. Every block runs in the remote session: Windows PowerShell on the node, so no PowerShell 7 syntax inside.
+function Invoke-Remote([string]$Computer, [scriptblock]$Block, [object[]]$Arguments = @()) {
+    $call = @{ ComputerName = $Computer; ScriptBlock = $Block; ErrorAction = 'Stop' }
+    if ($Arguments.Count -gt 0) { $call.ArgumentList = $Arguments }
+    if ($remoteCredential) { $call.Credential = $remoteCredential }
+    Invoke-Command @call
+}
 
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
-catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
-$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
-if (-not $ClusterName) {
-    Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to operate on.' -ErrorAction Continue
-    exit 2
-}
-if ($Action -in 'MaintenanceMode', 'LiveMigrate' -and -not $NodeName) {
-    Write-Error "The action $Action needs -NodeName." -ErrorAction Continue
-    exit 2
-}
-$script:OperationFailed = $false
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+$clusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing in the infrastructure file. It is the name of the cluster to operate on.' }
+if ($Action -in 'MaintenanceMode', 'LiveMigrate' -and -not $NodeName) { Exit-InputProblem "The action $Action needs -NodeName." }
 
-# Import helpers
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\common\utilities\helpers"
-
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+$node = $null
+if ($NodeName) {
+    $domain = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_fqdn')).Trim()
+    $wanted = $NodeName.Trim()
+    $found = @(Get-AzlInfrastructureNode -Infrastructure $infra | Where-Object { $_.Name -eq $wanted -or ($_.ManagementIp -and $_.ManagementIp -eq $wanted) -or ($domain -and "$($_.Name).$domain" -eq $wanted) } | Select-Object -First 1)
+    if ($found.Count -gt 0) { $node = [string]$found[0].Name }
+    else { $node = $wanted; Write-Line "Node '$wanted' is not in nodes[] of the file: it is used as it is." }
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
-        }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
+$failed = $false
+
+# ---- the remote blocks (read only unless the name says otherwise)
+$ReadNodes = { @(Get-ClusterNode | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State; DrainStatus = [string]$_.DrainStatus } }) }
+$ReadStorage = {
+    @{
+        Pools   = @(Get-StoragePool -IsPrimordial $false | ForEach-Object { @{ Name = [string]$_.FriendlyName; Health = [string]$_.HealthStatus; Operational = [string]$_.OperationalStatus; Size = [double]$_.Size; Allocated = [double]$_.AllocatedSize } })
+        Disks   = @(Get-VirtualDisk | ForEach-Object { @{ Name = [string]$_.FriendlyName; Health = [string]$_.HealthStatus; Operational = [string]$_.OperationalStatus } })
+        Jobs    = @(Get-StorageJob | Where-Object { [string]$_.JobState -ne 'Completed' } | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.JobState; Percent = [int]$_.PercentComplete } })
     }
 }
+$ReadNetworks = { @(Get-ClusterNetwork | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } }) }
+$ReadArc = {
+    $agent = Join-Path $env:ProgramFiles 'AzureConnectedMachineAgent\azcmagent.exe'
+    if (-not (Test-Path -LiteralPath $agent)) { return 'Not installed' }
+    $json = & $agent show --json 2>&1 | Out-String
+    $status = ($json | ConvertFrom-Json).status
+    [string]$status
+}
+$ReadCapacity = {
+    $vms = @(Get-VM)
+    $assigned = ($vms | Measure-Object -Property MemoryAssigned -Sum).Sum
+    $vcpu = ($vms | Measure-Object -Property ProcessorCount -Sum).Sum
+    @{
+        VmCount = $vms.Count
+        TotalMemoryGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize / 1MB, 1)
+        AssignedMemoryGB = [math]::Round([double]$assigned / 1GB, 1)
+        LogicalProcessors = [int](Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
+        AssignedVcpu = [int]$vcpu
+    }
+}
+$ReadFaults = {
+    @{
+        Faults  = @(Get-StorageSubSystem -FriendlyName 'Clustered*' | Debug-StorageSubSystem | ForEach-Object { @{ Severity = [string]$_.PerceivedSeverity; Reason = [string]$_.Reason; Target = [string]$_.FaultingObjectDescription } })
+        Actions = @(Get-StorageSubSystem -FriendlyName 'Clustered*' | Get-StorageHealthAction | ForEach-Object { @{ State = [string]$_.ActionState; Description = [string]$_.DeviceDescription; Reason = [string]$_.Reason } })
+        Events  = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-FailoverClustering/Operational'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-24) } -MaxEvents 20 -ErrorAction SilentlyContinue | ForEach-Object { @{ Time = $_.TimeCreated.ToString('s'); Level = [int]$_.Level; Message = ([string]$_.Message).Substring(0, [Math]::Min(120, ([string]$_.Message).Length)) } })
+    }
+}
+$ReadVmGroups = { param($Node) @(Get-ClusterNode -Name $Node | Get-ClusterGroup | Where-Object { Get-ClusterResource -InputObject $_ | Where-Object ResourceType -Like 'Virtual Machine' } | ForEach-Object { [string]$_.Name }) }
+$ReadVmCounts = { @(Get-ClusterGroup | Where-Object { Get-ClusterResource -InputObject $_ | Where-Object ResourceType -Like 'Virtual Machine' } | ForEach-Object { @{ Name = [string]$_.Name; Owner = [string]$_.OwnerNode } }) }
+$ReadCsv = { @(Get-ClusterSharedVolume | ForEach-Object { @{ Name = [string]$_.Name; Owner = [string]$_.OwnerNode } }) }
+$MoveVm = { param($Name, $Target) Move-ClusterVirtualMachineRole -Name $Name -Node $Target -MigrationType Live -ErrorAction Stop | Out-Null }
+$MoveCsv = { param($Name, $Target) Move-ClusterSharedVolume -Name $Name -Node $Target -ErrorAction Stop | Out-Null }
+$SuspendNode = { param($Name) Suspend-ClusterNode -Name $Name -Drain -Wait -ErrorAction Stop | Out-Null; [string](Get-ClusterNode -Name $Name).State }
+$ResumeNode = { param($Name) Resume-ClusterNode -Name $Name -Failback Immediate -ErrorAction Stop | Out-Null; [string](Get-ClusterNode -Name $Name).State }
+$RemoveMoc = { param($Name) Remove-MocPhysicalNode -NodeName $Name -ErrorAction Stop | Out-Null; @(Get-MocPhysicalNode | ForEach-Object { [string]$_.NodeName }) }
+$AddMoc = { param($Name) New-MocPhysicalNode -NodeName $Name -ErrorAction Stop | Out-Null; @(Get-MocPhysicalNode | ForEach-Object { [string]$_.NodeName }) }
 
+function Get-StorageProblem($Storage) {
+    $problems = [System.Collections.Generic.List[string]]::new()
+    foreach ($pool in @($Storage.Pools)) { if ($pool.Health -ne 'Healthy' -or $pool.Operational -ne 'OK') { $problems.Add("storage pool $($pool.Name) is $($pool.Health)/$($pool.Operational)") } }
+    foreach ($disk in @($Storage.Disks)) { if ($disk.Health -ne 'Healthy' -or $disk.Operational -ne 'OK') { $problems.Add("virtual disk $($disk.Name) is $($disk.Health)/$($disk.Operational)") } }
+    foreach ($job in @($Storage.Jobs)) { $problems.Add("storage job $($job.Name) is $($job.State) at $($job.Percent) percent") }
+    @($problems)
+}
+
+# ---- the actions
 function Invoke-HealthCheck {
-    Write-Log -Message "Running comprehensive health check..." -Level "INFO"
-    Write-Host ""
-    
-    $healthReport = @{
-        Timestamp = Get-Date
-        OverallHealth = "Healthy"
-        Components = @{}
+    $nodes = @(Invoke-Remote $clusterName $ReadNodes)
+    $up = @($nodes | Where-Object { $_.State -eq 'Up' })
+    Add-Row 'Cluster nodes' $(if ($up.Count -eq $nodes.Count -and $nodes.Count -gt 0) { 'Healthy' } else { 'Warning' }) "$($up.Count) of $($nodes.Count) nodes are Up ($(@($nodes | ForEach-Object { "$($_.Name) $($_.State)" }) -join ', '))"
+    $storage = Invoke-Remote $clusterName $ReadStorage
+    $pools = @($storage.Pools); $disks = @($storage.Disks)
+    $badPools = @($pools | Where-Object { $_.Health -ne 'Healthy' -or $_.Operational -ne 'OK' })
+    $badDisks = @($disks | Where-Object { $_.Health -ne 'Healthy' -or $_.Operational -ne 'OK' })
+    Add-Row 'Storage pools' $(if ($badPools.Count -eq 0 -and $pools.Count -gt 0) { 'Healthy' } else { 'Warning' }) "$($pools.Count - $badPools.Count) of $($pools.Count) healthy"
+    Add-Row 'Virtual disks' $(if ($badDisks.Count -eq 0 -and $disks.Count -gt 0) { 'Healthy' } else { 'Warning' }) "$($disks.Count - $badDisks.Count) of $($disks.Count) healthy$(if ($badDisks.Count) { ': ' + (@($badDisks | ForEach-Object { "$($_.Name) $($_.Health)" }) -join ', ') })"
+    $jobs = @($storage.Jobs)
+    Add-Row 'Storage repair jobs' $(if ($jobs.Count -eq 0) { 'Healthy' } else { 'Warning' }) $(if ($jobs.Count -eq 0) { 'none running' } else { "$($jobs.Count) running or suspended: wait for them before another node is taken offline" })
+    $networks = @(Invoke-Remote $clusterName $ReadNetworks)
+    $upNet = @($networks | Where-Object { $_.State -eq 'Up' })
+    Add-Row 'Cluster networks' $(if ($upNet.Count -eq $networks.Count -and $networks.Count -gt 0) { 'Healthy' } else { 'Warning' }) "$($upNet.Count) of $($networks.Count) up"
+    foreach ($n in $up) {
+        try {
+            $arc = [string](Invoke-Remote $n.Name $ReadArc)
+            Add-Row "Azure Arc agent on $($n.Name)" $(if ($arc -eq 'Connected') { 'Healthy' } else { 'Warning' }) $arc
+        }
+        catch { Add-Row "Azure Arc agent on $($n.Name)" 'Warning' "could not be read: $($_.Exception.Message)" }
     }
-    
-    # Cluster status
-    Write-Log -Message "Cluster Status:" -Level "INFO"
-    try {
-        $cluster = Get-Cluster -Name $ClusterName
-        $nodes = Get-ClusterNode -Cluster $ClusterName
-        
-        $upNodes = ($nodes | Where-Object { $_.State -eq "Up" }).Count
-        $totalNodes = $nodes.Count
-        
-        if ($upNodes -eq $totalNodes) {
-            Write-Host "  All nodes online ($upNodes/$totalNodes)" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  Nodes: $upNodes/$totalNodes online" -ForegroundColor Yellow
-            $healthReport.OverallHealth = "Warning"
-        }
-        
-        foreach ($node in $nodes) {
-            $status = if ($node.State -eq "Up") { "Green" } else { "Red" }
-            Write-Host "    $($node.Name): $($node.State)" -ForegroundColor $status
-        }
-        
-        $healthReport.Components.Cluster = @{
-            Status = "OK"
-            NodesUp = $upNodes
-            NodesTotal = $totalNodes
-        }
-    }
-    catch {
-        Write-Log -Message "  Failed to check cluster: $_" -Level "ERROR"; $script:OperationFailed = $true
-        $healthReport.OverallHealth = "Critical"
-    }
-    
-    Write-Host ""
-    
-    # Storage health
-    Write-Log -Message "Storage Health:" -Level "INFO"
-    try {
-        $pools = Get-StoragePool -CimSession $ClusterName | Where-Object { $_.IsPrimordial -eq $false }
-        $vDisks = Get-VirtualDisk -CimSession $ClusterName
-        
-        $healthyPools = ($pools | Where-Object { $_.HealthStatus -eq "Healthy" }).Count
-        $healthyVDisks = ($vDisks | Where-Object { $_.HealthStatus -eq "Healthy" }).Count
-        
-        if ($healthyPools -eq $pools.Count -and $healthyVDisks -eq $vDisks.Count) {
-            Write-Host "  Storage Pools: All healthy ($($pools.Count))" -ForegroundColor Green
-            Write-Host "  Virtual Disks: All healthy ($($vDisks.Count))" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  Storage Pools: $healthyPools/$($pools.Count) healthy" -ForegroundColor Yellow
-            Write-Host "  Virtual Disks: $healthyVDisks/$($vDisks.Count) healthy" -ForegroundColor Yellow
-            $healthReport.OverallHealth = "Warning"
-        }
-        
-        $healthReport.Components.Storage = @{
-            PoolsHealthy = $healthyPools
-            PoolsTotal = $pools.Count
-            VDisksHealthy = $healthyVDisks
-            VDisksTotal = $vDisks.Count
-        }
-    }
-    catch {
-        Write-Log -Message "  Failed to check storage: $_" -Level "ERROR"; $script:OperationFailed = $true
-    }
-    
-    Write-Host ""
-    
-    # Network health
-    Write-Log -Message "Network Health:" -Level "INFO"
-    try {
-        $networks = Get-ClusterNetwork -Cluster $ClusterName
-        $upNetworks = ($networks | Where-Object { $_.State -eq "Up" }).Count
-        
-        if ($upNetworks -eq $networks.Count) {
-            Write-Host "  Cluster Networks: All up ($($networks.Count))" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  Cluster Networks: $upNetworks/$($networks.Count) up" -ForegroundColor Yellow
-            $healthReport.OverallHealth = "Warning"
-        }
-        
-        $healthReport.Components.Network = @{
-            NetworksUp = $upNetworks
-            NetworksTotal = $networks.Count
-        }
-    }
-    catch {
-        Write-Log -Message "  Failed to check networks: $_" -Level "ERROR"; $script:OperationFailed = $true
-    }
-    
-    Write-Host ""
-    
-    # Arc status
-    Write-Log -Message "Azure Arc Status:" -Level "INFO"
-    try {
-        $node = ($nodes | Where-Object { $_.State -eq "Up" } | Select-Object -First 1).Name
-        $arcStatus = Invoke-Command -ComputerName $node -ScriptBlock {
-            $agent = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
-            if (Test-Path $agent) {
-                $status = & $agent show --json 2>&1 | ConvertFrom-Json
-                return $status.status
-            }
-            return "Not Installed"
-        }
-        
-        if ($arcStatus -eq "Connected") {
-            Write-Host "  Arc Agent: Connected" -ForegroundColor Green
-        }
-        else {
-            Write-Host "  Arc Agent: $arcStatus" -ForegroundColor Yellow
-            $healthReport.OverallHealth = "Warning"
-        }
-        
-        $healthReport.Components.Arc = @{
-            Status = $arcStatus
-        }
-    }
-    catch {
-        Write-Log -Message "  Failed to check Arc: $_" -Level "ERROR"; $script:OperationFailed = $true
-    }
-    
-    Write-Host ""
-    Write-Log -Message "Overall Health: $($healthReport.OverallHealth)" -Level $(if ($healthReport.OverallHealth -eq "Healthy") { "SUCCESS" } else { "WARN" })
-    
-    # Save report if requested
-    if ($OutputPath) {
-        $reportPath = Join-Path $OutputPath "health-report-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-        $healthReport | ConvertTo-Json -Depth 5 | Set-Content -Path $reportPath
-        Write-Log -Message "Report saved: $reportPath" -Level "INFO"
-    }
+    $bad = @($rows | Where-Object { $_.Action -ne 'Healthy' })
+    Write-Line "Overall: $(if ($bad.Count -eq 0) { 'Healthy' } else { "$($bad.Count) finding(s) need a look" })"
+    if ($bad.Count -gt 0) { $script:failed = $true }
 }
 
-function Set-MaintenanceMode {
-    if (-not $NodeName) {
-        Write-Log -Message "NodeName parameter required" -Level "ERROR"
-        return
-    }
-    
-    if ($Enable) {
-        Write-Log -Message "Entering maintenance mode for $NodeName..." -Level "INFO"
-        
-        try {
-            # Drain roles from node
-            Write-Log -Message "  Draining cluster roles..." -Level "INFO"
-            if ($PSCmdlet.ShouldProcess($NodeName, 'Drain the node and enter maintenance mode')) {
-                Suspend-ClusterNode -Name $NodeName -Cluster $ClusterName -Drain -Wait -ErrorAction Stop
+function Invoke-MaintenanceMode {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+    if ($enterMaintenance) {
+        $nodes = @(Invoke-Remote $clusterName $ReadNodes)
+        $self = @($nodes | Where-Object { $_.Name -eq $node })
+        if ($self.Count -eq 0) { throw "The cluster has no node '$node' (it has: $(@($nodes | ForEach-Object { $_.Name }) -join ', '))." }
+        $others = @($nodes | Where-Object { $_.Name -ne $node -and $_.State -ne 'Up' })
+        if ($others.Count -gt 0) { throw "Not safe: node $($others[0].Name) is $($others[0].State). Every other node must be Up before $node is taken out." }
+        $problems = @(Get-StorageProblem (Invoke-Remote $clusterName $ReadStorage))
+        if ($problems.Count -gt 0) { throw "Not safe: $($problems -join '; '). Wait for the storage to be healthy and the repair jobs to finish (Get-StorageJob), then try again." }
+        if ($PSCmdlet.ShouldProcess($node, 'Suspend-ClusterNode -Drain (the roles and virtual machines move to the other nodes)')) {
+            $state = [string](Invoke-Remote $clusterName $SuspendNode @($node))
+            if ($state -ne 'Paused') { throw "Node $node is $state after the drain; it should be Paused." }
+            Add-Row "Node $node" 'Suspended' 'drained, state Paused'
+            if ($PSCmdlet.ShouldProcess($node, 'Remove-MocPhysicalNode (no new virtual machine is placed on it)')) {
+                $members = @(Invoke-Remote $node $RemoveMoc @($node))
+                if ($members -contains $node) { throw "Node $node is still in the virtual machine configuration after Remove-MocPhysicalNode." }
+                Add-Row "Node $node" 'RemovedFromVmConfiguration' 'no new virtual machine is placed on it. The node can be updated or restarted.'
             }
-            else { return }
-            
-            # Pause storage repair
-            Write-Log -Message "  Pausing storage repair jobs..." -Level "INFO"
-            Invoke-Command -ComputerName $NodeName -ScriptBlock {
-                Get-StorageSubSystem -FriendlyName "Clustered*" | Set-StorageHealthSetting -Name "System.Storage.PhysicalDisk.AutoReplace.Enabled" -Value "False"
-            } -ErrorAction SilentlyContinue
-            
-            Write-Log -Message "Node $NodeName is now in maintenance mode" -Level "SUCCESS"
-            Write-Log -Message "  - VMs have been live migrated to other nodes" -Level "INFO"
-            Write-Log -Message "  - Storage repair is paused" -Level "INFO"
-            Write-Log -Message "  - Node can be safely updated/rebooted" -Level "INFO"
+            else { Add-Row "Node $node" 'WouldRemoveFromVmConfiguration' 'Remove-MocPhysicalNode' }
         }
-        catch {
-            Write-Log -Message "Failed to enter maintenance mode: $_" -Level "ERROR"; $script:OperationFailed = $true
-        }
+        else { Add-Row "Node $node" 'WouldSuspend' 'drain, then Remove-MocPhysicalNode' }
     }
     else {
-        Write-Log -Message "Exiting maintenance mode for $NodeName..." -Level "INFO"
-        
-        try {
-            # Resume node
-            Write-Log -Message "  Resuming cluster node..." -Level "INFO"
-            if ($PSCmdlet.ShouldProcess($NodeName, 'Resume the node and fail back its roles')) {
-                Resume-ClusterNode -Name $NodeName -Cluster $ClusterName -Failback Immediate -ErrorAction Stop
+        if ($PSCmdlet.ShouldProcess($node, 'Resume-ClusterNode -Failback Immediate')) {
+            $state = [string](Invoke-Remote $clusterName $ResumeNode @($node))
+            if ($state -ne 'Up') { throw "Node $node is $state after the resume; it should be Up." }
+            Add-Row "Node $node" 'Resumed' 'state Up, roles fail back'
+            if ($PSCmdlet.ShouldProcess($node, 'New-MocPhysicalNode (the node takes virtual machines again)')) {
+                $members = @(Invoke-Remote $node $AddMoc @($node))
+                if ($members -notcontains $node) { throw "Node $node is not in the virtual machine configuration after New-MocPhysicalNode." }
+                Add-Row "Node $node" 'AddedToVmConfiguration' 'it takes virtual machines again'
             }
-            else { return }
-            
-            # Re-enable storage repair
-            Write-Log -Message "  Enabling storage repair..." -Level "INFO"
-            Invoke-Command -ComputerName $NodeName -ScriptBlock {
-                Get-StorageSubSystem -FriendlyName "Clustered*" | Set-StorageHealthSetting -Name "System.Storage.PhysicalDisk.AutoReplace.Enabled" -Value "True"
-            } -ErrorAction SilentlyContinue
-            
-            Write-Log -Message "Node $NodeName has exited maintenance mode" -Level "SUCCESS"
+            else { Add-Row "Node $node" 'WouldAddToVmConfiguration' 'New-MocPhysicalNode' }
+            $problems = @(Get-StorageProblem (Invoke-Remote $clusterName $ReadStorage))
+            if ($problems.Count -eq 0) { Add-Row 'Storage' 'Healthy' 'pools and virtual disks are healthy and no repair job is running: it is safe to take another node offline' }
+            else { Add-Row 'Storage' 'Warning' "$($problems -join '; '). Do not take another node offline until the repair jobs have finished (Get-StorageJob)." }
         }
-        catch {
-            Write-Log -Message "Failed to exit maintenance mode: $_" -Level "ERROR"; $script:OperationFailed = $true
-        }
+        else { Add-Row "Node $node" 'WouldResume' 'Resume-ClusterNode, then New-MocPhysicalNode' }
     }
 }
 
 function Invoke-LiveMigration {
-    if (-not $NodeName) {
-        Write-Log -Message "Draining all VMs from all nodes is not supported. Specify a NodeName." -Level "ERROR"
-        return
-    }
-    
-    Write-Log -Message "Live migrating VMs from $NodeName..." -Level "INFO"
-    
-    try {
-        $vms = Get-VM -ComputerName $NodeName
-        
-        if ($vms.Count -eq 0) {
-            Write-Log -Message "No VMs on $NodeName" -Level "INFO"
-            return
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+    $nodes = @(Invoke-Remote $clusterName $ReadNodes)
+    if (@($nodes | Where-Object { $_.Name -eq $node }).Count -eq 0) { throw "The cluster has no node '$node'." }
+    $targets = @($nodes | Where-Object { $_.Name -ne $node -and $_.State -eq 'Up' } | ForEach-Object { $_.Name })
+    if ($targets.Count -eq 0) { throw 'No other node is Up to take the virtual machines.' }
+    $mine = @(Invoke-Remote $clusterName $ReadVmGroups @($node))
+    if ($mine.Count -eq 0) { Add-Row "Node $node" 'Info' 'it owns no clustered virtual machine'; return }
+    $counts = @{}
+    foreach ($t in $targets) { $counts[$t] = 0 }
+    foreach ($vm in @(Invoke-Remote $clusterName $ReadVmCounts)) { if ($counts.ContainsKey([string]$vm.Owner)) { $counts[[string]$vm.Owner]++ } }
+    foreach ($vm in $mine) {
+        $target = ($counts.GetEnumerator() | Sort-Object Value, Name | Select-Object -First 1).Key
+        if ($PSCmdlet.ShouldProcess($vm, "Live migrate from $node to $target")) {
+            try { Invoke-Remote $clusterName $MoveVm @($vm, $target); $counts[$target]++; Add-Row $vm 'Migrated' "$node to $target (live)" }
+            catch { Add-Row $vm 'Failed' $_.Exception.Message; $script:failed = $true }
         }
-        
-        Write-Log -Message "  Found $($vms.Count) VM(s) to migrate" -Level "INFO"
-        
-        # Get available target nodes
-        $targetNodes = Get-ClusterNode -Cluster $ClusterName | 
-                       Where-Object { $_.State -eq "Up" -and $_.Name -ne $NodeName }
-        
-        if ($targetNodes.Count -eq 0) {
-            Write-Log -Message "No available target nodes" -Level "ERROR"
-            return
-        }
-        
-        foreach ($vm in $vms) {
-            # Select target with least VMs
-            $targetNode = $targetNodes | ForEach-Object {
-                $node = $_
-                $vmCount = (Get-VM -ComputerName $node.Name).Count
-                [PSCustomObject]@{ Name = $node.Name; VMCount = $vmCount }
-            } | Sort-Object VMCount | Select-Object -First 1
-            
-            Write-Log -Message "  Migrating $($vm.Name) to $($targetNode.Name)..." -Level "INFO"
-            
-            if ($PSCmdlet.ShouldProcess($vm.Name, "Live migrate from $NodeName to $($targetNode.Name)")) {
-                Move-VM -Name $vm.Name -ComputerName $NodeName -DestinationHost $targetNode.Name -ErrorAction Stop
-            }
-            
-            Write-Log -Message "    Migration complete" -Level "SUCCESS"
-        }
-        
-        Write-Log -Message "All VMs migrated from $NodeName" -Level "SUCCESS"
-    }
-    catch {
-        Write-Log -Message "Live migration failed: $_" -Level "ERROR"; $script:OperationFailed = $true
+        else { Add-Row $vm 'WouldMigrate' "$node to $target (live)"; $counts[$target]++ }
     }
 }
 
 function Invoke-StorageRebalance {
-    Write-Log -Message "Rebalancing storage across cluster..." -Level "INFO"
-    
-    try {
-        # Get CSV ownership
-        $csvs = Get-ClusterSharedVolume -Cluster $ClusterName
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" }
-        
-        # Count CSVs per node
-        $ownershipCount = @{}
-        foreach ($node in $nodes) {
-            $ownershipCount[$node.Name] = ($csvs | Where-Object { $_.OwnerNode.Name -eq $node.Name }).Count
-        }
-        
-        Write-Log -Message "Current CSV ownership:" -Level "INFO"
-        foreach ($kv in $ownershipCount.GetEnumerator()) {
-            Write-Host "  $($kv.Key): $($kv.Value) CSV(s)"
-        }
-        
-        # Calculate ideal distribution
-        $idealCount = [math]::Ceiling($csvs.Count / $nodes.Count)
-        
-        Write-Host ""
-        Write-Log -Message "Ideal distribution: ~$idealCount CSVs per node" -Level "INFO"
-        
-        # Identify imbalance
-        $overloaded = $ownershipCount.GetEnumerator() | Where-Object { $_.Value -gt ($idealCount + 1) }
-        $underloaded = $ownershipCount.GetEnumerator() | Where-Object { $_.Value -lt ($idealCount - 1) }
-        
-        if ($overloaded.Count -eq 0) {
-            Write-Log -Message "Storage ownership is balanced" -Level "SUCCESS"
-            return
-        }
-        
-        Write-Log -Message "Rebalancing needed..." -Level "INFO"
-        
-        # Move CSVs from overloaded to underloaded
-        foreach ($over in $overloaded) {
-            $csvsToMove = $csvs | Where-Object { $_.OwnerNode.Name -eq $over.Key } | 
-                          Select-Object -First ($over.Value - $idealCount)
-            
-            foreach ($csv in $csvsToMove) {
-                $target = ($underloaded | Sort-Object Value | Select-Object -First 1).Key
-                
-                if ($target) {
-                    Write-Log -Message "  Moving $($csv.Name) from $($over.Key) to $target" -Level "INFO"
-                    if ($PSCmdlet.ShouldProcess($csv.Name, "Move the CSV to $target")) {
-                        Move-ClusterSharedVolume -Name $csv.Name -Node $target -ErrorAction SilentlyContinue
-                    }
-                }
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+    $nodes = @(Invoke-Remote $clusterName $ReadNodes | Where-Object { $_.State -eq 'Up' } | ForEach-Object { $_.Name })
+    $csvs = @(Invoke-Remote $clusterName $ReadCsv)
+    if ($nodes.Count -eq 0 -or $csvs.Count -eq 0) { Add-Row 'Cluster shared volumes' 'Info' 'nothing to balance'; return }
+    $owned = @{}
+    foreach ($n in $nodes) { $owned[$n] = [System.Collections.Generic.List[string]]::new() }
+    foreach ($csv in $csvs) { if ($owned.ContainsKey([string]$csv.Owner)) { $owned[[string]$csv.Owner].Add([string]$csv.Name) } }
+    $share = [math]::Ceiling($csvs.Count / $nodes.Count)
+    Add-Row 'Cluster shared volumes' 'Info' "$($csvs.Count) volume(s) on $($nodes.Count) node(s): $(@($nodes | ForEach-Object { "$_ $($owned[$_].Count)" }) -join ', '); share about $share per node"
+    $moves = 0
+    foreach ($from in @($nodes | Where-Object { $owned[$_].Count -gt $share })) {
+        while ($owned[$from].Count -gt $share) {
+            $to = ($nodes | Where-Object { $owned[$_].Count -lt $share } | Sort-Object { $owned[$_].Count } | Select-Object -First 1)
+            if (-not $to) { break }
+            $csv = $owned[$from][0]
+            if ($PSCmdlet.ShouldProcess($csv, "Move the volume from $from to $to")) {
+                try { Invoke-Remote $clusterName $MoveCsv @($csv, $to); Add-Row $csv 'Moved' "$from to $to" }
+                catch { Add-Row $csv 'Failed' $_.Exception.Message; $script:failed = $true; break }
             }
+            else { Add-Row $csv 'WouldMove' "$from to $to" }
+            $owned[$from].RemoveAt(0); $owned[$to].Add($csv); $moves++
         }
-        
-        Write-Log -Message "Storage rebalance complete" -Level "SUCCESS"
     }
-    catch {
-        Write-Log -Message "Storage rebalance failed: $_" -Level "ERROR"; $script:OperationFailed = $true
-    }
+    if ($moves -eq 0) { Add-Row 'Cluster shared volumes' 'Healthy' 'ownership is balanced' }
 }
 
 function Get-CapacityReport {
-    Write-Log -Message "Generating capacity report..." -Level "INFO"
-    Write-Host ""
-    
-    try {
-        # Storage capacity
-        Write-Log -Message "Storage Capacity:" -Level "INFO"
-        $pools = Get-StoragePool -CimSession $ClusterName | Where-Object { $_.IsPrimordial -eq $false }
-        
-        foreach ($pool in $pools) {
-            $usedTB = [math]::Round($pool.AllocatedSize / 1TB, 2)
-            $totalTB = [math]::Round($pool.Size / 1TB, 2)
-            $freeTB = [math]::Round(($pool.Size - $pool.AllocatedSize) / 1TB, 2)
-            $usedPct = [math]::Round(($pool.AllocatedSize / $pool.Size) * 100, 1)
-            
-            $color = if ($usedPct -gt 85) { "Red" } elseif ($usedPct -gt 70) { "Yellow" } else { "Green" }
-            
-            Write-Host "  $($pool.FriendlyName):" -ForegroundColor Cyan
-            Write-Host "    Used: $usedTB TB / $totalTB TB ($usedPct%)" -ForegroundColor $color
-            Write-Host "    Free: $freeTB TB"
-        }
-        
-        Write-Host ""
-        
-        # Compute capacity
-        Write-Log -Message "Compute Capacity:" -Level "INFO"
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" }
-        
-        foreach ($node in $nodes) {
-            $vmInfo = Invoke-Command -ComputerName $node.Name -ScriptBlock {
-                $vms = Get-VM
-                $totalMemGB = [math]::Round((Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize / 1MB, 1)
-                $usedMemGB = [math]::Round(($vms | Measure-Object -Property MemoryAssigned -Sum).Sum / 1GB, 1)
-                $cpuCount = (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum
-                $usedCPU = ($vms | Measure-Object -Property ProcessorCount -Sum).Sum
-                
-                @{
-                    VMCount = $vms.Count
-                    TotalMemGB = $totalMemGB
-                    UsedMemGB = $usedMemGB
-                    TotalCPU = $cpuCount
-                    UsedCPU = $usedCPU
-                }
-            }
-            
-            $memPct = [math]::Round(($vmInfo.UsedMemGB / $vmInfo.TotalMemGB) * 100, 1)
-            $cpuPct = [math]::Round(($vmInfo.UsedCPU / $vmInfo.TotalCPU) * 100, 1)
-            
-            Write-Host "  $($node.Name): $($vmInfo.VMCount) VMs" -ForegroundColor Cyan
-            Write-Host "    Memory: $($vmInfo.UsedMemGB) GB / $($vmInfo.TotalMemGB) GB ($memPct%)"
-            Write-Host "    vCPU: $($vmInfo.UsedCPU) / $($vmInfo.TotalCPU) ($cpuPct%)"
-        }
+    $storage = Invoke-Remote $clusterName $ReadStorage
+    foreach ($pool in @($storage.Pools)) {
+        $pct = if ($pool.Size -gt 0) { [math]::Round($pool.Allocated / $pool.Size * 100, 1) } else { 0 }
+        Add-Row "Storage pool $($pool.Name)" $(if ($pct -ge 85) { 'Warning' } else { 'OK' }) "used $([math]::Round($pool.Allocated / 1TB, 2)) TB of $([math]::Round($pool.Size / 1TB, 2)) TB ($pct percent), free $([math]::Round(($pool.Size - $pool.Allocated) / 1TB, 2)) TB"
     }
-    catch {
-        Write-Log -Message "Capacity report failed: $_" -Level "ERROR"; $script:OperationFailed = $true
+    foreach ($n in @(Invoke-Remote $clusterName $ReadNodes | Where-Object { $_.State -eq 'Up' })) {
+        $c = Invoke-Remote $n.Name $ReadCapacity
+        $memPct = if ($c.TotalMemoryGB -gt 0) { [math]::Round($c.AssignedMemoryGB / $c.TotalMemoryGB * 100, 1) } else { 0 }
+        $cpuPct = if ($c.LogicalProcessors -gt 0) { [math]::Round($c.AssignedVcpu / $c.LogicalProcessors * 100, 1) } else { 0 }
+        Add-Row "Node $($n.Name)" 'OK' "$($c.VmCount) VMs; memory $($c.AssignedMemoryGB) of $($c.TotalMemoryGB) GB ($memPct percent); vCPU $($c.AssignedVcpu) of $($c.LogicalProcessors) ($cpuPct percent)"
     }
 }
 
-function Get-ClusterAlerts {
-    Write-Log -Message "Checking for cluster alerts..." -Level "INFO"
-    Write-Host ""
-    
-    try {
-        # Check storage health actions
-        Write-Log -Message "Storage Alerts:" -Level "INFO"
-        $healthActions = Get-StorageHealthAction -CimSession $ClusterName -ErrorAction SilentlyContinue
-        
-        if ($healthActions) {
-            foreach ($action in $healthActions) {
-                Write-Host "  [$($action.ActionState)] $($action.DeviceDescription): $($action.Reason)" -ForegroundColor Yellow
-            }
-        }
-        else {
-            Write-Host "  No storage health alerts" -ForegroundColor Green
-        }
-        
-        Write-Host ""
-        
-        # Check cluster events (last 24 hours, critical/warning)
-        Write-Log -Message "Recent Cluster Events (Critical/Warning):" -Level "INFO"
-        $startTime = (Get-Date).AddHours(-24)
-        
-        $events = Get-WinEvent -ComputerName ($nodes | Select-Object -First 1).Name -FilterHashtable @{
-            LogName = 'Microsoft-Windows-FailoverClustering/Operational'
-            Level = 1,2,3  # Critical, Error, Warning
-            StartTime = $startTime
-        } -MaxEvents 20 -ErrorAction SilentlyContinue
-        
-        if ($events) {
-            foreach ($event in $events) {
-                $level = switch ($event.Level) { 1 { "CRITICAL" }; 2 { "ERROR" }; 3 { "WARNING" } }
-                $color = switch ($event.Level) { 1 { "Red" }; 2 { "Red" }; 3 { "Yellow" } }
-                Write-Host "  [$($event.TimeCreated.ToString('MM-dd HH:mm'))] [$level] $($event.Message.Substring(0, [Math]::Min(80, $event.Message.Length)))..." -ForegroundColor $color
-            }
-        }
-        else {
-            Write-Host "  No critical/warning events in last 24 hours" -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to get alerts: $_" -Level "ERROR"; $script:OperationFailed = $true
-    }
+function Get-ClusterAlert {
+    $r = Invoke-Remote $clusterName $ReadFaults
+    foreach ($f in @($r.Faults)) { Add-Row 'Health Service fault' $(if ($f.Severity -match 'Critical|Major|Fatal') { 'Critical' } else { 'Warning' }) "$($f.Severity): $($f.Reason) ($($f.Target))" }
+    foreach ($a in @($r.Actions)) { Add-Row 'Storage health action' 'Warning' "$($a.State): $($a.Description): $($a.Reason)" }
+    foreach ($e in @($r.Events)) { Add-Row "Cluster event $($e.Time)" $(if ($e.Level -le 2) { 'Critical' } else { 'Warning' }) $e.Message }
+    if ($rows.Count -eq 0) { Add-Row 'Alerts' 'Healthy' 'no Health Service fault, no storage health action and no Critical, Error or Warning cluster event in the last 24 hours' }
+    else { $script:failed = $true }
 }
 
-# Main execution
+# ---- main
+Write-Line "Cluster '$clusterName': action $Action$(if ($node) { " on node '$node'" })"
 try {
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Cluster Operations Management" -Level "INFO"
-    Write-Log -Message "Cluster: $ClusterName" -Level "INFO"
-    Write-Log -Message "Action: $Action" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Host ""
-    
     switch ($Action) {
-        "HealthCheck" {
-            Invoke-HealthCheck
-        }
-        "MaintenanceMode" {
-            Set-MaintenanceMode
-        }
-        "LiveMigrate" {
-            Invoke-LiveMigration
-        }
-        "Rebalance" {
-            Invoke-StorageRebalance
-        }
-        "Capacity" {
-            Get-CapacityReport
-        }
-        "Alerts" {
-            Get-ClusterAlerts
-        }
+        'HealthCheck' { Invoke-HealthCheck }
+        'MaintenanceMode' { Invoke-MaintenanceMode }
+        'LiveMigrate' { Invoke-LiveMigration }
+        'Rebalance' { Invoke-StorageRebalance }
+        'Capacity' { Get-CapacityReport }
+        'Alerts' { Get-ClusterAlert }
     }
-    
-    Write-Host ""
-    if ($script:OperationFailed) { Write-Log -Message "Operation finished with errors" -Level "ERROR"; exit 1 }
-    Write-Log -Message "Operation complete" -Level "SUCCESS"
-    exit 0
 }
-catch {
-    Write-Log -Message "Operation failed: $_" -Level "ERROR"; $script:OperationFailed = $true
-    exit 1
+catch { Add-Row "Action $Action" 'Failed' $_.Exception.Message; $failed = $true }
+
+if ($OutputPath) {
+    try {
+        $folder = Split-Path -Path $OutputPath -Parent
+        if ($folder -and -not (Test-Path -LiteralPath $folder)) { $null = New-Item -ItemType Directory -Path $folder -Force }
+        Set-Content -LiteralPath $OutputPath -Value ([ordered]@{ Cluster = $clusterName; Action = $Action; Node = $node; AtUtc = (Get-Date).ToUniversalTime().ToString('o'); Failed = $failed; Rows = @($rows) } | ConvertTo-Json -Depth 5) -Encoding utf8NoBOM
+        Write-Line "Report written to $OutputPath"
+    }
+    catch { Write-Error "The report could not be written to ${OutputPath}: $($_.Exception.Message)" -ErrorAction Continue; $failed = $true }
 }
+
+$rows
+if ($failed) { Write-Line 'Finished with findings or errors.'; exit 1 }
+Write-Line 'Finished.'
+exit 0

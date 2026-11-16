@@ -1,403 +1,151 @@
 <#
 .SYNOPSIS
-    Tests Azure Arc connectivity and configuration for Azure Local nodes.
+    Tests the Azure Arc side of every Azure Local node from the node: the agent, its extensions and the endpoints it must reach. Read only.
 
 .DESCRIPTION
-    This script validates Azure Arc connection including:
-    - Arc agent installation status
-    - Arc agent connectivity
-    - Extension status
-    - Azure resource registration
-    - Managed identity configuration
+    Stage 07 (validation and handover), task 02. Over PowerShell remoting the script asks every cluster node that is Up (Microsoft Learn: Azure Connected Machine agent
+    CLI reference, azcmagent show, azcmagent extension list; Firewall requirements for Azure Local):
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+      Agent       is the Azure Connected Machine agent installed, and does azcmagent show report the status Connected (Disconnected is a failure, anything else a warning);
+      Extensions  the extensions of the Arc machine as the agent lists them: a provisioning state other than Succeeded is a warning;
+      Endpoints   can the node open a TCP connection on 443 to every host of the one documented endpoint list of the toolkit (Arc, authentication, management and data plane
+                  groups of AzlVerification.Endpoints.psm1, for the region azure.location). A required host that cannot be reached is a failure, an optional one a warning.
 
-.PARAMETER SubscriptionId
-    Azure subscription ID for validation.
+    The Azure side of the same question (the Arc machines, their status, the extensions and the identity as Azure Resource Manager shows them) is stage 04, phase 04, task 04
+    (Test-ArcRegistration.azcli.ps1). This script does not sign in to Azure and calls no Azure command, so the task has no Azure CLI script of its own.
 
-.PARAMETER ResourceGroup
-    Resource group name where Arc resources are registered.
+    The script changes nothing. It connects as the account that runs it, or as -Credential. It asks nothing.
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure): cluster.name (the cluster to ask), azure.location (the region of the endpoint list).
+
+    Exit codes: 0 no check failed (warnings are listed); 1 a check failed or the cluster could not be read; 2 cluster.name or azure.location is missing, or the file cannot be read.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Reads cluster.name and azure.location; the whole file is not validated here.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Without it the account that runs the script is used.
 
 .PARAMETER OutputPath
-    Path to save test results.
+    Optional. A folder: the results are also saved there as arc-connectivity-<date>-<time>.json (created when it does not exist). Keep it out of the repository.
 
 .EXAMPLE
-    .\Test-ArcConnectivity.ps1 -ClusterName "azl-cluster-01" -SubscriptionId "xxx" -ResourceGroup "rg-azl-01"
+    ./Test-ArcConnectivity.ps1 -InfrastructureFile ./infrastructure.yml
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud Team
-    Version: 1.0.0
-    Created: 2026-02-01
-    
-    Requires Az.ConnectedMachine module and appropriate Azure permissions.
+    Checks the Arc agent, the extensions and the endpoints from every node and prints a row per check.
 #>
-
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$SubscriptionId,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ResourceGroup,
-
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [pscredential]$Credential,
     [string]$OutputPath
 )
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$remoteCredential = $Credential
 
-# Import logging helper
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\common\utilities\helpers"
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'arm-deployment', 'verification', 'AzlVerification.Endpoints.psm1')) -Force
 
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+
+function Invoke-Remote([string]$Computer, [scriptblock]$Block, [object[]]$Arguments = @()) {
+    $call = @{ ComputerName = $Computer; ScriptBlock = $Block; ErrorAction = 'Stop' }
+    if ($Arguments.Count -gt 0) { $call.ArgumentList = $Arguments }
+    if ($remoteCredential) { $call.Credential = $remoteCredential }
+    Invoke-Command @call
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
+
+# The blocks that run on the nodes (Windows PowerShell): read only.
+$ReadNodes = { @(Get-ClusterNode | Where-Object { [string]$_.State -eq 'Up' } | ForEach-Object { [string]$_.Name }) }
+$ReadAgent = {
+    $agent = Join-Path $env:ProgramFiles 'AzureConnectedMachineAgent\azcmagent.exe'
+    if (-not (Test-Path -LiteralPath $agent)) { return @{ Installed = $false } }
+    $show = (& $agent show --json 2>&1 | Out-String) | ConvertFrom-Json
+    $extensions = @()
+    $listing = (& $agent extension list --json 2>&1 | Out-String).Trim()
+    if ($listing.StartsWith('[')) { $extensions = @($listing | ConvertFrom-Json | ForEach-Object { @{ Name = [string]$_.name; State = [string]$_.provisioningState } }) }
+    @{ Installed = $true; Status = [string]$show.status; Error = [string]$show.agentErrorMessage; LastHeartbeat = [string]$show.lastHeartbeat; Extensions = $extensions }
+}
+$ProbeEndpoint = {
+    param($Targets)
+    foreach ($target in $Targets) {
+        $ok = $false; $err = ''
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            $connect = $tcp.BeginConnect([string]$target.Host, [int]$target.Port, $null, $null)
+            if ($connect.AsyncWaitHandle.WaitOne(5000, $false)) { $tcp.EndConnect($connect); $ok = $true } else { $err = 'timeout after 5 seconds' }
         }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
+        catch { $err = $_.Exception.Message }
+        finally { $tcp.Close() }
+        @{ Host = [string]$target.Host; Port = [int]$target.Port; Ok = $ok; Error = $err }
     }
 }
 
-# Required Azure Arc endpoints
-$ArcEndpoints = @(
-    @{ Name = "Azure Resource Manager"; Host = "management.azure.com"; Port = 443 }
-    @{ Name = "Azure Active Directory"; Host = "login.microsoftonline.com"; Port = 443 }
-    @{ Name = "Arc Global Endpoint"; Host = "gbl.his.arc.azure.com"; Port = 443 }
-    @{ Name = "Arc Data Plane"; Host = "gbl.dp.kubernetesconfiguration.azure.com"; Port = 443 }
-    @{ Name = "Arc Guest Config"; Host = "agentserviceapi.guestconfiguration.azure.com"; Port = 443 }
-    @{ Name = "Arc Metadata"; Host = "azgn-eus.his.arc.azure.com"; Port = 443 }
-)
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+$clusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+$location = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')).Trim()
+if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing in the infrastructure file. It is the cluster to ask.' }
+if (-not $location) { Exit-InputProblem 'azure.location is missing in the infrastructure file. It is the region of the endpoint list.' }
+$targets = @(Get-AzlEndpointSet -Location $location -Group Arc, Auth, Management, DataPlane -Port 443 | ForEach-Object { @{ Host = $_.Host; Port = $_.Port; Tier = $_.Tier; Name = $_.Note } })
+if ($targets.Count -eq 0) { Exit-InputProblem "azure.location '$location' is not a region of the endpoint list, so no endpoint can be tested." }
 
-# Initialize results
-$TestResults = @{
-    Timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-    ClusterName = $ClusterName
-    Nodes = @()
-    AzureResources = @()
-    EndpointTests = @()
+$rows = [System.Collections.Generic.List[object]]::new()
+function Add-Row([string]$Node, [string]$Check, [string]$Status, [string]$Detail = '') {
+    $rows.Add([pscustomobject][ordered]@{ Node = $Node; Check = $Check; Status = $Status; Detail = $Detail })
+    $tag = switch ($Status) { 'Passed' { '[ok]      ' } 'Warning' { '[warning] ' } default { '[failed]  ' } }
+    Write-Line ('{0}{1} {2}: {3}{4}' -f $tag, $Node, $Check, $Status, $(if ($Detail) { " ($Detail)" } else { '' }))
 }
 
-function Test-ArcAgentInstallation {
-    Write-Log -Message "Checking Arc agent installation status..." -Level "INFO"
-    
+Write-Line "Azure Arc validation from the nodes of cluster '$clusterName' (region $location, $($targets.Count) endpoints)"
+try { $nodes = @(Invoke-Remote $clusterName $ReadNodes) }
+catch { Write-Error "The cluster '$clusterName' could not be read: $($_.Exception.Message)" -ErrorAction Continue; exit 1 }
+if ($nodes.Count -eq 0) { Add-Row $clusterName 'Nodes' 'Failed' 'no node is Up' }
+
+foreach ($node in $nodes) {
     try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" }
-        
-        foreach ($node in $nodes) {
-            $agentInfo = Invoke-Command -ComputerName $node.Name -ScriptBlock {
-                $agentPath = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
-                
-                if (Test-Path $agentPath) {
-                    # Get agent version
-                    $versionOutput = & $agentPath version 2>&1
-                    $version = ($versionOutput | Select-String -Pattern "^\d+\.\d+\.\d+" | Select-Object -First 1).ToString()
-                    
-                    # Get agent status
-                    $statusJson = & $agentPath show --json 2>&1
-                    $status = $statusJson | ConvertFrom-Json
-                    
-                    return @{
-                        Installed = $true
-                        Version = $version
-                        Status = $status.status
-                        ResourceId = $status.resourceId
-                        TenantId = $status.tenantId
-                        SubscriptionId = $status.subscriptionId
-                        ResourceGroup = $status.resourceGroup
-                        MachineName = $status.machineName
-                        LastHeartbeat = $status.lastHeartbeat
-                        AgentErrorCode = $status.agentErrorCode
-                        AgentErrorMessage = $status.agentErrorMessage
-                    }
-                }
-                else {
-                    return @{ Installed = $false }
-                }
-            } -ErrorAction Stop
-            
-            $nodeResult = @{
-                NodeName = $node.Name
-                AgentInstalled = $agentInfo.Installed
-                AgentVersion = $agentInfo.Version
-                Status = $agentInfo.Status
-                ResourceId = $agentInfo.ResourceId
-                LastHeartbeat = $agentInfo.LastHeartbeat
-            }
-            
-            $TestResults.Nodes += $nodeResult
-            
-            if ($agentInfo.Installed) {
-                if ($agentInfo.Status -eq "Connected") {
-                    Write-Log -Message "  [$($node.Name)] Arc Agent v$($agentInfo.Version) - Connected" -Level "SUCCESS"
-                    Write-Log -Message "    Resource: $($agentInfo.ResourceId)" -Level "INFO"
-                    Write-Log -Message "    Last Heartbeat: $($agentInfo.LastHeartbeat)" -Level "INFO"
-                }
-                elseif ($agentInfo.Status -eq "Disconnected") {
-                    Write-Log -Message "  [$($node.Name)] Arc Agent v$($agentInfo.Version) - Disconnected" -Level "ERROR"
-                    if ($agentInfo.AgentErrorMessage) {
-                        Write-Log -Message "    Error: $($agentInfo.AgentErrorMessage)" -Level "ERROR"
-                    }
-                }
-                else {
-                    Write-Log -Message "  [$($node.Name)] Arc Agent v$($agentInfo.Version) - $($agentInfo.Status)" -Level "WARN"
-                }
-            }
-            else {
-                Write-Log -Message "  [$($node.Name)] Arc Agent NOT INSTALLED" -Level "ERROR"
-            }
+        $agent = Invoke-Remote $node $ReadAgent
+        if (-not $agent.Installed) { Add-Row $node 'Agent' 'Failed' 'the Azure Connected Machine agent is not installed' }
+        elseif ($agent.Status -eq 'Connected') { Add-Row $node 'Agent' 'Passed' "Connected, last heartbeat $($agent.LastHeartbeat)" }
+        elseif ($agent.Status -eq 'Disconnected') { Add-Row $node 'Agent' 'Failed' "Disconnected$(if ($agent.Error) { ': ' + $agent.Error })" }
+        else { Add-Row $node 'Agent' 'Warning' "status $($agent.Status)" }
+        if ($agent.Installed) {
+            $badExtensions = @(@($agent.Extensions) | Where-Object { $_.State -ne 'Succeeded' })
+            if (@($agent.Extensions).Count -eq 0) { Add-Row $node 'Extensions' 'Warning' 'the agent lists no extension' }
+            elseif ($badExtensions.Count -gt 0) { Add-Row $node 'Extensions' 'Warning' (@($badExtensions | ForEach-Object { "$($_.Name) $($_.State)" }) -join ', ') }
+            else { Add-Row $node 'Extensions' 'Passed' "$(@($agent.Extensions).Count) extension(s) Succeeded" }
         }
     }
-    catch {
-        Write-Log -Message "Failed to check Arc agent: $_" -Level "ERROR"
-    }
-}
-
-function Test-ArcEndpointConnectivity {
-    Write-Log -Message "Testing Arc endpoint connectivity..." -Level "INFO"
-    
+    catch { Add-Row $node 'Agent' 'Failed' "could not be read: $($_.Exception.Message)" }
     try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" } | Select-Object -First 1
-        
-        foreach ($endpoint in $ArcEndpoints) {
-            $result = Invoke-Command -ComputerName $nodes.Name -ScriptBlock {
-                param($host, $port)
-                try {
-                    $tcp = New-Object System.Net.Sockets.TcpClient
-                    $connect = $tcp.BeginConnect($host, $port, $null, $null)
-                    $wait = $connect.AsyncWaitHandle.WaitOne(5000, $false)
-                    if ($wait) {
-                        $tcp.EndConnect($connect)
-                        $tcp.Close()
-                        return @{ Success = $true; LatencyMs = 0 }
-                    }
-                    $tcp.Close()
-                    return @{ Success = $false; Error = "Connection timeout" }
-                }
-                catch {
-                    return @{ Success = $false; Error = $_.Exception.Message }
-                }
-            } -ArgumentList $endpoint.Host, $endpoint.Port -ErrorAction SilentlyContinue
-            
-            $TestResults.EndpointTests += @{
-                Name = $endpoint.Name
-                Host = $endpoint.Host
-                Port = $endpoint.Port
-                Success = $result.Success
-                Error = $result.Error
-            }
-            
-            if ($result.Success) {
-                Write-Log -Message "  $($endpoint.Name): OK" -Level "SUCCESS"
-            }
-            else {
-                Write-Log -Message "  $($endpoint.Name): FAILED - $($result.Error)" -Level "ERROR"
-            }
-        }
+        $probe = @(Invoke-Remote $node $ProbeEndpoint @(, @($targets | ForEach-Object { @{ Host = $_.Host; Port = $_.Port } })))
+        $tier = @{}; foreach ($t in $targets) { $tier[[string]$t.Host] = [string]$t.Tier }
+        $bad = @($probe | Where-Object { -not $_.Ok })
+        $badRequired = @($bad | Where-Object { $tier[[string]$_.Host] -ne 'Optional' })
+        if ($badRequired.Count -gt 0) { Add-Row $node 'Endpoints' 'Failed' "$($badRequired.Count) of $($probe.Count) required endpoints cannot be reached on 443: $(@($badRequired | ForEach-Object { "$($_.Host) ($($_.Error))" }) -join '; ')" }
+        elseif ($bad.Count -gt 0) { Add-Row $node 'Endpoints' 'Warning' "optional endpoint(s) cannot be reached: $(@($bad | ForEach-Object { $_.Host }) -join ', ')" }
+        else { Add-Row $node 'Endpoints' 'Passed' "all $($probe.Count) endpoints reachable on 443" }
     }
-    catch {
-        Write-Log -Message "Failed to test Arc endpoints: $_" -Level "ERROR"
-    }
+    catch { Add-Row $node 'Endpoints' 'Failed' "could not be probed: $($_.Exception.Message)" }
 }
 
-function Test-ArcAzureResources {
-    if (-not $SubscriptionId -or -not $ResourceGroup) {
-        Write-Log -Message "Skipping Azure resource validation (SubscriptionId and ResourceGroup required)" -Level "INFO"
-        return
-    }
-    
-    Write-Log -Message "Validating Arc resources in Azure..." -Level "INFO"
-    
+$failed = @($rows | Where-Object Status -EQ 'Failed').Count
+$warnings = @($rows | Where-Object Status -EQ 'Warning').Count
+Write-Line "Summary: $(@($rows | Where-Object Status -EQ 'Passed').Count) passed, $warnings warning(s), $failed failed."
+if ($OutputPath) {
     try {
-        # Set subscription context
-        Set-AzContext -SubscriptionId $SubscriptionId -ErrorAction Stop | Out-Null
-        
-        # Get Arc machines
-        $arcMachines = Get-AzConnectedMachine -ResourceGroupName $ResourceGroup -ErrorAction SilentlyContinue
-        
-        if ($arcMachines) {
-            foreach ($machine in $arcMachines) {
-                $result = @{
-                    Name = $machine.Name
-                    Status = $machine.Status
-                    AgentVersion = $machine.AgentVersion
-                    OSName = $machine.OSName
-                    OSVersion = $machine.OSVersion
-                    LastStatusChange = $machine.LastStatusChange
-                    ProvisioningState = $machine.ProvisioningState
-                }
-                
-                $TestResults.AzureResources += $result
-                
-                if ($machine.Status -eq "Connected") {
-                    Write-Log -Message "  $($machine.Name): Connected (v$($machine.AgentVersion))" -Level "SUCCESS"
-                }
-                else {
-                    Write-Log -Message "  $($machine.Name): $($machine.Status)" -Level "WARN"
-                }
-            }
-        }
-        else {
-            Write-Log -Message "  No Arc machines found in resource group: $ResourceGroup" -Level "WARN"
-        }
-        
-        # Check for HCI cluster resource
-        $hciCluster = Get-AzResource -ResourceGroupName $ResourceGroup -ResourceType "Microsoft.AzureStackHCI/clusters" -ErrorAction SilentlyContinue
-        
-        if ($hciCluster) {
-            Write-Log -Message "  HCI Cluster Resource: $($hciCluster.Name) - Found" -Level "SUCCESS"
-        }
-        else {
-            Write-Log -Message "  HCI Cluster Resource: Not found (may not be registered yet)" -Level "INFO"
-        }
+        $null = New-Item -ItemType Directory -Path $OutputPath -Force
+        $file = Join-Path $OutputPath ('arc-connectivity-{0:yyyyMMdd-HHmmss}.json' -f (Get-Date))
+        Set-Content -LiteralPath $file -Value ([ordered]@{ Cluster = $clusterName; Location = $location; AtUtc = (Get-Date).ToUniversalTime().ToString('o'); Failed = $failed; Warnings = $warnings; Rows = @($rows) } | ConvertTo-Json -Depth 5) -Encoding utf8NoBOM
+        Write-Line "Results saved to $file"
     }
-    catch {
-        Write-Log -Message "Failed to validate Azure resources: $_" -Level "ERROR"
-    }
+    catch { Write-Error "The results could not be saved to ${OutputPath}: $($_.Exception.Message)" -ErrorAction Continue; exit 1 }
 }
-
-function Test-ArcExtensions {
-    Write-Log -Message "Checking Arc extensions..." -Level "INFO"
-    
-    try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" }
-        
-        foreach ($node in $nodes) {
-            $extensions = Invoke-Command -ComputerName $node.Name -ScriptBlock {
-                $agentPath = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
-                
-                if (Test-Path $agentPath) {
-                    $extJson = & $agentPath extension list --json 2>&1
-                    if ($extJson -match "^\[") {
-                        return $extJson | ConvertFrom-Json
-                    }
-                }
-                return @()
-            } -ErrorAction SilentlyContinue
-            
-            if ($extensions -and $extensions.Count -gt 0) {
-                Write-Log -Message "  [$($node.Name)] Extensions:" -Level "INFO"
-                foreach ($ext in $extensions) {
-                    $status = if ($ext.provisioningState -eq "Succeeded") { "SUCCESS" } else { "WARN" }
-                    Write-Log -Message "    - $($ext.name): $($ext.provisioningState)" -Level $status
-                }
-            }
-            else {
-                Write-Log -Message "  [$($node.Name)] No extensions installed" -Level "INFO"
-            }
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to check Arc extensions: $_" -Level "ERROR"
-    }
-}
-
-function Test-ManagedIdentity {
-    Write-Log -Message "Checking managed identity configuration..." -Level "INFO"
-    
-    try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" } | Select-Object -First 1
-        
-        $identityStatus = Invoke-Command -ComputerName $nodes.Name -ScriptBlock {
-            $agentPath = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
-            
-            if (Test-Path $agentPath) {
-                # Check if we can acquire a token using managed identity
-                try {
-                    $tokenResult = & $agentPath token get --resource "https://management.azure.com/" 2>&1
-                    if ($tokenResult -match "accessToken") {
-                        return @{ Available = $true; Error = $null }
-                    }
-                    return @{ Available = $false; Error = $tokenResult }
-                }
-                catch {
-                    return @{ Available = $false; Error = $_.Exception.Message }
-                }
-            }
-            return @{ Available = $false; Error = "Agent not installed" }
-        } -ErrorAction SilentlyContinue
-        
-        if ($identityStatus.Available) {
-            Write-Log -Message "  Managed identity is available and working" -Level "SUCCESS"
-        }
-        else {
-            Write-Log -Message "  Managed identity not available: $($identityStatus.Error)" -Level "WARN"
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to check managed identity: $_" -Level "ERROR"
-    }
-}
-
-function Export-ArcTestResults {
-    if ($OutputPath) {
-        $reportPath = Join-Path $OutputPath "arc-test-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-        $TestResults | ConvertTo-Json -Depth 10 | Set-Content -Path $reportPath
-        Write-Log -Message "Results saved to: $reportPath" -Level "INFO"
-    }
-}
-
-# Main execution
-try {
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Azure Arc Connectivity Validation" -Level "INFO"
-    Write-Log -Message "Cluster: $ClusterName" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Host ""
-    
-    # Check for required modules
-    if (-not (Get-Module -ListAvailable -Name Az.ConnectedMachine)) {
-        Write-Log -Message "Az.ConnectedMachine module not installed. Some tests may be limited." -Level "WARN"
-    }
-    
-    Test-ArcAgentInstallation
-    Write-Host ""
-    
-    Test-ArcEndpointConnectivity
-    Write-Host ""
-    
-    Test-ArcExtensions
-    Write-Host ""
-    
-    Test-ManagedIdentity
-    Write-Host ""
-    
-    Test-ArcAzureResources
-    Write-Host ""
-    
-    # Export results
-    Export-ArcTestResults
-    
-    # Summary
-    $connectedNodes = ($TestResults.Nodes | Where-Object { $_.Status -eq "Connected" }).Count
-    $totalNodes = $TestResults.Nodes.Count
-    $failedEndpoints = ($TestResults.EndpointTests | Where-Object { -not $_.Success }).Count
-    
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Summary:" -Level "INFO"
-    Write-Host "  Arc Nodes Connected: $connectedNodes / $totalNodes"
-    Write-Host "  Endpoint Failures: $failedEndpoints"
-    
-    if ($connectedNodes -eq $totalNodes -and $failedEndpoints -eq 0) {
-        Write-Log -Message "Arc validation: PASSED" -Level "SUCCESS"
-        exit 0
-    }
-    elseif ($connectedNodes -gt 0) {
-        Write-Log -Message "Arc validation: PARTIAL" -Level "WARN"
-        exit 0
-    }
-    else {
-        Write-Log -Message "Arc validation: FAILED" -Level "ERROR"
-        exit 1
-    }
-}
-catch {
-    Write-Log -Message "Arc validation failed: $_" -Level "ERROR"
-    exit 1
-}
+$rows
+if ($failed -gt 0) { exit 1 }
+exit 0

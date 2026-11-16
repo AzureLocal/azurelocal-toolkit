@@ -11,13 +11,13 @@
     - CSV ownership, state and usage
     - Disk I/O latency measurements (only with -RunPerformanceTest)
 
-    Run it from a machine that can reach the cluster with PowerShell remoting. It asks for nothing: the cluster name is a
-    parameter, and every limit it applies is a parameter too.
+    Run it from a machine that can reach the cluster with PowerShell remoting. It asks for nothing: the cluster name is cluster.name of
+    infrastructure.yml, and every limit it applies is a parameter.
 
-    Exit codes: 0 when no check logged an error, 1 when a check or the run failed.
+    Exit codes: 0 when no check logged an error, 1 when a check or the run failed, 2 when cluster.name is missing or the file cannot be read.
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Reads cluster.name, the cluster to test; the whole file is not validated here.
 
 .PARAMETER VolumeNames
     Optional. Specific CSV volume names to test. If not specified, tests all CSVs.
@@ -41,10 +41,10 @@
     Folder to save the test results (a JSON file) in. Created when it does not exist. Nothing is saved when it is not given.
 
 .EXAMPLE
-    .\Test-StoragePerformance.ps1 -ClusterName "iic-azl-01"
+    .\Test-StoragePerformance.ps1 -InfrastructureFile ./infrastructure.yml
 
 .EXAMPLE
-    .\Test-StoragePerformance.ps1 -ClusterName "iic-azl-01" -RunPerformanceTest -DurationSeconds 120
+    .\Test-StoragePerformance.ps1 -InfrastructureFile ./infrastructure.yml -RunPerformanceTest -DurationSeconds 120
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team
@@ -55,10 +55,13 @@
     Consider running during maintenance windows for production clusters.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the functions of the script.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names of the check functions inside the script.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseUsingScopeModifierInNewRunspaces', '', Justification = 'The values are passed to the remote script blocks with -ArgumentList.')]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [string[]]$VolumeNames,
@@ -88,6 +91,14 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+if (-not $ClusterName) { Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to test.' -ErrorAction Continue; exit 2 }
 
 # These define the benchmark itself, not a deployment: the size of one I/O, the share of latencies the 99th percentile
 # is read at, and the scratch folder and file the benchmark creates on the volume and removes again.

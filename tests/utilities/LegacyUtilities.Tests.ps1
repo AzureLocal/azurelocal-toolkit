@@ -2,7 +2,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # The utility and lifecycle scripts that read the master infrastructure.yml (schema 5):
 #   scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1          shuts the cluster down for transport or maintenance
-#   scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1   drains, reboots and resumes one node
+#   (Invoke-NodeMaintenanceReboot.ps1 moved to stage 08, task 03; its tests are in tests/day2/NodeMaintenance.Tests.ps1)
 #   config-loader.ps1 and keyvault-helper.ps1 (scripts/common/utilities/helpers) are retired: Import-AzlInfrastructure and AzlSecret.psm1 replace them
 # Invoke-Command, Test-Connection and Start-Sleep are mocked: no cluster, no machine, no vault and no credential is used.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/utilities/LegacyUtilities.Tests.ps1
@@ -15,7 +15,7 @@ param()
 BeforeAll {
     $script:Repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:StopScript = [IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'tools', 'Stop-AzureLocalCluster.ps1')
-    $script:RebootScript = [IO.Path]::Combine($script:Repo, 'scripts', 'lifecycle', 'operations', 'powershell', 'Invoke-NodeMaintenanceReboot.ps1')
+
     Import-Module powershell-yaml
     Import-Module ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'scripts', 'VariableRegistry.psm1')) -Force
     $script:Registry = @(Get-RegistryVariable -Path ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'master-registry.yaml')))
@@ -42,7 +42,7 @@ BeforeAll {
         $file
     }
     function New-TestCredential([string]$User = 'user') { [pscredential]::new($User, (ConvertTo-SecureString -String (New-TestSecret) -AsPlainText -Force)) }
-    function Reset-Calls {
+    function Reset-Call {
         $global:AzlUtilCalls = [System.Collections.Generic.List[object]]::new()
         $global:AzlUtilPings = 0
     }
@@ -68,7 +68,7 @@ Describe 'Stop-AzureLocalCluster.ps1' {
         Remove-Variable -Name AzlUtilCalls, AzlUtilPings -Scope Global -ErrorAction SilentlyContinue
     }
     BeforeEach {
-        Reset-Calls
+        Reset-Call
         Mock Start-Sleep { }
         Mock Test-Connection { $false }
         Mock Invoke-Command {
@@ -147,92 +147,6 @@ Describe 'Stop-AzureLocalCluster.ps1' {
         $names = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.[^.]+\.[^.]+$' -and $_.Path -match 'Stop_AzureLocalCluster_ps1' } | ForEach-Object { $_.Node['name'] })
         $declared = @([System.Management.Automation.Language.Parser]::ParseFile($script:StopScript, [ref]$null, [ref]$null).ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
         foreach ($p in $declared) { $names | Should -Contain $p -Because $p }
-    }
-}
-
-Describe 'Invoke-NodeMaintenanceReboot.ps1' {
-    BeforeAll {
-        $env:AZL_TEST_LOCAL_ADMIN = New-TestSecret
-        $env:AZL_TEST_LCM = New-TestSecret
-    }
-    AfterAll {
-        Remove-Item Env:AZL_TEST_LOCAL_ADMIN, Env:AZL_TEST_LCM -ErrorAction SilentlyContinue
-        Remove-Variable -Name AzlUtilCalls, AzlUtilPings -Scope Global -ErrorAction SilentlyContinue
-    }
-    BeforeEach {
-        Reset-Calls
-        Mock Start-Sleep { }
-        Mock Test-Connection { $global:AzlUtilPings++; $global:AzlUtilPings -gt 1 }
-        Mock Invoke-Command {
-            $text = $ScriptBlock.ToString()
-            $global:AzlUtilCalls.Add([pscustomobject]@{ Text = $text; Computer = [string]$ComputerName; Credential = $Credential; Arguments = @($ArgumentList) })
-            if ($text -match 'DrainStatus') { return [pscustomobject]@{ Name = 'iic-n01'; State = 'Up'; DrainStatus = 'NotInitiated' } }
-            if ($text -match '\)\.State') { return 'Up' }
-            return $null
-        }
-    }
-
-    It 'carries the standard header and never asks a question' {
-        $text = Get-Content -LiteralPath $script:RebootScript -Raw
-        $text | Should -Match '(?m)^#Requires -Version 7\.0'
-        $text | Should -Match 'Set-StrictMode -Version Latest'
-        $text | Should -Match "\`$ErrorActionPreference = 'Stop'"
-        $text | Should -Match 'SupportsShouldProcess'
-        $text | Should -Not -Match 'Read-Host|Get-Credential|\$Host\.UI\.Prompt|cluster_nodes|ConvertFrom-Yaml'
-    }
-
-    It 'exits 2 when the infrastructure file is missing' {
-        $r = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (Join-Path $TestDrive 'missing.yml'); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'r1.log') }
-        $r.ExitCode | Should -Be 2 -Because $r.Text
-        $global:AzlUtilCalls.Count | Should -Be 0
-    }
-
-    It 'plans the work under -WhatIf, finds the node by name, address and fully qualified name, and sends nothing' {
-        foreach ($target in 'iic-n01', '192.0.2.11', 'iic-n01.improbability.cloud') {
-            Reset-Calls
-            $r = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (New-InfraFile); TargetNode = $target; LogPath = (Join-Path $TestDrive 'r2.log') } -DryRun
-            $r.Text | Should -Match 'Node resolved\s+: iic-n01 \(192\.0\.2\.11\)' -Because $target
-            $r.Text | Should -Match 'Would suspend cluster node'
-            $global:AzlUtilCalls.Count | Should -Be 0
-        }
-    }
-
-    It 'uses a node that is not in the file as it is' {
-        $r = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (New-InfraFile); TargetNode = 'other-node'; LogPath = (Join-Path $TestDrive 'r3.log') } -DryRun
-        $r.Text | Should -Match 'not found in config'
-    }
-
-    It 'suspends, reboots, waits, resumes and checks the node, as the local administrator of the file' {
-        $r = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'r4.log') }
-        $r.ExitCode | Should -BeIn 0, $null -Because $r.Text
-        $steps = @($global:AzlUtilCalls | Where-Object { $_.Text -match 'Suspend-ClusterNode|Restart-Computer|Resume-ClusterNode' } | ForEach-Object { [regex]::Match($_.Text, 'Suspend-ClusterNode|Restart-Computer|Resume-ClusterNode').Value })
-        $steps | Should -Be @('Suspend-ClusterNode', 'Restart-Computer', 'Resume-ClusterNode')
-        $global:AzlUtilCalls[0].Computer | Should -Be '192.0.2.11'
-        $global:AzlUtilCalls[0].Credential.UserName | Should -Be '.\azl-admin'
-        $r.Text | Should -Not -Match ([regex]::Escape($env:AZL_TEST_LOCAL_ADMIN))
-    }
-
-    It 'uses -Credential instead of the accounts of the file' {
-        $cred = New-TestCredential 'IIC\tester'
-        $null = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; Credential = $cred; SkipDrain = $true; LogPath = (Join-Path $TestDrive 'r5.log') }
-        @($global:AzlUtilCalls | Where-Object { $_.Credential.UserName -ne 'IIC\tester' }).Count | Should -Be 0
-        (Get-Call 'Suspend-ClusterNode').Count | Should -Be 0
-    }
-
-    It 'exits 2 and sends nothing when no credential can be built, and does not prompt' {
-        $r = Invoke-Tool $script:RebootScript @{ InfrastructureFile = (New-InfraFile -NoReference); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'r6.log') }
-        $r.ExitCode | Should -Be 2 -Because $r.Text
-        $global:AzlUtilCalls.Count | Should -Be 0
-    }
-
-    It 'has every parameter in the master registry (tools.arm_deployment.parameters)' {
-        $names = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.[^.]+\.[^.]+$' -and $_.Path -match 'Invoke_NodeMaintenanceReboot_ps1' } | ForEach-Object { $_.Node['name'] })
-        $declared = @([System.Management.Automation.Language.Parser]::ParseFile($script:RebootScript, [ref]$null, [ref]$null).ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
-        foreach ($p in $declared) { $names | Should -Contain $p -Because $p }
-    }
-
-    It 'reads only registry keys that exist: <_>' -ForEach 'identity.local_admin.username', 'identity.local_admin.password', 'identity.active_directory.lcm_user.username', 'identity.active_directory.lcm_user.password', 'identity.active_directory.netbios_name', 'identity.active_directory.domain_fqdn', 'nodes[].name', 'nodes[].management.ip_address' {
-        @($script:Registry | Where-Object Path -EQ $_).Count | Should -Be 1 -Because $_
     }
 }
 

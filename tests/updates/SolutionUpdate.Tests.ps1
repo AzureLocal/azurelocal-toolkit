@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# Day 2: Start-SolutionUpdateAfterDeployment.ps1 starts the Azure Local solution update when operations.updates.install_after_deployment is true, and returns
-# without waiting. Invoke-Command is mocked: no cluster, no machine, no credential is used.
+# Day 2, stage 08 task 02: Start-AzureLocalSolutionUpdate.ps1 starts the Azure Local solution update, after the deployment (when operations.updates.install_after_deployment
+# is true) or on demand (the monthly update, -Mode OnDemand), and returns without waiting. Invoke-Command is mocked: no cluster, no machine, no credential is used.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/updates/SolutionUpdate.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'A Pester mock body runs in the scope of the script under test; a global is how the test hands it the cluster state and collects the calls.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
@@ -11,7 +11,7 @@ param()
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'lifecycle', 'updates', 'powershell', 'Start-SolutionUpdateAfterDeployment.ps1')
+    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '08-day2-operations', 'task-02-start-solution-update', 'powershell', 'Start-AzureLocalSolutionUpdate.ps1')
     Import-Module powershell-yaml
 
     function New-InfraFile {
@@ -48,7 +48,7 @@ BeforeAll {
     function Get-Call([string]$Step) { @($global:AzlUpdCalls | Where-Object Step -EQ $Step) }
 }
 
-Describe 'Start-SolutionUpdateAfterDeployment.ps1' {
+Describe 'Start-AzureLocalSolutionUpdate.ps1' {
     AfterAll { Remove-Variable -Name AzlUpdCalls, AzlUpdState, AzlUpdFail -Scope Global -ErrorAction SilentlyContinue }
 
     BeforeEach {
@@ -79,6 +79,87 @@ Describe 'Start-SolutionUpdateAfterDeployment.ps1' {
             $r = Invoke-Update (New-InfraFile -Switch 'yes')
             $r.ExitCode | Should -Be 2
             $global:AzlUpdCalls.Count | Should -Be 0
+        }
+    }
+
+    Context 'the OnDemand mode (the monthly update)' {
+        It 'starts the update without the switch: -Mode OnDemand does not read install_after_deployment' -ForEach @(
+            @{ Case = 'false'; Opts = @{ Switch = $false } }, @{ Case = 'missing'; Opts = @{ Switch = $null } }, @{ Case = 'no block'; Opts = @{ NoUpdates = $true } }
+        ) {
+            $r = Invoke-Update (New-InfraFile @Opts) -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Started'
+            (Get-Call 'StartUpdate').Count | Should -Be 1
+        }
+
+        It 'does not read the switch at all: a switch that is not true or false does not stop the monthly update' {
+            $r = Invoke-Update (New-InfraFile -Switch 'yes') -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            (Get-Call 'StartUpdate').Count | Should -Be 1
+        }
+
+        It 'keeps every safety check: blocking health, a failed newer update, a named version that is not listed' {
+            $global:AzlUpdState.HealthState = 'Warning'
+            (Invoke-Update (New-InfraFile -Switch $false) -Extra @{ Mode = 'OnDemand' }).ExitCode | Should -Be 1
+            Reset-Cluster
+            $global:AzlUpdState.Updates = @((New-Update '12.2609.1003.30'), (New-Update '12.2610.1004.50' 'InstallationFailed'))
+            (Invoke-Update (New-InfraFile -Switch $false) -Extra @{ Mode = 'OnDemand' }).ExitCode | Should -Be 1
+            Reset-Cluster
+            (Invoke-Update (New-InfraFile -Switch $false -Target '12.2699.1.1') -Extra @{ Mode = 'OnDemand' }).ExitCode | Should -Be 1
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'plans under -WhatIf and still starts nothing' {
+            $r = Invoke-Update (New-InfraFile -Switch $false) -DryRun -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'WouldStart'
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'the default mode is AfterDeployment: the switch off starts nothing and says how to use OnDemand' {
+            $r = Invoke-Update (New-InfraFile -Switch $false)
+            $r.ExitCode | Should -Be 0
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+            $r.Text | Should -Match 'OnDemand'
+        }
+
+        It 'refuses a mode that does not exist' {
+            { & $script:Script -InfrastructureFile (New-InfraFile) -Mode Weekly } | Should -Throw
+        }
+    }
+
+    Context 'the PrepareOnly switch (download and readiness checks, no install)' {
+        It 'asks the cluster to prepare, not to install, and reports Prepared' {
+            $r = Invoke-Update (New-InfraFile) -Extra @{ Mode = 'OnDemand'; PrepareOnly = $true }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Prepared'
+            $r.Rows[0].Detail | Should -Match 'without -PrepareOnly'
+            (Get-Call 'StartUpdate')[0].Arguments[1] | Should -BeTrue
+        }
+
+        It 'a normal start passes PrepareOnly as false' {
+            $null = Invoke-Update (New-InfraFile) -Extra @{ Mode = 'OnDemand' }
+            (Get-Call 'StartUpdate')[0].Arguments[1] | Should -BeFalse
+        }
+
+        It 'reports an update that is already prepared (ReadyToInstall) and prepares nothing again' {
+            $global:AzlUpdState.Updates = @((New-Update '12.2610.1004.50' 'ReadyToInstall'))
+            $r = Invoke-Update (New-InfraFile) -Extra @{ Mode = 'OnDemand'; PrepareOnly = $true }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'AlreadyPrepared'
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'plans under -WhatIf: WouldPrepare' {
+            $r = Invoke-Update (New-InfraFile) -DryRun -Extra @{ Mode = 'OnDemand'; PrepareOnly = $true }
+            $r.Rows[0].Action | Should -Be 'WouldPrepare'
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'still does not prepare while the update environment health is blocking' {
+            $global:AzlUpdState.HealthState = 'Failure'
+            (Invoke-Update (New-InfraFile) -Extra @{ Mode = 'OnDemand'; PrepareOnly = $true }).ExitCode | Should -Be 1
+            (Get-Call 'StartUpdate').Count | Should -Be 0
         }
     }
 
@@ -263,13 +344,14 @@ Describe 'Start-SolutionUpdateAfterDeployment.ps1' {
 
         It 'reads its values through the toolkit loader, holds no address and no version number, and never waits' {
             $script:Text | Should -Match 'Import-AzlInfrastructure'
+            $script:Text | Should -Match 'task 01'
             $script:Text | Should -Not -Match 'variables\.yml'
             $script:Text | Should -Not -Match '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
             $script:Text | Should -Not -Match '(?m)^\s*(Start-Sleep|Wait-)'
         }
 
         It 'has every parameter in the master registry (tools.arm_deployment.parameters)' {
-            $own = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.[^.]+\.[^.]+$' -and $_.Path -match 'Start_SolutionUpdateAfterDeployment_ps1' })
+            $own = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.[^.]+\.[^.]+$' -and $_.Path -match 'Start_AzureLocalSolutionUpdate_ps1' })
             @($own | ForEach-Object { $_.Node['name'] }) | Should -Contain 'InfrastructureFile'
             @(& ([IO.Path]::Combine($repo, 'config', 'variables', 'scripts', 'Test-ToolParameterRegistration.ps1')) -Tool arm_deployment -Root (Split-Path -Parent $script:Script) -Registry $script:Registry) | Should -BeNullOrEmpty
         }

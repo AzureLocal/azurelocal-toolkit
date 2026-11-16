@@ -11,7 +11,7 @@ param()
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'handover', 'documentation', 'powershell', 'New-DeploymentDocumentation.ps1')
+    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '07-validation-handover', 'task-05-deployment-documentation', 'powershell', 'New-DeploymentDocumentation.ps1')
     Import-Module powershell-yaml
 
     function Get-Cluster { [CmdletBinding()] param([string]$Name) }

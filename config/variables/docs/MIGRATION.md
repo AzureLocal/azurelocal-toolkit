@@ -421,7 +421,7 @@ Files removed with them, and what each reader uses now:
 
 The three pipeline files `pipelines/azure-devops/azure-local-deploy.yml`, `pipelines/github-actions/azure-local-deploy.yml` and `pipelines/gitlab/.gitlab-ci.yml` named `CONFIG_PATH: config/variables/variables.yml`. They now name `INFRASTRUCTURE_FILE`.
 
-Scripts: none of the scripts of `scripts/deploy` stages 03, 05 and 06, `scripts/deploy/common`, `scripts/tools`, `scripts/lifecycle` and `scripts/common/utilities` takes `-ConfigPath` or `-ConfigFile` (or an alias of them) or prompts any more. `tests/deploy-scripts/OldLayoutRetired.Tests.ps1` checks it. The scripts that a schema 5 script replaces are removed:
+Scripts: none of the scripts of `scripts/deploy` stages 03, 05, 06, 07 and 08, `scripts/deploy/common`, `scripts/tools` and `scripts/common/utilities` takes `-ConfigPath` or `-ConfigFile` (or an alias of them) or prompts any more. `tests/deploy-scripts/OldLayoutRetired.Tests.ps1` checks it. The scripts that a schema 5 script replaces are removed:
 
 | Removed script | Replaced by |
 | --- | --- |
@@ -433,7 +433,7 @@ Scripts: none of the scripts of `scripts/deploy` stages 03, 05 and 06, `scripts/
 | `Test-SdnPrerequisites.ps1`, `Set-SdnIntegration.ps1` | `Enable-ArcSdn.ps1` (checks the prerequisites Learn lists and plans under `-WhatIf`; SDN enabled by Azure Arc has no load balancer or gateway to configure) |
 | `Invoke-PostTerraformConfiguration.ps1` | `Invoke-AzureLocalOsConfiguration.ps1` and the other schema 5 entry scripts (it only called placeholders) |
 | `Convert-ToStandaloneScript.ps1` | none: it baked the values of a file into a script, which the registry-first rule forbids |
-| `Invoke-ClusterUpdates.ps1` | `Start-SolutionUpdateAfterDeployment.ps1` and Azure Update Manager. Learn lists manual runs of Cluster-Aware Updating, SConfig and the updates pane of the machine resource as unsupported ways to update Azure Local, and the script ran Windows Update on the machines. |
+| `Invoke-ClusterUpdates.ps1` | `Start-AzureLocalSolutionUpdate.ps1` (stage 08, task 02; first named `Start-SolutionUpdateAfterDeployment.ps1`) and Azure Update Manager. Learn lists manual runs of Cluster-Aware Updating, SConfig and the updates pane of the machine resource as unsupported ways to update Azure Local, and the script ran Windows Update on the machines. |
 
 `operations.licensing.windows_server_subscription` is read now: `Enable-WindowsServerSubscription.ps1` turns the add-on on when it is `true`. Nothing else about the key changed.
 
@@ -506,7 +506,7 @@ Schema 5.6.19 adds optional keys. Nothing is required: a 5.6.16 file is valid as
 
 Schema 5.6.20 adds two optional keys and removes the keys listed below. A 5.6.17 file is valid as it is, unless it holds a removed key: delete that key (the validator names it as an unknown key).
 
-Added. `scripts/lifecycle/updates/powershell/Start-SolutionUpdateAfterDeployment.ps1` reads both keys.
+Added. `scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1` (first `scripts/lifecycle/updates/powershell/Start-SolutionUpdateAfterDeployment.ps1`) reads both keys; `Get-AvailableSolutionUpdate.ps1` (task 01) reads `target_version`.
 
 - `operations.updates.install_after_deployment`: `true` starts the solution update after the deployment. Default `false`.
 - `operations.updates.target_version`: `latest` (default) or a solution version such as `12.2610.1004.50`.

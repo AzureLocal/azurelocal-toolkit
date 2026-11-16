@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Starts the Azure Local solution update after the deployment, when infrastructure.yml asks for it, and returns without waiting for the update to finish.
+    Starts an Azure Local solution update (after the deployment, or at any time for the monthly update) and returns without waiting for it to finish.
 
 .DESCRIPTION
-    Day 2, after the deployment. When operations.updates.install_after_deployment is true, the script connects to the cluster with PowerShell remoting and,
-    the way Microsoft Learn describes it (Update Azure Local by using PowerShell):
+    Day 2, stage 08 task 02. The script connects to the cluster with PowerShell remoting and, the way Microsoft Learn describes it
+    (Update Azure Local by using PowerShell):
 
       1. reads the update environment (Get-SolutionUpdateEnvironment: the installed solution version and the health state) and the updates the update
          service has discovered (Get-SolutionUpdate);
@@ -12,15 +12,28 @@
          update that is ready to install. Standalone Solution Builder Extension updates (package type SBE) are not chosen;
       3. checks that the system is ready: the HealthState of the update environment must not be Failure, Error or Warning (Learn: review the HealthState
          before you proceed). Start-SolutionUpdate itself downloads the update and runs the readiness checks before it installs;
-      4. starts the update with Start-SolutionUpdate and prints the run that was started.
+      4. starts the update with Start-SolutionUpdate (with -PrepareOnly, only the download and the readiness checks) and prints the run that was started.
+
+    Two modes, one set of safety checks:
+
+      AfterDeployment (the default)  the first update after a deployment. It only runs when operations.updates.install_after_deployment is true; with the
+                                     switch off (or missing) the script reports it and exits 0.
+      OnDemand                       the monthly update, or any other time an operator decides to update. The install_after_deployment switch is not read:
+                                     the operator who runs the script is the decision. Everything else is the same.
 
     The script does not wait. An update takes hours (Learn: about four hours for one machine, six for four), and the machines restart. It prints how to follow
-    the run (Get-SolutionUpdate on a machine, Update Manager in the Azure portal); the separate tool Sonar watches the progress.
+    the run (task 01, Get-AvailableSolutionUpdate.ps1, or Get-SolutionUpdate on a machine, or Update Manager in the Azure portal); the separate tool Sonar
+    watches the progress. Learn recommends predownloading first: run with -PrepareOnly, wait for the state ReadyToInstall (task 01 shows it), then run again
+    without it inside the maintenance window. An update that was prepared with -PrepareOnly must be installed with PowerShell, not from the portal (Learn).
+
+    Order of a monthly update: task 01 (check what is offered), the SBE import (stage 04, phase 06, task 10) when an update says AdditionalContentRequired,
+    this task (start), task 01 again (follow), then the post-update validation.
 
     Idempotent. The script reports and exits 0 without starting anything when
-      the switch is off (install_after_deployment is false or missing);
+      the mode is AfterDeployment and the switch is off (install_after_deployment is false or missing);
       the instance already runs the target version, or no newer solution update is ready;
-      an update is already running (Downloading, Preparing, HealthChecking or Installing).
+      an update is already running (Downloading, Preparing, HealthChecking or Installing);
+      with -PrepareOnly, the chosen update is already prepared (ReadyToInstall).
     A chosen update that is in a failed state (HealthCheckFailed, InstallationFailed and the other failures), needs more content (AdditionalContentRequired) or
     needs another update first (HasPrerequisite) is reported as Failed and left alone: the script does not resume or retry it. See Learn: Troubleshoot updates.
     -WhatIf reads the cluster and prints what would be started; it starts nothing.
@@ -28,7 +41,7 @@
     The script does not sign in anywhere and reads no secret. It connects as the account that runs it, or as -Credential. Learn: use the deployment user account.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        operations.updates.install_after_deployment   the switch; false when missing
+        operations.updates.install_after_deployment   the switch of the AfterDeployment mode; false when missing
         operations.updates.target_version             latest (default) or a solution version of four numbers, for example 12.2610.1004.50
         cluster.name                                  the cluster to connect to (unless -ComputerName is given)
 
@@ -37,6 +50,13 @@
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER Mode
+    AfterDeployment (default): start only when operations.updates.install_after_deployment is true. OnDemand: start the chosen update whenever the script is run
+    (the monthly update); the switch is not read.
+
+.PARAMETER PrepareOnly
+    Only download the update and run the readiness checks (Start-SolutionUpdate -PrepareOnly); nothing is installed. Run the script again without it to install.
 
 .PARAMETER ComputerName
     Optional. The machine to connect to instead of cluster.name, for example one node when the cluster name does not resolve from where you run this.
@@ -48,19 +68,26 @@
     Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    ./Start-SolutionUpdateAfterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+    ./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-    Reads the update state of the cluster and shows which update would be started. Starts nothing.
+    Reads the update state of the cluster and shows which update would be started after the deployment. Starts nothing.
 
 .EXAMPLE
-    ./Start-SolutionUpdateAfterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -Credential (Get-Secret lcm-user)
+    ./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -PrepareOnly
 
-    Starts the update the file asks for and returns. Run it again: it reports that the update is running, or that the instance is at the target.
+    The monthly update, step one: download the chosen update and run the readiness checks before the maintenance window.
+
+.EXAMPLE
+    ./Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml -Mode OnDemand -Credential (Get-Secret lcm-user)
+
+    The monthly update, inside the maintenance window: starts the update and returns. Run it again: it reports that the update is running, or that the instance is at the target.
 #>
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
+    [ValidateSet('AfterDeployment', 'OnDemand')][string]$Mode = 'AfterDeployment',
+    [switch]$PrepareOnly,
     [string]$ComputerName,
     [pscredential]$Credential,
     [string]$LogPath
@@ -68,15 +95,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
+$remoteCredential = $Credential
 
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # The states of an update that Learn names (Update Azure Local by using PowerShell; Understand update phases of Azure Local).
 $StartableState = 'Ready', 'ReadyToInstall', 'HealthCheckExpired'
 $RunningState = 'Downloading', 'Preparing', 'HealthChecking', 'Installing'
 $BlockingHealth = 'Failure', 'Error', 'Warning'
 $StateAdvice = @{
-    AdditionalContentRequired = 'it needs content from the hardware vendor: import it first (Learn: Solution Builder Extension updates, the AdditionalContentRequired state)'
+    AdditionalContentRequired = 'it needs content from the hardware vendor: import it first (Learn: Solution Builder Extension updates, the AdditionalContentRequired state; toolkit: stage 04, phase 06, task 10, SBE update import)'
     HasPrerequisite           = 'it needs another update installed first (see its Prerequisites)'
     Invalid                   = 'it does not match the hardware model of the cluster'
     Obsolete                  = 'a higher version of this update is already installed'
@@ -97,6 +125,7 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 $Remote = @{
     ReadState = {
         param($Step)
+        $null = $Step
         $environment = Get-SolutionUpdateEnvironment -ErrorAction Stop
         @{
             CurrentVersion = [string]$environment.CurrentVersion
@@ -108,13 +137,16 @@ $Remote = @{
         }
     }
     StartUpdate = {
-        param($Step, $ResourceId)
-        [string](Get-SolutionUpdate -Id $ResourceId -ErrorAction Stop | Start-SolutionUpdate -ErrorAction Stop)
+        param($Step, $ResourceId, $PrepareOnlyRequested)
+        $null = $Step
+        $update = Get-SolutionUpdate -Id $ResourceId -ErrorAction Stop
+        if ($PrepareOnlyRequested) { [string]($update | Start-SolutionUpdate -PrepareOnly -ErrorAction Stop) }
+        else { [string]($update | Start-SolutionUpdate -ErrorAction Stop) }
     }
 }
 function Invoke-Cluster([string]$Step, [object[]]$Arguments = @()) {
     $call = @{ ComputerName = $script:target; ScriptBlock = $Remote[$Step]; ArgumentList = (, $Step + $Arguments); ErrorAction = 'Stop' }
-    if ($Credential) { $call.Credential = $Credential }
+    if ($remoteCredential) { $call.Credential = $remoteCredential }
     Invoke-Command @call
 }
 function ConvertTo-UpdateVersion([string]$Text) {
@@ -127,11 +159,13 @@ function ConvertTo-UpdateVersion([string]$Text) {
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-$switchRaw = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.updates.install_after_deployment'
-if ($null -ne $switchRaw -and $switchRaw -isnot [bool]) { Exit-InputProblem "operations.updates.install_after_deployment must be true or false; found '$switchRaw'." }
-if (-not $switchRaw) {
-    Write-Line 'operations.updates.install_after_deployment is not true: no update is started.'
-    exit 0
+if ($Mode -eq 'AfterDeployment') {
+    $switchRaw = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.updates.install_after_deployment'
+    if ($null -ne $switchRaw -and $switchRaw -isnot [bool]) { Exit-InputProblem "operations.updates.install_after_deployment must be true or false; found '$switchRaw'." }
+    if (-not $switchRaw) {
+        Write-Line 'operations.updates.install_after_deployment is not true: no update is started. (Use -Mode OnDemand to start the monthly update.)'
+        exit 0
+    }
 }
 
 $targetRaw = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.updates.target_version')).Trim()
@@ -160,7 +194,7 @@ function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
     $tag = switch ($Action) { 'Failed' { '[failed] ' } { $_ -like 'Already*' } { '[exists] ' } { $_ -like 'Would*' } { '[plan]    ' } default { '[done]   ' } }
     Write-Line ("{0}{1}: {2}{3}" -f $tag, $Item, $Action, $(if ($Detail) { " ($Detail)" } else { '' }))
 }
-$follow = 'Follow it with Get-SolutionUpdate -Id <ResourceId> | ft Version,State,UpdateStateProperties,HealthState on a machine, or in Update Manager in the Azure portal; Sonar watches the progress.'
+$follow = 'Follow it with task 01 (Get-AvailableSolutionUpdate.ps1), or Get-SolutionUpdate -Id <ResourceId> | ft Version,State,UpdateStateProperties,HealthState on a machine, or in Update Manager in the Azure portal; Sonar watches the progress.'
 
 try {
     $solution = @(@($state.Updates) | Where-Object { $_.PackageType -eq 'Solution' })
@@ -202,12 +236,20 @@ try {
 
         if ($chosen) {
             $item = "solution update $($chosen.Version)"
-            if ($BlockingHealth -contains $state.HealthState) { throw "The update environment health is $($state.HealthState), so $item is not started. Fix it first (Learn: Troubleshoot readiness checks; Get-SolutionHealthSummary shows the details)." }
-            if ($PSCmdlet.ShouldProcess("$item on '$target'", 'Start-SolutionUpdate (download, readiness checks, install)')) {
-                $run = Invoke-Cluster 'StartUpdate' @($chosen.ResourceId)
-                Add-Row $item 'Started' "run $run, ResourceId $($chosen.ResourceId). The script does not wait. $follow"
+            if ($PrepareOnly -and $chosen.State -eq 'ReadyToInstall') {
+                Add-Row $item 'AlreadyPrepared' 'the update is downloaded and passed the readiness checks (ReadyToInstall); run again without -PrepareOnly to install it'
             }
-            else { Add-Row $item 'WouldStart' "$($chosen.DisplayName), state $($chosen.State)" }
+            elseif ($BlockingHealth -contains $state.HealthState) { throw "The update environment health is $($state.HealthState), so $item is not started. Fix it first (Learn: Troubleshoot readiness checks; Get-SolutionHealthSummary shows the details)." }
+            else {
+                $what = if ($PrepareOnly) { 'Start-SolutionUpdate -PrepareOnly (download and readiness checks, no install)' } else { 'Start-SolutionUpdate (download, readiness checks, install)' }
+                if ($PSCmdlet.ShouldProcess("$item on '$target'", $what)) {
+                    $run = Invoke-Cluster 'StartUpdate' @($chosen.ResourceId, [bool]$PrepareOnly)
+                    $verb = if ($PrepareOnly) { 'Prepared' } else { 'Started' }
+                    $more = if ($PrepareOnly) { 'Nothing is installed yet: when the state is ReadyToInstall, run the script again without -PrepareOnly, from PowerShell (not the portal).' } else { 'The script does not wait.' }
+                    Add-Row $item $verb "run $run, ResourceId $($chosen.ResourceId). $more $follow"
+                }
+                else { Add-Row $item $(if ($PrepareOnly) { 'WouldPrepare' } else { 'WouldStart' }) "$($chosen.DisplayName), state $($chosen.State)" }
+            }
         }
     }
 }

@@ -10,8 +10,8 @@
     - Network adapter status
     - Azure Arc connection status
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Reads cluster.name (the cluster to validate); the whole file is not validated here.
 
 .PARAMETER OutputFormat
     Output format: Console, JSON, or HTML. Default: Console
@@ -20,10 +20,10 @@
     Path to save the validation report (for JSON/HTML output).
 
 .EXAMPLE
-    .\Test-ClusterHealth.ps1 -ClusterName "azl-cluster-01"
+    .\Test-AzureLocalClusterHealth.ps1 -InfrastructureFile ./infrastructure.yml
 
 .EXAMPLE
-    .\Test-ClusterHealth.ps1 -ClusterName "azl-cluster-01" -OutputFormat HTML -OutputPath "C:\Reports"
+    .\Test-AzureLocalClusterHealth.ps1 -InfrastructureFile ./infrastructure.yml -OutputFormat HTML -OutputPath "C:\Reports"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team
@@ -32,11 +32,13 @@
     
     Must be run from a cluster node or management server with RSAT tools installed.
 #>
-
+#Requires -Version 7.0
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the functions of the script.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names of the check functions inside the script.')]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [ValidateSet("Console", "JSON", "HTML")]
@@ -46,22 +48,24 @@ param(
     [string]$OutputPath
 )
 
-# Import logging helper
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\common\utilities\helpers"
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+
+$script:ErrorCount = 0
+function Write-Line {
+    param([string]$Message, [string]$Level = 'INFO')
+    if ($Level -eq 'ERROR') { $script:ErrorCount++ }
+    $color = switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } 'SUCCESS' { 'Green' } default { 'White' } }
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
-        }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-    }
-}
+
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+if (-not $ClusterName) { Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to validate.' -ErrorAction Continue; exit 2 }
 
 # Initialize results collection
 $ValidationResults = @{
@@ -106,7 +110,7 @@ function Add-ValidationResult {
 }
 
 function Test-ClusterService {
-    Write-Log -Message "Checking cluster service status..." -Level "INFO"
+    Write-Line -Message "Checking cluster service status..." -Level "INFO"
     
     try {
         $cluster = Get-Cluster -Name $ClusterName -ErrorAction Stop
@@ -125,7 +129,7 @@ function Test-ClusterService {
 }
 
 function Test-ClusterNodes {
-    Write-Log -Message "Checking cluster node health..." -Level "INFO"
+    Write-Line -Message "Checking cluster node health..." -Level "INFO"
     
     try {
         $nodes = Get-ClusterNode -Cluster $ClusterName -ErrorAction Stop
@@ -150,7 +154,7 @@ function Test-ClusterNodes {
 }
 
 function Test-StorageSpacesDirect {
-    Write-Log -Message "Checking Storage Spaces Direct health..." -Level "INFO"
+    Write-Line -Message "Checking Storage Spaces Direct health..." -Level "INFO"
     
     try {
         # Check S2D status
@@ -186,14 +190,14 @@ function Test-StorageSpacesDirect {
         # Check virtual disks
         $vDisks = Get-VirtualDisk -CimSession $ClusterName | Where-Object { $_.HealthStatus -ne "Healthy" }
         
-        if ($vDisks.Count -eq 0) {
+        if (@($vDisks).Count -eq 0) {
             Add-ValidationResult -Category "Storage" -Check "Virtual Disks" `
                 -Status "PASSED" -Message "All virtual disks are healthy"
         }
         else {
             Add-ValidationResult -Category "Storage" -Check "Virtual Disks" `
-                -Status "FAILED" -Message "$($vDisks.Count) unhealthy virtual disk(s)" `
-                -Details $vDisks | Select-Object FriendlyName, HealthStatus
+                -Status "FAILED" -Message "$(@($vDisks).Count) unhealthy virtual disk(s)" `
+                -Details @($vDisks | Select-Object FriendlyName, HealthStatus)
         }
     }
     catch {
@@ -203,7 +207,7 @@ function Test-StorageSpacesDirect {
 }
 
 function Test-ClusterNetworks {
-    Write-Log -Message "Checking cluster network health..." -Level "INFO"
+    Write-Line -Message "Checking cluster network health..." -Level "INFO"
     
     try {
         $networks = Get-ClusterNetwork -Cluster $ClusterName -ErrorAction Stop
@@ -228,7 +232,7 @@ function Test-ClusterNetworks {
 }
 
 function Test-ClusterQuorum {
-    Write-Log -Message "Checking cluster quorum..." -Level "INFO"
+    Write-Line -Message "Checking cluster quorum..." -Level "INFO"
     
     try {
         $quorum = Get-ClusterQuorum -Cluster $ClusterName -ErrorAction Stop
@@ -244,7 +248,7 @@ function Test-ClusterQuorum {
 }
 
 function Test-ArcConnection {
-    Write-Log -Message "Checking Azure Arc connection status..." -Level "INFO"
+    Write-Line -Message "Checking Azure Arc connection status..." -Level "INFO"
     
     try {
         $nodes = Get-ClusterNode -Cluster $ClusterName
@@ -265,7 +269,10 @@ function Test-ArcConnection {
                 }
             } -ErrorAction SilentlyContinue
             
-            if ($arcStatus.Installed -and $arcStatus.Status -eq "Connected") {
+            if ($null -eq $arcStatus) {
+                Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" -Status "FAILED" -Message "The Arc agent status could not be read from the node"
+            }
+            elseif ($arcStatus.Installed -and $arcStatus.Status -eq "Connected") {
                 Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
                     -Status "PASSED" -Message "Arc agent connected" `
                     -Details $arcStatus
@@ -289,8 +296,8 @@ function Test-ArcConnection {
 
 function Export-Results {
     # Calculate overall status
-    $failedCount = ($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
-    $warningCount = ($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
+    $failedCount = @($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
+    $warningCount = @($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
     
     if ($failedCount -gt 0) {
         $ValidationResults.OverallStatus = "FAILED"
@@ -310,7 +317,7 @@ function Export-Results {
                 "cluster-health-$(Get-Date -Format 'yyyyMMdd-HHmmss').json" 
             }
             $ValidationResults | ConvertTo-Json -Depth 10 | Set-Content -Path $jsonPath
-            Write-Log -Message "Report saved to: $jsonPath" -Level "INFO"
+            Write-Line -Message "Report saved to: $jsonPath" -Level "INFO"
         }
         "HTML" {
             # Generate HTML report
@@ -331,16 +338,16 @@ function Export-Results {
             }
             $html += "</table></body></html>"
             $html | Set-Content -Path $htmlPath
-            Write-Log -Message "Report saved to: $htmlPath" -Level "INFO"
+            Write-Line -Message "Report saved to: $htmlPath" -Level "INFO"
         }
     }
 }
 
 # Main execution
 try {
-    Write-Log -Message "Starting Cluster Health Validation" -Level "INFO"
-    Write-Log -Message "Cluster: $ClusterName" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
+    Write-Line -Message "Starting Cluster Health Validation" -Level "INFO"
+    Write-Line -Message "Cluster: $ClusterName" -Level "INFO"
+    Write-Line -Message "========================================" -Level "INFO"
     
     # Run all validation checks
     $clusterOk = Test-ClusterService
@@ -358,31 +365,31 @@ try {
     
     # Summary
     Write-Host ""
-    Write-Log -Message "========================================" -Level "INFO"
+    Write-Line -Message "========================================" -Level "INFO"
     
-    $passed = ($ValidationResults.Checks | Where-Object { $_.Status -eq "PASSED" }).Count
-    $failed = ($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
-    $warnings = ($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
+    $passed = @($ValidationResults.Checks | Where-Object { $_.Status -eq "PASSED" }).Count
+    $failed = @($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
+    $warnings = @($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
     
-    Write-Log -Message "Validation Complete" -Level "INFO"
+    Write-Line -Message "Validation Complete" -Level "INFO"
     Write-Host "  Passed:   $passed" -ForegroundColor Green
     Write-Host "  Warnings: $warnings" -ForegroundColor Yellow
     Write-Host "  Failed:   $failed" -ForegroundColor Red
     
     if ($failed -gt 0) {
-        Write-Log -Message "Overall Status: FAILED" -Level "ERROR"
+        Write-Line -Message "Overall Status: FAILED" -Level "ERROR"
         exit 1
     }
     elseif ($warnings -gt 0) {
-        Write-Log -Message "Overall Status: WARNING" -Level "WARN"
+        Write-Line -Message "Overall Status: WARNING" -Level "WARN"
         exit 0
     }
     else {
-        Write-Log -Message "Overall Status: PASSED" -Level "SUCCESS"
+        Write-Line -Message "Overall Status: PASSED" -Level "SUCCESS"
         exit 0
     }
 }
 catch {
-    Write-Log -Message "Validation failed: $_" -Level "ERROR"
+    Write-Line -Message "Validation failed: $_" -Level "ERROR"
     exit 1
 }
