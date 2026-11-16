@@ -14,7 +14,15 @@
     operations.monitoring.data_collection_rule (the rule must be in operations.monitoring.workspace_resource_group). Then run this script. When the rule
     does not exist the script stops with exit 1 and says so.
 
-    When the rule exists, the script associates it with the Arc machine (Microsoft.HybridCompute/machines) of every entry of nodes[], in
+    When the rule exists, the script first checks it, read only, against what Learn lists for Insights (Monitor a single Azure Local system with
+    Insights, Data collection rules): the performance counters Memory\Available Bytes, Network Interface\Bytes Total/sec, Processor\% Processor
+    Time, RDMA Activity\RDMA Inbound Bytes/sec and RDMA Activity\RDMA Outbound Bytes/sec (any instance), the event log channels
+    Microsoft-Windows-Health/Operational and Microsoft-Windows-SDDC-Management/Operational, and a Log Analytics destination, which must be the
+    workspace operations.monitoring.log_analytics_workspace in operations.monitoring.workspace_resource_group when that key is set. When something
+    is missing the script stops with exit 1, lists it and associates nothing: Learn's way back is the portal (the instance, Capabilities,
+    Insights, Update). The rule is never changed.
+
+    Then the script associates the rule with the Arc machine (Microsoft.HybridCompute/machines) of every entry of nodes[], in
     azure.resource_group, with the association name <machine>-dataCollectionRuleAssociations that the Learn policy uses
     (az monitor data-collection rule association create).
 
@@ -32,6 +40,7 @@
         operations.monitoring.enabled                               false means: do nothing
         operations.monitoring.workspace_resource_group              the resource group of the rule
         operations.monitoring.data_collection_rule                  the name of the existing rule
+        operations.monitoring.log_analytics_workspace               optional: the workspace the rule must send to
 
     Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
     a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
@@ -41,7 +50,7 @@
 
     Exit codes: 0 every node is associated (created now, already there, planned under -WhatIf) or monitoring is switched off in the file; 1 an Azure call
     failed or a precondition failed (az missing, not signed in, wrong tenant, extension stack-hci missing, no Azure Monitor Agent on the instance, the rule
-    does not exist, an association failed or is in conflict); 2 a value in the file is missing or not usable.
+    does not exist or lacks what Insights needs, an association failed or is in conflict); 2 a value in the file is missing or not usable.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
@@ -74,6 +83,17 @@ $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
 $AgentExtensionName = 'AzureMonitorWindowsAgent'
 $ArcSettingName = 'default'
 
+# Fixed by Microsoft (Learn, Monitor a single Azure Local system with Insights, Data collection rules): what the rule of Insights collects. A
+# counter matches with any instance, with or without the leading backslash.
+$InsightsCounters = [ordered]@{
+    'Memory\Available Bytes'                 = '^\\?Memory(\([^)]*\))?\\Available Bytes$'
+    'Network Interface\Bytes Total/sec'      = '^\\?Network Interface(\([^)]*\))?\\Bytes Total/sec$'
+    'Processor(_Total)\% Processor Time'     = '^\\?Processor(\([^)]*\))?\\% Processor Time$'
+    'RDMA Activity\RDMA Inbound Bytes/sec'   = '^\\?RDMA Activity(\([^)]*\))?\\RDMA Inbound Bytes/sec$'
+    'RDMA Activity\RDMA Outbound Bytes/sec'  = '^\\?RDMA Activity(\([^)]*\))?\\RDMA Outbound Bytes/sec$'
+}
+$InsightsChannels = @('Microsoft-Windows-Health/Operational', 'Microsoft-Windows-SDDC-Management/Operational')
+
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
     if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
@@ -81,6 +101,29 @@ function Write-Line([string]$Text) {
 function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
 function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
 function Get-Text([string]$Path) { $v = Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path; if ($null -eq $v) { '' } else { ([string]$v).Trim() } }
+# A property of an object az returned, or $null when it has none (strict mode stops on a missing property).
+function Get-RuleField([object]$Object, [string]$Name) {
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($property) { $property.Value } else { $null }
+}
+# What the rule lacks for Insights, one line each; nothing when it has everything.
+function Get-InsightsRuleProblem([string[]]$Counters, [string[]]$Queries, [string[]]$Workspaces) {
+    foreach ($counter in $InsightsCounters.Keys) {
+        if (-not @($Counters | Where-Object { $_ -and $_.Trim() -match $InsightsCounters[$counter] })) { "the performance counter $counter is not collected" }
+    }
+    foreach ($channel in $InsightsChannels) {
+        if (-not @($Queries | Where-Object { $_ -and $_.Trim().StartsWith("$channel!", [StringComparison]::OrdinalIgnoreCase) })) { "the event log channel $channel is not collected" }
+    }
+    $sent = @($Workspaces | Where-Object { $_ })
+    if ($sent.Count -eq 0) { 'it sends to no Log Analytics workspace' }
+    elseif ($workspaceName) {
+        $suffix = "/resourceGroups/$group/providers/Microsoft.OperationalInsights/workspaces/$workspaceName"
+        if (-not @($sent | Where-Object { $_.TrimEnd('/').EndsWith($suffix, [StringComparison]::OrdinalIgnoreCase) })) {
+            "it sends to $(($sent | ForEach-Object { $_.Split('/')[-1] }) -join ', '), not to the workspace '$workspaceName' in '$group' (operations.monitoring.log_analytics_workspace)"
+        }
+    }
+}
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
@@ -112,6 +155,7 @@ if ((Get-Text 'operations.monitoring.enabled').ToLowerInvariant() -eq 'false') {
 }
 $group = Get-Text 'operations.monitoring.workspace_resource_group'
 $ruleName = Get-Text 'operations.monitoring.data_collection_rule'
+$workspaceName = Get-Text 'operations.monitoring.log_analytics_workspace'
 if (-not $group) { Exit-InputProblem 'operations.monitoring.workspace_resource_group is missing. It is the resource group of the data collection rule.' }
 if (-not $ruleName) { Exit-InputProblem 'operations.monitoring.data_collection_rule is missing. Name the data collection rule that Insights uses (create it once in the Azure portal).' }
 if ($ruleName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { Exit-InputProblem "operations.monitoring.data_collection_rule '$ruleName' is not a valid name (1 to 64 letters, digits, . _ -; starts with a letter or digit)." }
@@ -156,6 +200,17 @@ try {
         Exit-Failed "The data collection rule '$ruleName' does not exist in '$group'. Microsoft Learn documents no way to create the Insights rule from a script, and says not to build your own: enable Insights once for the instance '$clusterName' in the Azure portal (the instance, Capabilities, Insights, Get Started), choose or name the rule so that it matches operations.monitoring.data_collection_rule and sits in '$group', then run this script again."
     }
     $ruleId = if ($rule.PSObject.Properties['id'] -and $rule.id) { [string]$rule.id } else { "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.Insights/dataCollectionRules/$ruleName" }
+
+    # the rule must collect what Insights needs (read only; the rule is never changed)
+    $sources = Get-RuleField $rule 'dataSources'
+    $counters = @(foreach ($source in @(Get-RuleField $sources 'performanceCounters')) { foreach ($c in @(Get-RuleField $source 'counterSpecifiers')) { if ($c) { [string]$c } } })
+    $queries = @(foreach ($source in @(Get-RuleField $sources 'windowsEventLogs')) { foreach ($q in @(Get-RuleField $source 'xPathQueries')) { if ($q) { [string]$q } } })
+    $workspaces = @(foreach ($destination in @(Get-RuleField (Get-RuleField $rule 'destinations') 'logAnalytics')) { $w = Get-RuleField $destination 'workspaceResourceId'; if ($w) { [string]$w } })
+    $problems = @(Get-InsightsRuleProblem -Counters $counters -Queries $queries -Workspaces $workspaces)
+    if ($problems.Count -gt 0) {
+        Exit-Failed "The data collection rule '$ruleName' is not ready for Insights, so no node is associated: $($problems -join '; '). Microsoft Learn (Monitor a single Azure Local system with Insights, Data collection rules and Update Insights) lists what the rule collects; repair it in the Azure portal (the instance '$clusterName', Capabilities, Insights, Update) or name the rule Insights created in operations.monitoring.data_collection_rule, then run this script again. This script never changes a rule."
+    }
+    Write-Line "The rule '$ruleName' collects the performance counters and event log channels Insights needs."
     Write-Line "Insights data collection rule '$ruleName' in '$group', $($machines.Count) node(s)"
 
     # ---- the associations, one per node

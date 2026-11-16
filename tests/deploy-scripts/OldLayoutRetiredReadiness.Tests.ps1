@@ -64,9 +64,10 @@ Describe 'The scripts a schema 5 script replaces are gone' {
     It '<Path> is removed' -ForEach $script:RemovedOutside {
         Test-Path -LiteralPath (Join-Path $script:Repo $Path) | Should -BeFalse
     }
-    It 'the task folder of a removed script keeps its wrapper and its catalogue entry' -ForEach @($script:Removed | Where-Object { $_.Folder -ne 'common' }) {
+    It 'the task folder of a removed script keeps a script (the real one, or its placeholder) and its catalogue entry' -ForEach @($script:Removed | Where-Object { $_.Folder -ne 'common' }) {
+        # A placeholder goes once a real script of the folder does the task (task 01 of the Active Directory phase: Set-ADConfiguration.ps1).
         $taskDirectory = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $Folder.Replace('/', [IO.Path]::DirectorySeparatorChar))
-        @(Get-ChildItem -LiteralPath $taskDirectory -Filter '*-Orchestrated.ps1').Count | Should -BeGreaterThan 0
+        @(Get-ChildItem -LiteralPath $taskDirectory -Filter '*.ps1').Count | Should -BeGreaterThan 0
         $task = $Folder -replace '/powershell$', ''
         $catalogue = Import-PowerShellDataFile -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'TaskCatalogue.psd1'))
         @($catalogue.Tasks | Where-Object { $_.Path -eq $task }).Count | Should -Be 1
@@ -115,13 +116,13 @@ Describe 'No script of these folders uses the old layout' {
 }
 
 Describe 'The placeholders of scripts/deploy 03, 05 and 06 take -InfrastructureFile' {
-    It 'finds the placeholders (42 of them when this was written)' {
+    It 'finds the placeholders (42 of them when this was written; 27 after K2 batch 3 retired four whose task a real script does)' {
         $count = 0
         foreach ($area in '03-onprem-readiness', '05-operational-foundations', '06-testing-validation') {
             $count += @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $area)) -Recurse -File -Filter '*.ps1' |
                     Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'Invoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)\b' }).Count
         }
-        $count | Should -BeGreaterThan 30
+        $count | Should -BeGreaterThan 20
     }
     It '<Name> takes a mandatory -InfrastructureFile and has no -ConfigPath, -Credential or -TargetNode' -ForEach $script:Placeholders {
         $text = Get-Content -LiteralPath $Path -Raw

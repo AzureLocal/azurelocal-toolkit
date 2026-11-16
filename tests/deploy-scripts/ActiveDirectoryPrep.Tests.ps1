@@ -23,6 +23,7 @@ BeforeAll {
     Import-Module powershell-yaml
 
     function Get-ADOrganizationalUnit { [CmdletBinding()] param([string]$Filter, [string]$Server, [pscredential]$Credential) }
+    function New-ADOrganizationalUnit { [CmdletBinding()] param([string]$Name, [string]$Path, [string]$Server, [pscredential]$Credential) }
     function Get-ADUser { [CmdletBinding()] param([string]$Filter, [string]$Server, [pscredential]$Credential) }
     function Get-ADGroup { [CmdletBinding()] param([string]$Filter, [string]$Server, [pscredential]$Credential) }
     function Get-ADComputer { [CmdletBinding()] param([string]$Filter, [string]$Server, [pscredential]$Credential) }
@@ -55,6 +56,7 @@ BeforeAll {
     }
     function Reset-Directory {
         $global:AzlAdOuExists = $false
+        $global:AzlAdParentOus = @('OU=AzureLocal,DC=improbability,DC=cloud')   # other OUs that exist (the parent of the OU of the file)
         $global:AzlAdUsers = @()          # sAMAccountNames that exist
         $global:AzlAdGroupsExisting = @()
         $global:AzlAdComputersExisting = @()
@@ -74,13 +76,18 @@ BeforeAll {
 
 Describe 'the Active Directory tasks (mocked directory)' {
     AfterAll {
-        Remove-Variable -Name AzlAdOu, AzlAdOuExists, AzlAdUsers, AzlAdGroupsExisting, AzlAdComputersExisting, AzlAdCalls, AzlAdFilters -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzlAdOu, AzlAdOuExists, AzlAdParentOus, AzlAdUsers, AzlAdGroupsExisting, AzlAdComputersExisting, AzlAdCalls, AzlAdFilters -Scope Global -ErrorAction SilentlyContinue
         Remove-Item Env:AZL_TEST_LCM_PW, Env:AZL_TEST_JOIN_PW -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
         Reset-Directory
-        Mock Get-ADOrganizationalUnit { $global:AzlAdFilters.Add($Filter); if ($global:AzlAdOuExists) { [pscustomobject]@{ DistinguishedName = $global:AzlAdOu } } }
+        Mock Get-ADOrganizationalUnit {
+            $global:AzlAdFilters.Add($Filter)
+            $dn = if ($Filter -match "^DistinguishedName -eq '(?<dn>.*)'$") { $Matches['dn'].Replace("''", "'") } else { '' }
+            if (($global:AzlAdOuExists -and $dn -eq $global:AzlAdOu) -or $global:AzlAdParentOus -contains $dn) { [pscustomobject]@{ DistinguishedName = $dn } }
+        }
+        Mock New-ADOrganizationalUnit { $global:AzlAdCalls.Add([pscustomobject]@{ Cmd = 'ou'; Name = $Name; Path = $Path; Server = $Server }) }
         Mock Get-ADUser { $global:AzlAdFilters.Add($Filter); $n = if ($Filter -match "'(?<n>[^']+)'") { $Matches['n'] } else { '' }; if ($global:AzlAdUsers -contains $n) { [pscustomobject]@{ SamAccountName = $n } } }
         Mock Get-ADGroup { $n = if ($Filter -match "'(?<n>[^']+)'") { $Matches['n'] } else { '' }; if ($global:AzlAdGroupsExisting -contains $n) { [pscustomobject]@{ Name = $n } } }
         Mock Get-ADComputer { $n = if ($Filter -match "'(?<n>[^']+)'") { $Matches['n'] } else { '' }; if ($global:AzlAdComputersExisting -contains $n) { [pscustomobject]@{ Name = $n } } }
@@ -180,6 +187,125 @@ Describe 'the Active Directory tasks (mocked directory)' {
             $r.ExitCode | Should -Be 2
             $r.Text | Should -Not -Match ([regex]::Escape($secret))
             $global:AzlAdCalls.Count | Should -Be 0
+        }
+
+        It 'stops with exit code 1, names the missing parent OU and sends nothing when create_parent_ous is not set' {
+            $global:AzlAdParentOus = @()
+            $r = Invoke-Tool $script:Prep (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match ([regex]::Escape('OU=AzureLocal,DC=improbability,DC=cloud'))
+            $r.Text | Should -Match 'create_parent_ous'
+            $global:AzlAdCalls.Count | Should -Be 0
+            # the same with -WhatIf: the plan says the run would fail
+            (Invoke-Tool $script:Prep (New-InfraFile) -DryRun).ExitCode | Should -Be 1
+            $global:AzlAdCalls.Count | Should -Be 0
+        }
+
+        It 'reads the parent OUs from the domain down and stops at the first missing one' {
+            $global:AzlAdOu = 'OU=iic-azl-01,OU=Clusters,OU=Servers,DC=improbability,DC=cloud'
+            try {
+                $global:AzlAdParentOus = @('OU=Servers,DC=improbability,DC=cloud')
+                $r = Invoke-Tool $script:Prep (New-InfraFile)
+                $r.ExitCode | Should -Be 1
+                @($r.Rows | Where-Object Action -EQ 'Failed' | ForEach-Object Item) | Should -Be 'parent OU OU=Clusters,OU=Servers,DC=improbability,DC=cloud'
+                $filters = @($global:AzlAdFilters)
+                $top = [Array]::IndexOf($filters, "DistinguishedName -eq 'OU=Servers,DC=improbability,DC=cloud'")
+                $next = [Array]::IndexOf($filters, "DistinguishedName -eq 'OU=Clusters,OU=Servers,DC=improbability,DC=cloud'")
+                $top | Should -BeGreaterOrEqual 0
+                $next | Should -BeGreaterThan $top
+            }
+            finally { $global:AzlAdOu = 'OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud' }
+        }
+
+        It 'creates the missing parent OUs top-down, then runs Microsoft''s cmdlet, when create_parent_ous is true' {
+            $global:AzlAdOu = 'OU=iic-azl-01,OU=Clusters,OU=Servers,DC=improbability,DC=cloud'
+            try {
+                $global:AzlAdParentOus = @()
+                $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true })
+                $r.ExitCode | Should -Be 0 -Because $r.Text
+                $ous = @($global:AzlAdCalls | Where-Object Cmd -EQ 'ou')
+                @($ous.Name) | Should -Be @('Servers', 'Clusters')
+                @($ous.Path) | Should -Be @('DC=improbability,DC=cloud', 'OU=Servers,DC=improbability,DC=cloud')
+                @($ous.Server | Select-Object -Unique) | Should -Be 'improbability.cloud'
+                @($global:AzlAdCalls | Where-Object Cmd -EQ 'prep').Count | Should -Be 1
+                $global:AzlAdCalls[-1].Cmd | Should -Be 'prep'
+                @($r.Rows | Where-Object Action -EQ 'Created').Count | Should -Be 4
+            }
+            finally { $global:AzlAdOu = 'OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud' }
+        }
+
+        It 'creates only the parent OUs that are missing and never touches one that exists' {
+            $global:AzlAdOu = 'OU=iic-azl-01,OU=Clusters,OU=Servers,DC=improbability,DC=cloud'
+            try {
+                $global:AzlAdParentOus = @('OU=Servers,DC=improbability,DC=cloud')
+                $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true })
+                $r.ExitCode | Should -Be 0 -Because $r.Text
+                @($global:AzlAdCalls | Where-Object Cmd -EQ 'ou').Name | Should -Be 'Clusters'
+            }
+            finally { $global:AzlAdOu = 'OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud' }
+        }
+
+        It 'plans the parent OUs under -WhatIf and creates nothing' {
+            $global:AzlAdParentOus = @()
+            $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true }) -DryRun
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $global:AzlAdCalls.Count | Should -Be 0
+            ($r.Rows | Where-Object Item -Like 'parent OU*').Action | Should -Be 'WouldCreate'
+            @($r.Rows | Where-Object Action -EQ 'WouldCreate').Count | Should -Be 3
+        }
+
+        It 'stops with exit code 1 and does not run Microsoft''s cmdlet when a parent OU cannot be created' {
+            $global:AzlAdParentOus = @()
+            Mock New-ADOrganizationalUnit { throw 'Access is denied' }
+            $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true })
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match 'Access is denied'
+            @($global:AzlAdCalls | Where-Object Cmd -EQ 'prep').Count | Should -Be 0
+        }
+
+        It 'does not read the parent OUs when the OU and the user exist' {
+            $global:AzlAdOuExists = $true; $global:AzlAdUsers = @('lcm-iic-azl-01'); $global:AzlAdParentOus = @()
+            $r = Invoke-Tool $script:Prep (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            @($global:AzlAdFilters | Where-Object { $_ -match 'OU=AzureLocal,DC' -and $_ -notmatch 'iic-azl-01' }).Count | Should -Be 0
+        }
+
+        It 'stops with exit code 2 for <Why>' -ForEach @(
+            @{ Why = 'an OU inside a container'; Directory = @{ ou_path = 'OU=iic-azl-01,CN=Computers,DC=improbability,DC=cloud' } }
+            @{ Why = 'a create_parent_ous that is not true or false'; Directory = @{ create_parent_ous = 'maybe' } }
+        ) {
+            $r = Invoke-Tool $script:Prep (New-InfraFile -Directory $Directory)
+            $r.ExitCode | Should -Be 2 -Because $Why
+            $global:AzlAdCalls.Count | Should -Be 0
+            Should -Invoke Get-ADOrganizationalUnit -Times 0 -Exactly
+        }
+
+        It 'creates a parent OU whose name has an escaped comma with the plain name' {
+            $global:AzlAdOu = 'OU=iic-azl-01,OU=Azure\, Local,DC=improbability,DC=cloud'
+            try {
+                $global:AzlAdParentOus = @()
+                $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true })
+                $r.ExitCode | Should -Be 0 -Because $r.Text
+                $ou = @($global:AzlAdCalls | Where-Object Cmd -EQ 'ou')
+                $ou.Count | Should -Be 1
+                $ou[0].Name | Should -Be 'Azure, Local'
+                $ou[0].Path | Should -Be 'DC=improbability,DC=cloud'
+            }
+            finally { $global:AzlAdOu = 'OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud' }
+        }
+
+        It 'splits after a name that ends with an escaped backslash (second-model finding)' {
+            $global:AzlAdOu = 'OU=iic-azl-01,OU=Tail\\,DC=improbability,DC=cloud'
+            try {
+                $global:AzlAdParentOus = @()
+                $r = Invoke-Tool $script:Prep (New-InfraFile -Directory @{ create_parent_ous = $true })
+                $r.ExitCode | Should -Be 0 -Because $r.Text
+                $ou = @($global:AzlAdCalls | Where-Object Cmd -EQ 'ou')
+                $ou.Count | Should -Be 1
+                $ou[0].Name | Should -Be 'Tail\'
+                $ou[0].Path | Should -Be 'DC=improbability,DC=cloud'
+            }
+            finally { $global:AzlAdOu = 'OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud' }
         }
 
         It 'stops with exit code 1 when the Microsoft module is missing' {

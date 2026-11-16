@@ -16,10 +16,10 @@ Registry version 5.0.63. Sources of the scan: toolkit (this repository), sonar d
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 755 | 506 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4797 | 4589 | 0 | 0 | 208 | 0 |
+| Keys of infrastructure.yml | 756 | 507 | 85 | 5 | 157 | 2 |
+| Owned by a tool (`tools.*`) | 4789 | 4581 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6925 | 5097 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6918 | 5090 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 347 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 348 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -54,7 +54,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `site` | 5 |  | 3 | 1 |  |  |  | 1 |
 | `environment` | 4 |  |  |  |  |  |  |  |
 | `tags` |  |  |  |  |  |  |  | 1 |
-| `identity` | 11 | 3 |  | 13 | 14 | 9 | 4 | 19 |
+| `identity` | 11 | 3 |  | 13 | 14 | 9 | 4 | 20 |
 | `networking` | 22 |  | 9 | 10 | 24 | 20 |  | 37 |
 | `security` | 1 |  |  |  |  | 11 |  | 7 |
 | `operations` | 13 |  |  |  |  |  |  | 13 |
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1101 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1093 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 91 | 0 | 891 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 231 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 232 | 0 | 0 |
 
 ### trailwright
 
@@ -305,12 +305,12 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (231):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (232):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 3 keys
 - `hardware`: 14 keys
-- `identity`: 19 keys
+- `identity`: 20 keys
 - `landing_zone`: 70 keys
 - `network_devices`: 16 keys
 - `networking`: 27 keys
@@ -1296,6 +1296,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `identity.active_directory.use_gmsa` | boolean, default `false` | operator; default | deployment | pre-cluster-verification | OS ~DomainJoin | read |
 | `identity.active_directory.dns_secure_dynamic_updates` | boolean | operator | deployment | pre-cluster-verification | OS ~DomainJoin | read |
 | `identity.active_directory.precreate_computer_objects` | boolean, default `false` | operator; default | deployment; ansible | toolkit-legacy-scripts | OS ~DomainJoin | read |
+| `identity.active_directory.create_parent_ous` | boolean, default `false` | operator; default | deployment | toolkit-legacy-scripts | OS ~DomainJoin | read |
 | `identity.active_directory.forest_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
 | `identity.active_directory.domain_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
 | `identity.active_directory.dns_forwarders` | array | operator | ansible |  | OS ~DomainJoin | placeholder |
@@ -1874,7 +1875,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 988 | 988 | 0 |
+| arm_deployment | parameters | 980 | 980 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

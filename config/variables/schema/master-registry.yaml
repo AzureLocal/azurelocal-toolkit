@@ -2377,6 +2377,14 @@ identity:
         since: "5.6.23"
         example: false
         used_by: [deployment, ansible]
+      create_parent_ous:
+        description: "Schema 5.6.28. Whether Set-ADConfiguration.ps1 creates the parent OUs of ou_path that are missing, from the domain down, before it runs New-HciAdObjectsPreCreation. Microsoft's cmdlet creates only the OU itself and stops when its parent does not exist; Microsoft Learn (Prepare Active Directory for Azure Local deployment, Considerations for large scale deployments) recommends one OU per instance under a single parent OU. A parent that exists is never changed, and no group policy setting is made on a parent it creates. Default false: a missing parent stops the script with exit code 1 and nothing is created."
+        type: boolean
+        required: false
+        default: false
+        since: "5.6.28"
+        example: false
+        used_by: [deployment]
       forest_functional_level:
         description: "Schema 5.6.28. Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry with role domain_controller and dc_promotion new_forest); ignored for a replica. WinThreshold is the Windows Server 2016 level: the highest a Windows Server 2022 domain controller supports and the lowest a new forest may have. Win2025 needs every domain controller on Windows Server 2025 (Microsoft Learn: Active Directory Domain Services functional levels, https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels)."
         type: string
@@ -12961,7 +12969,7 @@ operations:
         required: true
         example: true
       log_analytics_workspace:
-        description: "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it."
+        description: "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it: Enable-HciInsights.ps1 stops when the rule sends to no workspace of this name in operations.monitoring.workspace_resource_group."
         type: string
         used_by: [trailwright, terraform]
         required: false
@@ -12985,7 +12993,7 @@ operations:
         example: 30
         used_by: [terraform]
       data_collection_rule:
-        description: "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates."
+        description: "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group, checks (read only) that it collects what Microsoft Learn lists for Insights (the five performance counters and the event log channels Microsoft-Windows-Health/Operational and Microsoft-Windows-SDDC-Management/Operational) and sends to a Log Analytics workspace (operations.monitoring.log_analytics_workspace when set), and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates."
         type: string
         used_by: [trailwright]
         required: false
@@ -21741,20 +21749,13 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse/powershell/Invoke-Lighthouse-Orchestrated.ps1","description":"Invoke-Lighthouse-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse/powershell/Invoke-Lighthouse-Orchestrated.ps1","description":"Invoke-Lighthouse-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_01_ou_creation_pre_creation_artifacts_powershell_Invoke_ADConfiguration_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-ADConfiguration-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-ADConfiguration-Orchestrated.ps1","description":"Invoke-ADConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Invoke-ADConfiguration-Orchestrated.ps1","description":"Invoke-ADConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_01_ou_creation_pre_creation_artifacts_powershell_Set_ADConfiguration_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1"
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
-                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. Optional. The account that creates the objects. Without it the account that runs the script is used."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. Infrastructure file (no help text for this parameter)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. Credential (no help text for this parameter)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts/powershell/Set-ADConfiguration.ps1","description":"Set-ADConfiguration.ps1. Log path (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_02_security_groups_powershell_Invoke_ADSecurityGroups_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-02-security-groups/powershell/Invoke-ADSecurityGroups-Orchestrated.ps1"
@@ -21776,13 +21777,6 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Invoke-DnsForwarding-Orchestrated.ps1","description":"Invoke-DnsForwarding-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Invoke-DnsForwarding-Orchestrated.ps1","description":"Invoke-DnsForwarding-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_04_service_admin_accounts_powershell_Invoke_ADAccounts_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/Invoke-ADAccounts-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/Invoke-ADAccounts-Orchestrated.ps1","description":"Invoke-ADAccounts-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/Invoke-ADAccounts-Orchestrated.ps1","description":"Invoke-ADAccounts-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_04_service_admin_accounts_powershell_New_ADAccounts_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-04-service-admin-accounts/powershell/New-ADAccounts.ps1"
@@ -22367,26 +22361,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/azurecli/Install-AzureMonitorAgent.azcli.ps1","description":"Install-AzureMonitorAgent.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/azurecli/Install-AzureMonitorAgent.azcli.ps1","description":"Install-AzureMonitorAgent.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_02_configure_azure_monitor_agent_powershell_Invoke_AzureMonitorIntegration_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Invoke-AzureMonitorIntegration-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Invoke-AzureMonitorIntegration-Orchestrated.ps1","description":"Invoke-AzureMonitorIntegration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Invoke-AzureMonitorIntegration-Orchestrated.ps1","description":"Invoke-AzureMonitorIntegration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_03_enable_hci_insights_azurecli_Enable_HciInsights_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/azurecli/Enable-HciInsights.azcli.ps1"
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/azurecli/Enable-HciInsights.azcli.ps1","description":"Enable-HciInsights.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/azurecli/Enable-HciInsights.azcli.ps1","description":"Enable-HciInsights.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_03_enable_hci_insights_powershell_Invoke_HciInsights_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Invoke-HciInsights-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Invoke-HciInsights-Orchestrated.ps1","description":"Invoke-HciInsights-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Invoke-HciInsights-Orchestrated.ps1","description":"Invoke-HciInsights-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_04_setup_alerting_azurecli_Deploy_ActionGroup_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/azurecli/Deploy-ActionGroup.azcli.ps1"
