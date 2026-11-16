@@ -23,6 +23,12 @@
         azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags
         storage.paths[]: name, path
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every storage path exists (created now, already there, planned under -WhatIf) or the file lists none; 1 a call or a precondition
     failed (az missing, not signed in, wrong tenant, extension missing, a creation failed); 2 a value in the file is missing or not usable. On exit
     code 2 nothing is sent to Azure.
@@ -55,11 +61,10 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -81,9 +86,8 @@ function Get-Prop($Object, [string[]]$Path) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -114,7 +118,7 @@ if ($rawTags -is [System.Collections.IDictionary]) {
     foreach ($k in $rawTags.Keys) {
         if ($null -eq $rawTags[$k]) { continue }
         $pair = "$k=$($rawTags[$k])"
-        if ($pair -match $UnsafeArgument) { Exit-InputProblem "The tag '$k' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+        $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "tags.$k" = $pair }); if ($problem) { Exit-InputProblem $problem }
         $tagArguments += $pair
     }
 }
@@ -143,6 +147,10 @@ foreach ($entry in $pathList) {
     if ($folder -match '^[A-Za-z]:\\ClusterStorage\\Infrastructure_\d+(\\|$)') { Exit-InputProblem "$at.path is on the infrastructure volume, which Microsoft reserves for Azure Local. Use a workload volume." }
     $plans.Add([pscustomobject]@{ Name = $name; Path = $folder })
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group; 'azure.location' = $location; 'azure.custom_location' = $customLocation; 'storage.paths path' = @($plans | ForEach-Object { $_.Path }) })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, then run az login --tenant <azure.tenant_id>. Or use New-StoragePath.ps1.' }

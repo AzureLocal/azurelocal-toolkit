@@ -22,6 +22,12 @@
         security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark: when the design turns the free Defender for
         Cloud level (or the benchmark assignment) off, that check is not run. Both are true when the key is absent (the registry default).
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 no check failed (warnings do not fail); 1 a Defender for Cloud check failed or a precondition failed (az missing, not signed in, wrong
     tenant, an Azure call failed); 2 a value of the file is missing or the file cannot be read.
 
@@ -52,6 +58,7 @@ $ErrorActionPreference = 'Stop'
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 # Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
@@ -60,8 +67,6 @@ $BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinition
 $SecurityProvider = 'Microsoft.Security'
 # The built-in role name Azure RBAC uses for full access.
 $OwnerRoleName = 'Owner'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Report([string]$Message, [string]$Level = 'INFO') {
     Write-Information -MessageData ('[{0:yyyy-MM-dd HH:mm:ss}] [{1}] {2}' -f (Get-Date), $Level, $Message) -InformationAction Continue
@@ -71,9 +76,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"

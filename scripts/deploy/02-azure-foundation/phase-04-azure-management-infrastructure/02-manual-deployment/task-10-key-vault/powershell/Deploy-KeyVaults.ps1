@@ -118,7 +118,7 @@ $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'az
 $location = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $environmentClass = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.environment_class')
 $rawVaults = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'key_vaults'
-$vaultEntries = @(@($rawVaults) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$vaultEntries = @(@($rawVaults) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne $rawVaults) { Exit-InputProblem 'An entry of key_vaults is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -139,8 +139,9 @@ $plan = foreach ($entry in $vaultEntries) {
     $retentionText = Get-Entry $entry 'soft_delete_retention_days'
     $retention = $DefaultRetentionDays
     if ($retentionText) {
-        if ($retentionText -notmatch '^\d+$' -or [int]$retentionText -lt $MinRetentionDays -or [int]$retentionText -gt $MaxRetentionDays) { Exit-InputProblem "key_vaults '$name': soft_delete_retention_days '$retentionText' is not a whole number from $MinRetentionDays to $MaxRetentionDays." }
-        $retention = [int]$retentionText
+        $retentionDays = 0
+        if ($retentionText -notmatch '^\d+$' -or -not [int]::TryParse($retentionText, [ref]$retentionDays) -or $retentionDays -lt $MinRetentionDays -or $retentionDays -gt $MaxRetentionDays) { Exit-InputProblem "key_vaults '$name': soft_delete_retention_days '$retentionText' is not a whole number from $MinRetentionDays to $MaxRetentionDays." }
+        $retention = $retentionDays
     }
     [pscustomobject]@{ Name = $name; SubscriptionId = $subscriptionId; ResourceGroup = $group; Purpose = (Get-Entry $entry 'purpose'); RetentionDays = $retention }
 }

@@ -31,6 +31,12 @@
         scenario.storage_architecture, scenario.connectivity
         operations.licensing.azure_hybrid_benefit
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 the benefit is Enabled (activated now, already there, planned under -WhatIf) or the file does not ask for it; 1 an Azure call failed or
     a precondition failed (az missing, not signed in, wrong tenant, extension stack-hci missing, the instance not found, the activation failed); 2 a
     value in the file is missing or not usable, or the scenario cannot use the benefit.
@@ -58,13 +64,12 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
 # The Software Assurance intent that turns the benefit on (az stack-hci cluster extend-software-assurance-benefit --software-assurance-intent {Disable, Enable}).
 $EnableIntent = 'Enable'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -76,9 +81,8 @@ function Get-Text([string]$Path) { ([string](Get-AzlInfrastructureValue -Infrast
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -120,6 +124,10 @@ if (-not $group) { Exit-InputProblem 'azure.resource_group is missing. The Azure
 if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. It is the name of the Azure Local instance.' }
 if ($architecture -in 'san', 'hybrid') { Exit-InputProblem "scenario.storage_architecture is $architecture. Azure Hybrid Benefit for Azure Local supports only hyperconverged instances with no external storage (Microsoft Learn). Set operations.licensing.azure_hybrid_benefit to false." }
 if ($connectivity -eq 'disconnected') { Exit-InputProblem 'scenario.connectivity is disconnected. Azure Hybrid Benefit for Azure Local supports only instances with cloud connected management (Microsoft Learn).' }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group; 'cluster.name' = $clusterName })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Enable-AzureHybridBenefit.ps1.' }

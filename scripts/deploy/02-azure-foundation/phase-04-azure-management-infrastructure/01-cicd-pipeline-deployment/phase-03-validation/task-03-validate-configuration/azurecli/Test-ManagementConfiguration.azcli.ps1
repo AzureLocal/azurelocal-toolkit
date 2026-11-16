@@ -33,6 +33,12 @@
         key_vaults[].name, .subscription_id, .resource_group, .soft_delete_retention_days
         operations.monitoring.enabled, .log_analytics_workspace, .workspace_resource_group, .retention_days
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every check passed; 1 a check failed, an az call failed or a precondition failed (az missing, not signed in, wrong tenant); 2 the
     file describes nothing to check, or a value is not usable.
 
@@ -58,6 +64,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = '(?i)NotFound|not found|could not be found|does not exist|\b404\b'
@@ -78,6 +85,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -92,7 +101,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 function Get-List([string]$Path) {
     $raw = Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path
-    @(@($raw) | Where-Object { $_ -is [System.Collections.IDictionary] })
+    @(@($raw) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($raw)) { Exit-InputProblem "An entry of $Path is not a map (names with their settings)." } })
 }
 
 $tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
@@ -187,6 +196,18 @@ if ($tags.Count -gt 0) {
 
 if ($vaults.Count -eq 0 -and -not $workspace -and $diagnosticTargets.Count -eq 0 -and $tagGroups.Count -eq 0) {
     Exit-InputProblem 'The file describes nothing to check: list key_vaults, operations.monitoring.log_analytics_workspace, landing_zone.connectivity or tags with a resource group.'
+}
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{
+        'key_vaults name' = @($vaults | ForEach-Object { $_.Name }); 'key_vaults resource_group' = @($vaults | ForEach-Object { $_.ResourceGroup })
+        'operations.monitoring.log_analytics_workspace' = $(if ($workspace) { $workspace.Name } else { '' }); 'operations.monitoring.workspace_resource_group' = $(if ($workspace) { $workspace.ResourceGroup } else { '' })
+        'the resource groups checked for tags' = @($tagGroups | ForEach-Object { $_.Name })
+    })
+if ($problem) { Exit-InputProblem $problem }
+foreach ($target in $diagnosticTargets) {
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "the arguments that read the $($target.Label) '$($target.Name)'" = $target.Show })
+    if ($problem) { Exit-InputProblem $problem }
 }
 
 # ---- preconditions (read only)

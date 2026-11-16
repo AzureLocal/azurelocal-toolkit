@@ -179,10 +179,12 @@ function Get-AzlArmParameterHash {
     .SYNOPSIS
         The first 12 hex characters of the SHA-256 of the canonical parameter JSON, without deploymentMode. Secrets are
         references, so a rotated secret does not change the hash. The same parameters give the same hash on any machine.
+        With -TemplateIdentity (the address of the template, or "sha256:" and the hash of a local template file) the identity of the template is part of the
+        hash: a changed template gives another deployment name, so it is never taken for the earlier deployment that succeeded with the old template.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][object]$ParameterSet)
+    param([Parameter(Mandatory)][object]$ParameterSet, [string]$TemplateIdentity = '')
     # Get-AzlArmDisplayParameter: a secret that holds a value (it should not) is masked, so a value never reaches the hash input.
     $safe = Get-AzlArmDisplayParameter -Parameters $ParameterSet.Parameters
     $canonical = [ordered]@{}
@@ -191,6 +193,7 @@ function Get-AzlArmParameterHash {
         $canonical[$k] = $safe[$k]
     }
     $json = ConvertTo-Json -InputObject $canonical -Depth 30 -Compress
+    if ($TemplateIdentity) { $json = "$json|template:$TemplateIdentity" }
     $bytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($json))
     return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant().Substring(0, 12)
 }
@@ -2306,7 +2309,9 @@ function Invoke-AzlArmDeploymentRun {
         if ($offline) { $problems = @($problems | Where-Object { $_ -notmatch '^(infraVolLunId|infraPerfLunId|hciResourceProviderObjectID) ' }) }
         if ($problems) { Stop-AzlArmInput ("$($problems.Count) problem(s) in the parameter set:`n" + ($problems -join "`n")) }
         $run.ParameterSet = $set
-        $hash = Get-AzlArmParameterHash -ParameterSet $set
+        # The identity of the template is part of the deployment name: a changed template is not taken for the deployment that succeeded with the old one.
+        $templateIdentity = if ($TemplateFile -and (Test-Path -LiteralPath $TemplateFile -PathType Leaf)) { 'sha256:' + (Get-FileHash -LiteralPath $TemplateFile -Algorithm SHA256).Hash } else { [string]$template.Uri }
+        $hash = Get-AzlArmParameterHash -ParameterSet $set -TemplateIdentity $templateIdentity
         $run.ValidateName = "$($run.Settings.deploymentNamePrefix)-validate-$hash"; $run.DeployName = "$($run.Settings.deploymentNamePrefix)-deploy-$hash"
         $report.parameterHash = $hash; $report.deploymentSettingsApiVersion = $set.DeploymentSettingsApiVersion
         $report.warnings = @($set.Warnings)

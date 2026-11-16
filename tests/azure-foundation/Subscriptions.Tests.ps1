@@ -112,6 +112,34 @@ Describe 'Deploy-Subscriptions.ps1' {
         }
     }
 
+    Context 'ids that are not a GUID, and entries that are not a map' {
+        It 'refuses an id that is not a GUID with exit code 2, and does not touch Azure' {
+            $r = Invoke-Deploy (New-InfraFile @((New-Sub 'sub-a'), (New-Sub 'sub-existing' -Id 'not-a-guid' -Scope '')))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match "id 'not-a-guid' is not a GUID"
+            Should -Invoke Get-AzContext -Times 0 -Exactly
+        }
+
+        It 'refuses an entry that is not a map with exit code 2 (it is not skipped)' {
+            $r = Invoke-Deploy (New-InfraFile @((New-Sub 'sub-a'), 'sub-oops'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'entry of landing_zone.subscriptions is not a map'
+            Should -Invoke New-AzSubscriptionAlias -Times 0 -Exactly
+        }
+
+        It 'fails the row when the new alias comes back without a subscription id, and when an existing alias has none' {
+            Mock New-AzSubscriptionAlias { [pscustomobject]@{ AliasName = $AliasName; SubscriptionId = '' } }
+            $r = Invoke-Deploy (New-InfraFile @((New-Sub 'sub-a')))
+            $r.ExitCode | Should -Be 1
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match 'returned no subscription id'
+            Mock Get-AzSubscriptionAlias { [pscustomobject]@{ AliasName = $AliasName; SubscriptionId = '' } }
+            $r = Invoke-Deploy (New-InfraFile @((New-Sub 'sub-a')))
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match 'reports no subscription id yet'
+        }
+    }
+
     Context '-WhatIf' {
         It 'plans the subscription and creates nothing' {
             $r = Invoke-Deploy (New-InfraFile @((New-Sub 'sub-iic-management'))) -DryRun

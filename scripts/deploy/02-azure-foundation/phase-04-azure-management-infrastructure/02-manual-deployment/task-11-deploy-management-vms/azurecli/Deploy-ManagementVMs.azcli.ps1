@@ -24,7 +24,12 @@
     (the vault must be listed under key_vaults; you need Key Vault Secrets User on it); env://, file:// and command:// references go through
     the toolkit's secret resolver. The password is never written, logged, printed or returned, and an az error text that would hold it is cleaned
     before it is shown. "az vm create" takes the password as an argument, so it is on the command line of that one az process for the seconds the
-    call lasts. On Windows az is a batch file (az.cmd), which reads a percent sign in an argument as a variable: give the secret no percent sign.
+    call lasts.
+    On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and a double quote or a line break
+    breaks the argument. The script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, the
+    size, the user name, a tag key or value ...) that holds one of & | < > ^ % " or a line break. It refuses a password that holds one right after reading
+    it, before it creates the network interface (the message names the reference, never the password; create the secret again without these characters).
+    Every az call is checked again in the one function that starts az.
 
     The script reads Azure (read only) and writes only with "az network nic create" and "az vm create", behind -WhatIf. It does not sign in: run
     "az login --tenant <azure.tenant_id>" first. You need Virtual Machine Contributor and Network Contributor (or Contributor) on the resource
@@ -40,7 +45,8 @@
 
     Exit codes: 0 every machine exists (created now, already there, skipped because it is not an Azure machine, or planned under -WhatIf), or
     the file lists none; 1 an az call failed or a precondition failed (az missing, not signed in, wrong tenant, a secret could not
-    be read) or a creation failed; 2 a value in the file is missing or not usable.
+    be read) or a creation failed; 2 a value in the file is missing or not usable (a secret reference whose vault is not listed under key_vaults, a value or a
+    password with a character that az.cmd cannot carry).
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
@@ -70,6 +76,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecretAzureCli.psm1'))) -Force
 
@@ -98,6 +105,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -119,9 +128,9 @@ $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -P
 $rawMachines = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.virtual_machines'
 $machines = @(@($rawMachines) | Where-Object { $null -ne $_ })
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networks = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networks = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptions = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptions = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -160,7 +169,9 @@ foreach ($machine in $machines) {
     if (-not $OsImage.ContainsKey($os)) { Exit-InputProblem "$at.os '$os' is missing or not usable. Use one of: $(($OsImage.Keys | Sort-Object) -join ', ')." }
     if (-not $user) { Exit-InputProblem "$at.admin_username is missing for '$name'." }
     if (-not $reference) { Exit-InputProblem "$at.admin_password is missing for '$name'. It is a secret reference (for example keyvault://<vault>/<secret>), never the password." }
-    if (-not (Get-AzlSecretProvider -Reference $reference)) { Exit-InputProblem "$at.admin_password is not a secret reference (keyvault://, env://, file:// or command://). The password itself is never written to the file." }
+    # The reference is checked now, also under -WhatIf: the form, and that the vault is listed under key_vaults. Nothing is read.
+    try { Assert-AzlSecretReferenceAzureCli -Reference $reference -Infrastructure $infra }
+    catch { Exit-InputProblem "$at.admin_password is not usable: $($_.Exception.Message)" }
     $hostName = if (Get-Entry $machine 'hostname') { Get-Entry $machine 'hostname' } else { $name }
     if ($OsImage[$os].Windows -and $hostName -notmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,14}$') { Exit-InputProblem "${at}: the computer name '$hostName' of a Windows machine is 1 to 15 letters, digits and hyphens. Set hostname." }
 
@@ -177,11 +188,17 @@ foreach ($machine in $machines) {
     if (-not $networkGroup) { Exit-InputProblem "The network '$networkName' has no resource_group in landing_zone.networks." }
     $location = if (Get-Entry $network 'location') { Get-Entry $network 'location' } else { $defaultLocation }
     if (-not $location) { Exit-InputProblem "No region: the network '$networkName' has no location and azure.location is empty." }
+    # The values of this entry that go into an az argument, checked before any Azure call (also under -WhatIf). The address, the OS and the names that have their
+    # own pattern are checked above.
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "$at.hostname" = $hostName; "$at.network" = $networkName; "$at.subnet" = $subnetName; "$at.size" = $size; "$at.admin_username" = $user; "$at.resource_group" = $group; "the resource group of the network '$networkName'" = $networkGroup; "the location of the network '$networkName'" = $location })
+    if ($problem) { Exit-InputProblem $problem }
     $plan.Add([pscustomobject]@{
             Name = $name; Skip = ''; Role = (Get-Entry $machine 'role'); HostName = $hostName; Network = $networkName; NetworkGroup = $networkGroup; Subnet = $subnetName; PrivateIp = $ip; Size = $size; Os = $os
             User = $user; Reference = $reference; Group = $group; Location = $location; SubscriptionId = $subscriptionId
         })
 }
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $tags })
+if ($problem) { Exit-InputProblem $problem }
 if (@($plan | Where-Object { -not $_.Skip }).Count -eq 0) {
     Write-Line 'No machine of landing_zone.virtual_machines is for Azure: nothing to do.'
     exit 0
@@ -240,6 +257,12 @@ foreach ($item in $plan) {
             }
         }
         elseif ($PSCmdlet.ShouldProcess("virtual machine '$($item.Name)' in '$($item.Group)'", "Create ($($item.Size), $($item.Os), $($item.PrivateIp) in $($item.Subnet))")) {
+            # The password is read and checked first, so that a password az.cmd cannot carry (AzlExit 2: exit code 2) leaves no network interface behind.
+            try { $password = Get-SecretText $item.Reference }
+            catch {
+                if ($_.Exception.Data['AzlExit'] -eq 2) { Exit-InputProblem "$($item.Name): $($_.Exception.Message)" }
+                throw
+            }
             $vnet = Get-AzCliResource network vnet show --name $item.Network --resource-group $item.NetworkGroup --subscription $item.SubscriptionId
             if (-not $vnet) { throw "The virtual network '$($item.Network)' does not exist in '$($item.NetworkGroup)'. Create it first (Deploy-VirtualNetworks.ps1)." }
             $subnet = @(Get-JsonValue $vnet 'subnets') | Where-Object { $_ -and $_.name -eq $item.Subnet } | Select-Object -First 1
@@ -255,7 +278,6 @@ foreach ($item in $plan) {
             }
             else { Write-Line "[exists]  Network interface '$nicName' is reused." }
 
-            $password = Get-SecretText $item.Reference
             $image = $OsImage[$item.Os]
             $vmArgs = @('vm', 'create', '--name', $item.Name, '--resource-group', $item.Group, '--location', $item.Location, '--subscription', $item.SubscriptionId,
                 '--nics', $nicName, '--image', ('{0}:{1}:{2}:{3}' -f $image.Publisher, $image.Offer, $image.Sku, $ImageVersion), '--size', $item.Size,

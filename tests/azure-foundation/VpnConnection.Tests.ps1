@@ -142,6 +142,25 @@ Describe 'New-VpnConnection.ps1' {
             Should -Invoke New-AzVirtualNetworkGatewayConnection -Times 0 -Exactly
         }
 
+        It 'reports a different ASN or BGP peering address and a gateway without ranges, and does not create a connection to it (the row fails with the reason)' {
+            Mock Get-AzLocalNetworkGateway { [pscustomobject]@{ Name = $Name; GatewayIpAddress = '203.0.113.1'; LocalNetworkAddressSpace = [pscustomobject]@{ AddressPrefixes = @() }; BgpSettings = [pscustomobject]@{ Asn = 65099; BgpPeeringAddress = '192.0.2.1' } } }
+            $site = New-Site -Override @{ peer_asn = 65050; peer_bgp_address = '192.0.2.254' }
+            $r = Invoke-Conn (New-InfraFile -Sites @($site))
+            $r.ExitCode | Should -Be 1
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match "ASN '65099', the file says 65050"
+            $r.Rows[0].Detail | Should -Match "BGP peering address '192.0.2.1', the file says 192.0.2.254"
+            $r.Rows[0].Detail | Should -Match 'has no address ranges'
+            Should -Invoke New-AzVirtualNetworkGatewayConnection -Times 0 -Exactly
+        }
+
+        It 'refuses two connections that share a local network gateway, with exit code 2' {
+            $r = Invoke-Conn (New-InfraFile -Sites @((New-Site), (New-Site 'cn-iic-fra-01' @{ local_gateway_name = 'LGW-IIC-DAL-01'; peer_public_ip = '203.0.113.2' })))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'used by two connections'
+            Should -Invoke Get-AzContext -Times 0 -Exactly
+        }
+
         It 'creates only the connection when the local network gateway is there' {
             Mock Get-AzLocalNetworkGateway { [pscustomobject]@{ Name = $Name; GatewayIpAddress = '203.0.113.1'; LocalNetworkAddressSpace = [pscustomobject]@{ AddressPrefixes = @('192.0.2.0/24', '198.51.100.0/24') } } }
             $r = Invoke-Conn (New-InfraFile)

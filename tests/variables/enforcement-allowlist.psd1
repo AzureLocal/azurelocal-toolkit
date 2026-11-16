@@ -32,12 +32,6 @@
             Reason  = 'a word of the Azure CLI command (az network vnet-gateway), fixed by Microsoft; it names a command group, not a resource of the deployment'
         }
         @{
-            File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources/azurecli/Test-ManagementResources.azcli.ps1'
-            Rule    = 'B'
-            Literal = 'log-analytics'
-            Reason  = 'a word of the Azure CLI command (az monitor log-analytics), fixed by Microsoft; it names a command group, not a resource of the deployment'
-        }
-        @{
             File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity/azurecli/Test-ManagementConnectivity.azcli.ps1'
             Rule    = 'B'
             Literal = 'vnet-gateway'
@@ -48,12 +42,6 @@
             Rule    = 'B'
             Literal = 'vnet-gateway'
             Reason  = 'a word of the Azure CLI command (az network vnet-gateway), fixed by Microsoft; it names a command group, not a resource of the deployment'
-        }
-        @{
-            File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/azurecli/Test-ManagementConfiguration.azcli.ps1'
-            Rule    = 'B'
-            Literal = 'log-analytics'
-            Reason  = 'a word of the Azure CLI command (az monitor log-analytics), fixed by Microsoft; it names a command group, not a resource of the deployment'
         }
     )
 }

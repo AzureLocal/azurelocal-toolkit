@@ -24,6 +24,12 @@
         landing_zone.management_groups[].name           the management group id (the group must already exist)
         landing_zone.management_groups[].display_name   the display name it must have
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every group with a display_name has it (renamed now, already correct or planned under -WhatIf); 1 an Azure call failed, a
     precondition failed (az missing, not signed in, wrong tenant), a group does not exist or a rename failed; 2 the file lists no management group
     with a display name, or a value is not usable.
@@ -56,6 +62,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $GroupId = '^[A-Za-z0-9]([A-Za-z0-9._()-]{0,88}[A-Za-z0-9_()-])?$'
@@ -71,6 +78,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -85,7 +94,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
 $rawGroups = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.management_groups'
-$entries = @(@($rawGroups) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$entries = @(@($rawGroups) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawGroups)) { Exit-InputProblem 'An entry of landing_zone.management_groups is not a map (names with their settings).' } })
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($entries.Count -eq 0) { Exit-InputProblem 'landing_zone.management_groups is empty. List the management groups with their name and display_name.' }
@@ -101,6 +110,12 @@ $plan = @($plan)
 if (@($plan | Where-Object { -not $_.Skip }).Count -eq 0) { Exit-InputProblem 'No entry of landing_zone.management_groups has a display_name, so there is nothing to rename.' }
 $duplicate = @($plan | Group-Object { $_.Name.ToLowerInvariant() } | Where-Object Count -GT 1)
 if ($duplicate.Count) { Exit-InputProblem "The management group '$($duplicate[0].Group[0].Name)' appears more than once in landing_zone.management_groups." }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). The names are checked by their own pattern above.
+foreach ($item in $plan) {
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "landing_zone.management_groups '$($item.Name)' display_name" = $item.DisplayName })
+    if ($problem) { Exit-InputProblem $problem }
+}
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Set-ManagementGroupDisplayNames.ps1.' }

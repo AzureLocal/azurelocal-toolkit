@@ -27,6 +27,12 @@
         azure.tenant_id, azure.subscription_id, azure.resource_group
         nodes[].name, nodes[].arc_machine_name
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every machine is done or planned under -WhatIf; 1 a call or a precondition failed (az missing, not signed in, wrong tenant,
     extension missing, provider not registered in time, a machine not found or not Connected, a step failed); 2 a value in the file is missing or
     not usable. On exit code 2 nothing is sent to Azure.
@@ -75,11 +81,10 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 # Fixed by Microsoft (Learn: SSH access to Azure Arc-enabled servers; the OpenSSH extension for Windows): the provider, the extension and the REST version.
 $HybridConnectivityProvider = 'Microsoft.HybridConnectivity'
 $OpenSshExtensionName = 'WindowsOpenSSH'
@@ -108,9 +113,8 @@ function Get-Prop($Object, [string[]]$Path) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -146,8 +150,12 @@ if ($fileNodes.Count -eq 0) { Exit-InputProblem 'nodes[] is empty in the infrast
 if ($nodes.Count -eq 0) { Exit-InputProblem "-TargetNode matches no node of the file ($($TargetNode -join ', '))." }
 foreach ($node in $nodes) {
     if (-not $node.ArcMachineName) { Exit-InputProblem "Node '$($node.Name)' has no Arc machine name (nodes[].arc_machine_name)." }
-    if ($node.ArcMachineName -match $UnsafeArgument) { Exit-InputProblem "The Arc machine name of node '$($node.Name)' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "nodes[].arc_machine_name of '$($node.Name)'" = $node.ArcMachineName }); if ($problem) { Exit-InputProblem $problem }
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, then run az login --tenant <azure.tenant_id>.' }

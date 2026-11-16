@@ -689,6 +689,21 @@ Describe 'the security and licensing scripts' {
             (Invoke-K6 $script:Defender (New-K6Infra)).ExitCode | Should -Be 2
             Get-K6Change | Should -BeNullOrEmpty
         }
+        It 'stops with exit code 2 on a name conflict before it registers the provider or changes anything, when the provider is not registered' {
+            $global:K6Handlers['provider show'] = { param($o, $a) 'NotRegistered' }
+            $global:K6Handlers['policy assignment list'] = { param($o, $a) ('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/' + $global:K6Sub + '","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]') }
+            (Invoke-K6 $script:Defender (New-K6Infra)).ExitCode | Should -Be 2
+            Get-K6Change | Should -BeNullOrEmpty
+            (Get-K6Call 'provider register').Count | Should -Be 0
+            (Get-K6Call 'provider show').Count | Should -Be 0
+        }
+        It 'does not count an assignment of the same name at a management group above as a conflict: it is another scope' {
+            $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
+            $global:K6Handlers['policy assignment list'] = { param($o, $a) '[{"name":"SecurityCenterBuiltIn","scope":"/providers/Microsoft.Management/managementGroups/mg-example","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]' }
+            $r = Invoke-K6 $script:Defender (New-K6Infra)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            (Get-K6Call 'policy assignment create').Count | Should -Be 1
+        }
         It 'does nothing when the file turns it off, skips the benchmark and the contact when the file says so, and rejects a bad address' {
             (Invoke-K6 $script:Defender (New-K6Infra @{ 'security.defender_for_cloud.enabled' = $false })).ExitCode | Should -Be 0
             $global:K6Calls.Count | Should -Be 0

@@ -34,6 +34,12 @@
         landing_zone.network_security_groups[].rules[].name, .priority, .direction, .access, .protocol, .source_address_prefixes,
             .source_port_ranges, .destination_address_prefixes, .destination_port_ranges, .description
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every group is in place (created now, already there, rules added, planned under -WhatIf) or the file lists no group; 1 an az call
     failed or a precondition failed (az missing, not signed in, wrong tenant, a creation failed); 2 a value in the file is missing or
     not usable (a name or priority Azure refuses, two rules with the same priority and direction, a service tag mixed with addresses, a network
@@ -67,6 +73,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'ResourceNotFound|NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -109,6 +116,8 @@ function Test-PortList([string[]]$Values, [string]$At) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -128,12 +137,15 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 $tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
 $defaultLocation = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')).Trim()
 $rawGroups = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.network_security_groups'
-$groupEntries = @(@($rawGroups) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$groupEntries = @(@($rawGroups) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawGroups)) { Exit-InputProblem 'An entry of landing_zone.network_security_groups is not a map (names with their settings).' } })
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networkEntries = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networkEntries = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptionEntries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptionEntries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
+# The tags go into az arguments: refuse a key or a value that az.cmd cannot carry before any Azure call (also under -WhatIf).
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $rawTags })
+if ($problem) { Exit-InputProblem $problem }
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
 
@@ -211,7 +223,7 @@ foreach ($network in $networkEntries) {
     $ni++
     $at = "landing_zone.networks[$ni]"
     $rawSubnets = if ($network.Contains('subnets')) { $network['subnets'] } else { $null }
-    $wantedNames = @(@($rawSubnets) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { Get-Entry $_ 'network_security_group' } | Where-Object { $_ } | Select-Object -Unique)
+    $wantedNames = @(@($rawSubnets) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubnets)) { Exit-InputProblem 'An entry of landing_zone.network_security_groups[].subnets is not a map (names with their settings).' } } | ForEach-Object { Get-Entry $_ 'network_security_group' } | Where-Object { $_ } | Select-Object -Unique)
     foreach ($groupName in $wantedNames) {
         $definition = @($definitions | Where-Object { $_.Name -ieq $groupName }) | Select-Object -First 1
         if (-not $definition) { continue }
@@ -232,6 +244,18 @@ foreach ($network in $networkEntries) {
             $targets.Add([pscustomobject]@{ Key = $key; Definition = $definition; SubscriptionId = $subscriptionId; Subscription = $subscriptionName; ResourceGroup = $resourceGroup; Location = $location; Network = $networkName })
         }
     }
+}
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+foreach ($definition in $definitions) {
+    foreach ($rule in $definition.Rules) {
+        $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "the description of the rule '$($rule.Name)' of the group '$($definition.Name)'" = $rule.Description })
+        if ($problem) { Exit-InputProblem $problem }
+    }
+}
+foreach ($target in $targets) {
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "the resource group of the network '$($target.Network)'" = $target.ResourceGroup; "the location of the network '$($target.Network)'" = $target.Location })
+    if ($problem) { Exit-InputProblem $problem }
 }
 
 # ---- preconditions (read only)

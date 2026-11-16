@@ -27,6 +27,12 @@
         landing_zone.connectivity.vpn_gateway.site_to_site[].connection_name, .peer_bgp_address
         landing_zone.connectivity.bastion.name, .resource_group, .network
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every check passed; 1 a check failed, an az call failed or a precondition failed (az missing, not signed in, wrong tenant); 2 the
     file describes no connection and no Bastion host, or a value is not usable (a network the file does not list, a subscription without an id).
 
@@ -52,6 +58,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = '(?i)NotFound|not found|could not be found|does not exist|\b404\b'
@@ -70,6 +77,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -84,9 +93,9 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptionEntries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptionEntries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networkEntries = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networkEntries = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $gateway = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.vpn_gateway'
 $bastion = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.bastion'
 
@@ -110,7 +119,7 @@ $connections = [System.Collections.Generic.List[object]]::new()
 $gatewayName = ''; $gatewayGroup = ''; $gatewaySubscription = ''
 if ($gateway -is [System.Collections.IDictionary]) {
     $rawSites = if ($gateway.Contains('site_to_site')) { $gateway['site_to_site'] } else { $null }
-    $sites = @(@($rawSites) | Where-Object { $_ -is [System.Collections.IDictionary] })
+    $sites = @(@($rawSites) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSites)) { Exit-InputProblem 'An entry of landing_zone.connectivity.vpn_gateway.site_to_site is not a map (names with their settings).' } })
     if ($sites.Count -gt 0) {
         $gatewayName = Get-Entry $gateway 'name'
         if (-not $gatewayName) { Exit-InputProblem 'landing_zone.connectivity.vpn_gateway.name is missing.' }
@@ -134,6 +143,14 @@ if ($bastion -is [System.Collections.IDictionary] -and (Get-Entry $bastion 'name
     $bastionGroup = if (Get-Entry $bastion 'resource_group') { Get-Entry $bastion 'resource_group' } else { $place.ResourceGroup }
 }
 if ($connections.Count -eq 0 -and -not $bastionName) { Exit-InputProblem 'The file describes nothing to test: list landing_zone.connectivity.vpn_gateway.site_to_site or landing_zone.connectivity.bastion.' }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{
+        'landing_zone.connectivity.vpn_gateway.name' = $gatewayName; 'the resource group of the VPN gateway' = $gatewayGroup
+        'landing_zone.connectivity.vpn_gateway.site_to_site connection_name' = @($connections | ForEach-Object { $_.Name })
+        'landing_zone.connectivity.bastion.name' = $bastionName; 'the resource group of the Bastion host' = $bastionGroup
+    })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Invoke-TestConnectivity-Orchestrated.ps1.' }

@@ -18,6 +18,12 @@
         azure.tenant_id          the tenant the sign-in must belong to
         azure.subscription_id    the subscription that is checked
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every provider is Registered; 1 a provider is not Registered, an Azure call failed or a precondition failed (az missing, not signed
     in, wrong tenant); 2 a value in the file is missing or not usable.
 
@@ -44,6 +50,7 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 Import-Module ([IO.Path]::Combine($common, 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
@@ -58,6 +65,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()

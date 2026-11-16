@@ -79,7 +79,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$entries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$entries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne $rawSubscriptions) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -98,6 +98,7 @@ foreach ($entry in $entries) {
     if ($seen.ContainsKey($name.ToLowerInvariant())) { Exit-InputProblem "The subscription '$name' appears more than once in landing_zone.subscriptions." }
     $seen[$name.ToLowerInvariant()] = $true
     $id = if ($entry.Contains('id') -and $entry['id']) { ([string]$entry['id']).Trim() } else { '' }
+    if ($id -and $id -notmatch $Guid) { Exit-InputProblem "$at.id '$id' is not a GUID. It is the id of an existing subscription, or empty (or all zeros) for a subscription to create." }
     $hasId = $id -and $id -ne [guid]::Empty.ToString()
     $scope = if ($entry.Contains('billing_scope') -and $entry['billing_scope']) { ([string]$entry['billing_scope']).Trim() } else { '' }
     $workload = if ($entry.Contains('workload') -and $entry['workload']) { ([string]$entry['workload']).Trim() } else { 'Production' }
@@ -136,8 +137,9 @@ $results = foreach ($item in $plan) {
         catch { if ($_.Exception.Message -notmatch $NotFound) { throw } }
 
         if ($existing) {
-            $row.Action = 'AlreadyExists'
             $row.SubscriptionId = if ($existing.PSObject.Properties['SubscriptionId']) { [string]$existing.SubscriptionId } else { '' }
+            if ($row.SubscriptionId -notmatch $Guid) { throw "The alias '$($item.Name)' is already there, but it reports no subscription id yet ('$($row.SubscriptionId)'). Run the script again when its provisioning has finished." }
+            $row.Action = 'AlreadyExists'
             Write-Line "[exists]  The alias '$($item.Name)' is already there ($($row.SubscriptionId)), nothing created."
         }
         elseif ($PSCmdlet.ShouldProcess("subscription '$($item.Name)'", "Create ($($item.Workload))")) {
@@ -145,8 +147,9 @@ $results = foreach ($item in $plan) {
             if ($item.ManagementGroup) { $arguments.ManagementGroupId = $item.ManagementGroup }
             if ($tags.Count) { $arguments.Tag = $tags }
             $created = New-AzSubscriptionAlias @arguments
-            $row.Action = 'Created'
             $row.SubscriptionId = if ($created -and $created.PSObject.Properties['SubscriptionId']) { [string]$created.SubscriptionId } else { '' }
+            if ($row.SubscriptionId -notmatch $Guid) { throw "New-AzSubscriptionAlias created the alias '$($item.Name)' but returned no subscription id ('$($row.SubscriptionId)'). Read the alias with Get-AzSubscriptionAlias -AliasName $($item.Name) and put its SubscriptionId in landing_zone.subscriptions[].id." }
+            $row.Action = 'Created'
             Write-Line "[created] $($item.Name): subscription $($row.SubscriptionId). Put it in landing_zone.subscriptions[].id."
         }
         else {

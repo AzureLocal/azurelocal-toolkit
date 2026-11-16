@@ -32,6 +32,12 @@
         landing_zone.policy.required_tags        the tag names to require (no default: the names follow your tagging standard)
         landing_zone.policy.management_group     optional; the management group to assign at
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 all assignments exist (created now or already there, or planned under -WhatIf); 1 an Azure call failed, a precondition failed (az
     missing, not signed in, wrong tenant), an assignment could not be created or a name is in conflict; 2 the file is missing a value this script needs,
     or a value is not usable.
@@ -59,6 +65,7 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 # Microsoft's built-in policy "Require a tag on resources" (Microsoft Learn: Azure Policy built-in definitions, Tags). Parameter tagName; effect deny; mode Indexed.
 $RequireTagDefinitionId = '/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99'
@@ -67,8 +74,6 @@ $MaxAssignmentNameLength = 24   # Microsoft.Authorization/policyAssignments at m
 $MaxTagLength = 80              # the display name of the assignment holds the tag and is limited to 128 characters
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -79,9 +84,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -124,7 +128,7 @@ $names = @{}
 foreach ($tag in $tags) {
     if ($tag.Length -gt $MaxTagLength) { Exit-InputProblem "The tag name '$tag' is longer than $MaxTagLength characters." }
     if ($tag -match '[<>%&\\?/]') { Exit-InputProblem "The tag name '$tag' contains a character Azure does not allow in a tag name (< > % & \ ? /)." }
-    if ($tag -match $UnsafeArgument) { Exit-InputProblem "The tag name '$tag' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "the tag name $tag" = $tag }); if ($problem) { Exit-InputProblem $problem }
     $name = Get-AssignmentName $tag
     if (-not $name) { Exit-InputProblem "The tag name '$tag' has no letter or digit to build an assignment name from." }
     if ($names.ContainsKey($name)) { Exit-InputProblem "The tag names '$($names[$name])' and '$tag' give the same assignment name '$name'. Remove one, or rename a tag." }
@@ -134,6 +138,10 @@ foreach ($tag in $tags) {
 $managementGroupId = if ($groupName) { $groupName } else { $tenantId }
 $scope = "/providers/Microsoft.Management/managementGroups/$managementGroupId"
 $definitionName = $RequireTagDefinitionId.Split('/')[-1]
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'landing_zone.policy.management_group' = $groupName })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Invoke-AzurePolicyTier1-Orchestrated.ps1.' }

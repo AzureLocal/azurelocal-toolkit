@@ -35,6 +35,12 @@
                                                                                .allow_forwarded_traffic, .allow_gateway_transit, .use_remote_gateways
         landing_zone.networks[].subnets[].name, .prefix, .network_security_group, .route_table
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every network and peering is in place (created now, already there, planned under -WhatIf, or reported as different and left
     alone); 1 an az call failed, a precondition failed (az missing, not signed in, wrong tenant) or a network or peering could not
     be created; 2 the file lists no network, or a value is not usable (a name, an address range that is not CIDR or lies outside the address
@@ -69,6 +75,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'ResourceNotFound|NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -124,6 +131,8 @@ function ConvertFrom-Cidr([string]$Cidr) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -136,10 +145,13 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networkEntries = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networkEntries = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptionEntries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptionEntries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
+# The tags go into az arguments: refuse a key or a value that az.cmd cannot carry before any Azure call (also under -WhatIf).
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $rawTags })
+if ($problem) { Exit-InputProblem $problem }
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
 
@@ -171,7 +183,7 @@ $plan = foreach ($entry in $networkEntries) {
     foreach ($server in $dns) { if ($server -notmatch $Ipv4) { Exit-InputProblem "landing_zone.networks '$name': the DNS server '$server' is not an IPv4 address." } }
 
     $rawSubnets = if ($entry.Contains('subnets')) { $entry['subnets'] } else { $null }
-    $subnets = @(@($rawSubnets) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object {
+    $subnets = @(@($rawSubnets) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubnets)) { Exit-InputProblem 'An entry of landing_zone.networks[].subnets is not a map (names with their settings).' } } | ForEach-Object {
             $subnetName = Get-Entry $_ 'name'
             if (-not $subnetName) { Exit-InputProblem "landing_zone.networks '$name': a subnet has no name." }
             $prefix = Get-Entry $_ 'prefix'
@@ -214,6 +226,18 @@ foreach ($network in $plan) {
         $remote = @($plan | Where-Object { $_.Name -ieq $peer }) | Select-Object -First 1
         if ($network.UseRemoteGateways -and -not $remote.AllowGatewayTransit) { Exit-InputProblem "landing_zone.networks '$($network.Name)': use_remote_gateways is true, but its peer '$peer' does not set allow_gateway_transit to true." }
     }
+}
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+foreach ($network in $plan) {
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{
+            "landing_zone.networks '$($network.Name)' resource_group" = $network.ResourceGroup; "landing_zone.networks '$($network.Name)' location" = $network.Location
+            "landing_zone.networks '$($network.Name)' subnet names" = @($network.Subnets | ForEach-Object { $_.Name })
+            "landing_zone.networks '$($network.Name)' network_security_group" = @($network.Subnets | ForEach-Object { $_.Nsg })
+            "landing_zone.networks '$($network.Name)' route_table" = @($network.Subnets | ForEach-Object { $_.RouteTable })
+            "landing_zone.networks '$($network.Name)' peer_with" = @($network.PeerWith)
+        })
+    if ($problem) { Exit-InputProblem $problem }
 }
 
 # ---- preconditions (read only)

@@ -34,6 +34,12 @@
         azure.automation_identity.subscription_id      the subscription that holds it (optional)
         azure.automation_identity.resource_group       the resource group that holds it (optional)
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 the identity exists (created now, already there, or planned under -WhatIf); 1 an Azure call failed or a precondition failed (az
     missing, not signed in, wrong tenant, the resource group does not exist, the creation failed); 2 a value in the file is missing or not usable, or
     the identity is not a managed identity.
@@ -66,6 +72,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = '(?i)ResourceNotFound|NotFound|not found|could not be found|does not exist|\b404\b'
@@ -81,6 +88,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -99,6 +108,9 @@ $defaultSubscription = ([string](Get-AzlInfrastructureValue -Infrastructure $inf
 $defaultGroup = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.resource_group')).Trim()
 $identity = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.automation_identity'
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
+# The tags go into az arguments: refuse a key or a value that az.cmd cannot carry before any Azure call (also under -WhatIf).
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $rawTags })
+if ($problem) { Exit-InputProblem $problem }
 $tags = [ordered]@{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
 
@@ -120,6 +132,10 @@ $resourceGroup = if (Get-Field 'resource_group') { Get-Field 'resource_group' } 
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'No usable subscription: azure.automation_identity.subscription_id and azure.subscription_id are empty or not a GUID.' }
 if (-not $resourceGroup) { Exit-InputProblem 'No resource group: azure.automation_identity.resource_group and azure.resource_group are empty.' }
 if (-not $location) { Exit-InputProblem 'azure.location is missing. It is the region of the identity.' }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.automation_identity.resource_group (or azure.resource_group)' = $resourceGroup; 'azure.location' = $location })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use New-AutomationManagedIdentity.ps1.' }

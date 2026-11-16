@@ -213,11 +213,20 @@ Describe 'Deploy-KeyVaults.azcli.ps1' {
             @{ Case = 'a retention of 6 days'; Vault = @{ soft_delete_retention_days = 6 }; Match = 'from 7 to 90' }
             @{ Case = 'a retention of 91 days'; Vault = @{ soft_delete_retention_days = 91 }; Match = 'from 7 to 90' }
             @{ Case = 'a retention that is not a number'; Vault = @{ soft_delete_retention_days = 'long' }; Match = 'from 7 to 90' }
+            @{ Case = 'a retention of 20 digits (too long for an integer)'; Vault = @{ soft_delete_retention_days = '99999999999999999999' }; Match = 'from 7 to 90' }
+            @{ Case = 'a resource group with an ampersand'; Vault = @{ resource_group = 'rg&calc' }; Match = "key_vaults resource_group\[0\] holds the value 'rg&calc'" }
         ) {
             $v = Set-AzOverride (New-Vault 'kv-iic-mgmt-01') $Vault
             $r = Invoke-AzCliScript $script:Script (New-InfraFile -Vaults @($v))
             $r.ExitCode | Should -Be 2 -Because $r.Text
             $r.Text | Should -Match $Match
+            $global:AzlFakeCalls | Should -BeNullOrEmpty
+        }
+
+        It 'refuses an entry that is not a map, with exit code 2 and no az call (it is not skipped)' {
+            $r = Invoke-AzCliScript $script:Script (New-InfraFile -Vaults @((New-Vault 'kv-iic-mgmt-01'), 'kv-iic-deploy-01'))
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'entry of key_vaults is not a map'
             $global:AzlFakeCalls | Should -BeNullOrEmpty
         }
 

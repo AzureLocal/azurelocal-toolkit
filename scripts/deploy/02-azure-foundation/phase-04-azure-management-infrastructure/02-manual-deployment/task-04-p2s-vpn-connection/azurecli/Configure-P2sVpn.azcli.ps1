@@ -38,7 +38,14 @@
 
     Exit codes: 0 the gateway has the configuration (set now, already there, left as it is and reported, or planned under -WhatIf); 1 an az
     call failed or a precondition failed (az missing, not signed in, wrong tenant, the gateway does not exist, the certificate could
-    not be read); 2 a value in the file is missing or not usable.
+    not be read); 2 a value in the file is missing or not usable (a secret reference whose vault is not listed under key_vaults, a value or the certificate
+    data with a character that az.cmd cannot carry).
+
+    On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and a double quote or a line break
+    breaks the argument. The script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (the gateway
+    name, the resource group, the certificate name ...) that holds one of & | < > ^ % " or a line break. It refuses certificate data that holds one right
+    after reading it (the message names the reference, never the data; base64 text on one line has none). Every az call is checked again in the one function
+    that starts az.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
@@ -68,6 +75,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecretAzureCli.psm1'))) -Force
 
@@ -92,6 +100,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -111,9 +121,9 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $gateway = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.vpn_gateway'
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networks = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networks = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptions = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptions = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($gateway -isnot [System.Collections.IDictionary]) { Exit-InputProblem 'landing_zone.connectivity.vpn_gateway is missing. Describe the gateway (task 02) and its point_to_site settings.' }
@@ -154,11 +164,18 @@ switch ($authentication) {
         if ($protocols.Count -eq 0) { $protocols = @('OpenVPN', 'IkeV2') }
         if (-not $certificateName) { Exit-InputProblem 'point_to_site.root_certificate_name is missing. It is the name of the root certificate on the gateway.' }
         if (-not $certificateReference) { Exit-InputProblem 'point_to_site.root_certificate is missing. It is a secret reference to the public data of the root certificate.' }
-        if (-not (Get-AzlSecretProvider -Reference $certificateReference)) { Exit-InputProblem 'point_to_site.root_certificate is not a secret reference (keyvault://, env://, file:// or command://).' }
+        # The reference is checked now, also under -WhatIf: the form, and that the vault is listed under key_vaults. Nothing is read.
+        try { Assert-AzlSecretReferenceAzureCli -Reference $certificateReference -Infrastructure $infra }
+        catch { Exit-InputProblem "point_to_site.root_certificate is not usable: $($_.Exception.Message)" }
     }
     'radius' { Exit-InputProblem 'point_to_site.authentication radius is not built by this script: the file has no key for the RADIUS server and its secret. Use entra_id or certificate.' }
     default { Exit-InputProblem "point_to_site.authentication '$authentication' is missing or not usable. Use entra_id or certificate." }
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). The address pool and the protocols are checked
+# by their own patterns above.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'landing_zone.connectivity.vpn_gateway.name' = $gatewayName; 'the resource group' = $group; 'point_to_site.root_certificate_name' = $certificateName })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Configure-P2sVpn.ps1.' }
@@ -218,7 +235,12 @@ try {
             $updateArgs += @('--vpn-auth-type', 'AAD', '--aad-tenant', "https://login.microsoftonline.com/$tenantId", '--aad-issuer', "https://sts.windows.net/$tenantId/", '--aad-audience', $AzureVpnClientApplication)
         }
         else {
-            $certificateData = Get-SecretText $certificateReference
+            # The secret is read and checked right here. AzlExit 2 is a reference that cannot be read or data with a character az.cmd cannot carry: exit code 2.
+            try { $certificateData = Get-SecretText $certificateReference }
+            catch {
+                if ($_.Exception.Data['AzlExit'] -eq 2) { Exit-InputProblem "point_to_site.root_certificate: $($_.Exception.Message)" }
+                throw
+            }
             $updateArgs += @('--vpn-auth-type', 'Certificate', '--root-cert-name', $certificateName, '--root-cert-data', $certificateData)
         }
         Write-Line "Configuring point-to-site on '$gatewayName'; this can take several minutes."

@@ -20,6 +20,12 @@
     rotated: delete the Key Vault secret to have a new one issued. The secret goes to Key Vault from a temporary file that is removed at once, never on
     a command line, and is never printed.
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 done (created, already there, or planned under -WhatIf); 1 an az call failed or a precondition failed (az missing, not signed in,
     wrong tenant); 2 the infrastructure file cannot be read or does not validate.
 
@@ -75,6 +81,8 @@ function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Conti
 # With -AllowFailure it returns $null instead of throwing.
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument, [switch]$AllowFailure)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -97,6 +105,7 @@ function Add-Result {
 Import-Module (Get-CicdModulePath)
 # The one secret resolver of the toolkit (it answers "is the secret there" for the client secret method).
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1')))
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1')))
 try { $settings = Get-AzlCicdSetting -InfrastructureFile $InfrastructureFile -Platform $Platform }
 catch { Write-Error "The infrastructure file cannot be used: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
@@ -104,6 +113,10 @@ $tenantId = [string]$settings.TenantId
 if ($settings.Authentication.Method -eq 'client_secret' -and $settings.Authentication.ClientSecretReference -notmatch '^keyvault://[^/]+/[^/]+$') {
     Exit-InputProblem 'devops.authentication.method is client_secret, so devops.authentication.client_secret must be a keyvault://<vault>/<secret> reference.'
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.automation_identity.name' = [string]$settings.AppName; 'azure.automation_identity.client_id' = [string]$settings.AppClientId; 'devops.authentication.roles' = @($settings.Authentication.Roles); 'the role subscription ids' = @($settings.RoleSubscriptionIds); 'devops.authentication.client_secret' = [string]$settings.Authentication.ClientSecretReference })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use New-CicdBootstrap.ps1.' }

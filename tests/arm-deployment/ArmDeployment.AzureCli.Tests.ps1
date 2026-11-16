@@ -177,6 +177,98 @@ Describe 'Invoke-AzureLocalArmDeployment.azcli.ps1' {
         @(Get-AzWriteCall).Count | Should -Be 0
     }
 
+    It 'refuses Validate when a deployment is running or done, as the PowerShell route does, and submits nothing' {
+        foreach ($dep in 'InProgress', 'Running', 'Success', 'DeploymentSuccess') {
+            Reset-AzFake
+            Set-AzSignIn $global:AzlTestTenant $global:AzlTestSubscription
+            Set-AzHandler 'rest' { $global:AzlArmState.Settings }
+            $global:AzlArmState.Settings = Get-SettingsJson 'Success' $dep
+            $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ ReportDirectory = (Join-Path $TestDrive 'report') }
+            $r.ExitCode | Should -Be 1 -Because "$dep : $($r.Text)"
+            $r.Text | Should -Match 'is running|already deployed'
+            (Get-AzCall 'deployment group create').Count | Should -Be 0
+            (Get-AzCall 'deployment group validate').Count | Should -Be 0
+        }
+    }
+
+    It 'says there is nothing to do for a Deploy of an instance that is already deployed' {
+        $global:AzlArmState.Settings = Get-SettingsJson 'Success' 'Success'
+        $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ Mode = 'Deploy'; ReportDirectory = (Join-Path $TestDrive 'report') }
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $r.Text | Should -Match 'already deployed; nothing to do'
+        (Get-AzCall 'deployment group create').Count | Should -Be 0
+    }
+
+    It 'does not call an unreadable or unknown instance state a success: it keeps waiting and ends with exit code 1 at the time limit' -ForEach @(
+        @{ Case = 'the read of the instance fails'; After = $null }
+        @{ Case = 'the status of the instance is empty'; After = '{"properties":{"provisioningState":"Succeeded","reportedProperties":{"validationStatus":{},"deploymentStatus":{}}}}' }
+        @{ Case = 'the status of the instance is a word the toolkit does not know'; After = '{"properties":{"provisioningState":"Succeeded","reportedProperties":{"validationStatus":{"status":"Weird"},"deploymentStatus":{"status":"NotStarted"}}}}' }
+    ) {
+        $global:AzlArmNow = [datetime]'2026-01-01T00:00:00Z'
+        Mock Get-Date { $global:AzlArmNow }
+        Mock Start-Sleep { $global:AzlArmNow = $global:AzlArmNow.AddSeconds($Seconds) }
+        Set-AzHandler 'rest' {
+            if ($global:AzlArmState.Created) { if ($null -eq $global:AzlArmState.After) { return (New-AzFailure 1 'ERROR: the service is not available.') }; return $global:AzlArmState.After }
+            New-AzFailure 3 $script:Notfound
+        }
+        $global:AzlArmState.After = $After
+        $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ TimeoutMinutes = 3; ReportDirectory = (Join-Path $TestDrive 'report') }
+        $r.ExitCode | Should -Be 1 -Because $Case
+        $r.Text | Should -Match 'without an explicit success'
+        $r.Text | Should -Not -Match 'ARM Validate succeeded'
+        (Get-AzCall 'deployment group create').Count | Should -Be 1
+    }
+
+    It 'ends with success when the status of the instance is an explicit success (a word of the toolkit)' {
+        $global:AzlArmState.AfterCreate = Get-SettingsJson 'ValidationSuccess' 'NotStarted'
+        $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ ReportDirectory = (Join-Path $TestDrive 'report') }
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+    }
+
+    It 'checks the tenant of the default sign-in context, which az rest and az ad sp show use, and stops with exit code 1 before they run' {
+        Set-AzHandler 'account show' {
+            param($o, $a)
+            $null = $a
+            $tenant = if ($o.ContainsKey('--subscription')) { $global:AzlTestTenant } else { '11111111-1111-1111-1111-111111111111' }
+            '{"tenantId":"' + $tenant + '","id":"' + $global:AzlTestSubscription + '","state":"Enabled"}'
+        }
+        $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ ReportDirectory = (Join-Path $TestDrive 'report') }
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'default sign-in context'
+        $r.Text | Should -Match 'az login --tenant'
+        (Get-AzCall 'rest').Count | Should -Be 0
+        (Get-AzCall 'ad sp show').Count | Should -Be 0
+        (Get-AzCall 'deployment group create').Count | Should -Be 0
+        $plain = @(Get-AzCall 'account show' | Where-Object { -not $_.Options.ContainsKey('--subscription') })
+        $plain.Count | Should -Be 1
+    }
+
+    It 'refuses a report directory with a character az.cmd cannot carry, with exit code 2, before it writes the parameter file' -ForEach @(@{ Dir = 'rep&ort' }, @{ Dir = 'rep%PATH%ort' }, @{ Dir = 'rep^ort' }) {
+        $dir = Join-Path $TestDrive $Dir
+        $r = Invoke-AzTool $script:Arm (New-ArmFile) @{ ReportDirectory = $dir }
+        $r.ExitCode | Should -Be 2 -Because $r.Text
+        $r.Text | Should -Match 'parameter file holds the value'
+        Test-Path -LiteralPath $dir | Should -BeFalse
+        (Get-AzCall 'deployment group validate').Count | Should -Be 0
+        (Get-AzCall 'deployment group create').Count | Should -Be 0
+    }
+
+    It 'puts the identity of the template in the deployment name: another template file gives another name, the same one the same name' {
+        $a = Join-Path $TestDrive 'template-a.json'; '{ "parameters": {}, "resources": [] }' | Set-Content -LiteralPath $a
+        $b = Join-Path $TestDrive 'template-b.json'; '{ "parameters": {}, "resources": [ { "type": "x" } ] }' | Set-Content -LiteralPath $b
+        $names = foreach ($t in $a, $b, $a, $null) {
+            $global:AzlFake.Calls.Clear()
+            $extra = @{ ReportDirectory = (Join-Path $TestDrive 'report') }
+            if ($t) { $extra.TemplateFile = $t }
+            $null = Invoke-AzTool $script:Arm (New-ArmFile) $extra -DryRun
+            (Get-AzCall 'deployment group validate')[0].Options['--name'][0]
+        }
+        $names[0] | Should -Be $names[2]
+        $names[0] | Should -Not -Be $names[1]
+        $names[3] | Should -Not -Be $names[0]
+        $names | ForEach-Object { $_ | Should -Match '^azl-validate-[0-9a-f]{12}$' }
+    }
+
     It 'is called by the task of each identity, which refuses the other identity with exit code 2' {
         $r = Invoke-AzTool $script:ArmAd (New-ArmFile -Identity local_identity)
         $r.ExitCode | Should -Be 2

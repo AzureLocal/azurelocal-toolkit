@@ -60,7 +60,7 @@ BeforeAll {
             $variables = [System.IO.Path]::Combine($root, 'config', 'variables')
             New-Item -ItemType Directory -Path $variables -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $variables 'variables.example.yml') -Value 'example: true'
-            $relative = $Source.Substring($script:Repo.Length).TrimStart('\', '/')
+            $relative = if ($Source.StartsWith($script:Repo)) { $Source.Substring($script:Repo.Length).TrimStart('\', '/') } else { 'scripts/deploy/sample/task/azurecli/' + (Split-Path $Source -Leaf) }
             $target = Join-Path $root $relative
             New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
             Copy-Item -LiteralPath $Source -Destination $target
@@ -125,7 +125,20 @@ Describe 'Running a placeholder' {
         $ps = Get-PlaceholderFile | Where-Object { $_.Directory.Name -eq 'powershell' } | Select-Object -First 1
         $az = Get-PlaceholderFile | Where-Object { $_.Directory.Name -eq 'azurecli' } | Select-Object -First 1
         (Invoke-PlaceholderCopy -Source $ps.FullName).Output | Should -Match 'has no PowerShell script yet'
-        (Invoke-PlaceholderCopy -Source $az.FullName).Output | Should -Match 'has no Azure CLI script yet'
+        if (-not $az) {
+            # No Azure CLI placeholder is committed any more (every task that acts on Azure has a real Azure CLI script). Make one from the PowerShell
+            # placeholder in a temporary folder: the same text with the call of an Azure CLI placeholder.
+            $folder = Join-Path ([System.IO.Path]::GetTempPath()) ('ph-az-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+            $null = New-Item -ItemType Directory -Path (Join-Path $folder 'azurecli') -Force
+            try {
+                $text = (Get-Content -LiteralPath $ps.FullName -Raw) -replace 'Invoke-Deployment(Orchestrated|Standalone)\b', 'Invoke-DeploymentAzCliPowerShell'
+                $made = Join-Path $folder 'azurecli/Invoke-Sample.azcli.ps1'
+                Set-Content -LiteralPath $made -Value $text -NoNewline
+                (Invoke-PlaceholderCopy -Source $made).Output | Should -Match 'has no Azure CLI script yet'
+            }
+            finally { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        else { (Invoke-PlaceholderCopy -Source $az.FullName).Output | Should -Match 'has no Azure CLI script yet' }
     }
 
     It 'does not create the log file that -LogPath names' {

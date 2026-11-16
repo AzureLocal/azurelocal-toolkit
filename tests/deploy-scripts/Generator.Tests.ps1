@@ -165,6 +165,31 @@ Describe 'What the generator writes is what is committed' {
             # A placeholder that still passes the retired -ConfigPath is not the form the generator writes; those are regenerated with their task folder.
             Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -notmatch '-ConfigPath' } |
             Select-Object -First 1
+        if (-not $committed -and $Kind -eq 'Azure CLI') {
+            # Every task that acts on Azure has a real Azure CLI script now, so no Azure CLI placeholder is committed. What the generator writes for one is
+            # still the form of the PowerShell orchestrated placeholder with the one call changed: generate both for the same task and name and compare them.
+            $catalogue = Import-PowerShellDataFile -LiteralPath $script:RealCatalogue
+            $taskPath = @($catalogue.Tasks | Where-Object { $_.AzureCli -eq 'yes' })[0].Path
+            $tmp = New-TempFolder
+            try {
+                $texts = @{}
+                foreach ($variant in @(@{ Name = 'azcli'; Type = 'AzCLI'; Folder = 'azurecli' }, @{ Name = 'orchestrated'; Type = 'PS Orchestrated'; Folder = 'powershell' })) {
+                    $coverage = Join-Path $tmp "$($variant.Name).md"
+                    New-CoverageDocument -Path $coverage -Tasks @{ 1 = $taskPath } -Scripts @(@{ Task = 1; Name = 'Invoke-Sample.ps1'; Type = $variant.Type; Folder = $variant.Folder })
+                    $root = Join-Path $tmp $variant.Name
+                    New-Item -ItemType Directory -Path $root | Out-Null
+                    $r = Invoke-Generator -Coverage $coverage -Root $root -Catalogue $script:RealCatalogue
+                    $r.Code | Should -Be 0 -Because $r.Output
+                    $file = [System.IO.Path]::Combine($root, 'scripts', 'deploy', $taskPath.Replace('/', [System.IO.Path]::DirectorySeparatorChar), $variant.Folder, 'Invoke-Sample.ps1')
+                    Test-Path -LiteralPath $file | Should -BeTrue -Because $r.Output
+                    $texts[$variant.Name] = Get-Normalized $file
+                }
+                $texts['azcli'] | Should -Match 'Invoke-DeploymentAzCliPowerShell\b'
+                $texts['azcli'] | Should -BeExactly $texts['orchestrated'].Replace('Invoke-DeploymentOrchestrated', 'Invoke-DeploymentAzCliPowerShell')
+            }
+            finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+            return
+        }
         $committed | Should -Not -BeNullOrEmpty
         $task = $committed.Directory.Parent.FullName.Substring($script:Deploy.Length).TrimStart('\', '/').Replace('\', '/')
 

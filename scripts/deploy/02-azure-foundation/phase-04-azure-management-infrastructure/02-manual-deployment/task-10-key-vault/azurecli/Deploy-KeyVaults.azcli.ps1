@@ -36,6 +36,12 @@
         key_vaults[].name, .subscription_id, .resource_group, .purpose, .soft_delete_retention_days
         every keyvault://<vault>/<secret> reference anywhere in the file (names only; no value is read)
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every listed vault exists (created now, already there, or planned under -WhatIf), whether or not secrets are still missing;
     1 an az call failed or a precondition failed (az missing, not signed in, wrong tenant, a creation failed); 2 the file lists no vault or a
     value is not usable.
@@ -69,6 +75,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-local', 'AzlAzure.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
@@ -99,6 +106,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -135,8 +144,11 @@ $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'az
 $location = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $environmentClass = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.environment_class')
 $rawVaults = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'key_vaults'
-$vaultEntries = @(@($rawVaults) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$vaultEntries = @(@($rawVaults) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawVaults)) { Exit-InputProblem 'An entry of key_vaults is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
+# The tags go into az arguments: refuse a key or a value that az.cmd cannot carry before any Azure call (also under -WhatIf).
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $rawTags })
+if ($problem) { Exit-InputProblem $problem }
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
 
@@ -156,8 +168,9 @@ $plan = foreach ($entry in $vaultEntries) {
     $retentionText = Get-Entry $entry 'soft_delete_retention_days'
     $retention = $DefaultRetentionDays
     if ($retentionText) {
-        if ($retentionText -notmatch '^\d+$' -or [int]$retentionText -lt $MinRetentionDays -or [int]$retentionText -gt $MaxRetentionDays) { Exit-InputProblem "key_vaults '$name': soft_delete_retention_days '$retentionText' is not a whole number from $MinRetentionDays to $MaxRetentionDays." }
-        $retention = [int]$retentionText
+        $retentionDays = 0
+        if ($retentionText -notmatch '^\d+$' -or -not [int]::TryParse($retentionText, [ref]$retentionDays) -or $retentionDays -lt $MinRetentionDays -or $retentionDays -gt $MaxRetentionDays) { Exit-InputProblem "key_vaults '$name': soft_delete_retention_days '$retentionText' is not a whole number from $MinRetentionDays to $MaxRetentionDays." }
+        $retention = $retentionDays
     }
     [pscustomobject]@{ Name = $name; SubscriptionId = $subscriptionId; ResourceGroup = $group; Purpose = (Get-Entry $entry 'purpose'); RetentionDays = $retention }
 }
@@ -167,6 +180,10 @@ if ($duplicate.Count) { Exit-InputProblem "The vault '$($duplicate[0].Group[0].N
 
 # the secrets the file refers to, by vault
 $references = @(Get-KeyVaultReference $infra | Select-Object -Unique | ForEach-Object { ConvertFrom-AzlKeyVaultRef -Reference $_ } | Where-Object { $_ })
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.location' = $location; 'key_vaults resource_group' = @($plan | ForEach-Object { $_.ResourceGroup }); 'key_vaults purpose' = @($plan | ForEach-Object { $_.Purpose }) })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Deploy-KeyVaults.ps1.' }

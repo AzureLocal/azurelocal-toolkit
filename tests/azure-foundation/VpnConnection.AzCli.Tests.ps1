@@ -27,12 +27,13 @@ BeforeAll {
         Set-AzOverride ([ordered]@{ connection_name = $Connection; local_gateway_name = 'lgw-iic-dal-01'; peer_public_ip = '203.0.113.1'; peer_address_prefixes = @('192.0.2.0/24', '198.51.100.0/24'); shared_key = 'keyvault://kv-iic-mgmt-01/vpn-dal-key' }) $Override
     }
     function New-InfraFile {
-        param([object[]]$Sites = @((New-Site)), [hashtable]$Azure = @{}, [object]$Tags = $null, [switch]$NoGateway, [object]$Tenant = $global:AzlFakeTenant, [object]$Vaults = @([ordered]@{ name = 'kv-iic-mgmt-01'; subscription_id = $global:AzlVcSub; resource_group = 'rg-iic-mgmt-01' }))
+        param([object[]]$Sites = @((New-Site)), [hashtable]$Azure = @{}, [object]$Tags = $null, [object]$Gateway = $null, [switch]$NoGateway, [object]$Tenant = $global:AzlFakeTenant, [object]$Vaults = @([ordered]@{ name = 'kv-iic-mgmt-01'; subscription_id = $global:AzlVcSub; resource_group = 'rg-iic-mgmt-01' }))
         $az = [ordered]@{ location = 'eastus' }
         if ($null -ne $Tenant) { $az.tenant_id = $Tenant }
         $null = Set-AzOverride $az $Azure
         $gw = [ordered]@{ name = 'vpng-iic-hub-01'; network = 'vnet-iic-hub-01'; sku = 'VpnGw1AZ'; bgp_asn = 65515 }
         if ($Sites) { $gw.site_to_site = @($Sites) }
+        if ($Gateway) { $null = Set-AzOverride $gw $Gateway }
         $doc = [ordered]@{
             azure        = $az
             landing_zone = [ordered]@{
@@ -171,6 +172,33 @@ Describe 'New-VpnConnection.azcli.ps1' {
             Get-AzWriteCall | Should -BeNullOrEmpty
         }
 
+        It 'reports a different ASN or BGP peering address of the existing local network gateway, and one that has no ranges' {
+            Add-AzRoute 'network local-gateway show*' ([ordered]@{ name = 'lgw-iic-dal-01'; gatewayIpAddress = '203.0.113.1'; localNetworkAddressSpace = [ordered]@{ addressPrefixes = @() }; bgpSettings = [ordered]@{ asn = 65099; bgpPeeringAddress = '192.0.2.1' } })
+            Add-AzRoute 'network vpn-connection show*' ([ordered]@{ name = 'cn-iic-dal-01'; connectionStatus = 'Connected' })
+            $r = Invoke-Conn (New-InfraFile -Sites @(New-Site 'cn-iic-dal-01' @{ peer_asn = 65050; peer_bgp_address = '192.0.2.254' }))
+            $r.Rows[0].Detail | Should -Match "ASN '65099', the file says 65050"
+            $r.Rows[0].Detail | Should -Match "BGP peering address '192.0.2.1', the file says 192.0.2.254"
+            $r.Rows[0].Detail | Should -Match 'has no address ranges'
+            Get-AzWriteCall | Should -BeNullOrEmpty
+        }
+
+        It 'reports BGP settings on the gateway that the file does not have' {
+            Add-AzRoute 'network local-gateway show*' ([ordered]@{ name = 'lgw-iic-dal-01'; gatewayIpAddress = '203.0.113.1'; localNetworkAddressSpace = [ordered]@{ addressPrefixes = @('192.0.2.0/24', '198.51.100.0/24') }; bgpSettings = [ordered]@{ asn = 65099; bgpPeeringAddress = '192.0.2.1' } })
+            Add-AzRoute 'network vpn-connection show*' ([ordered]@{ name = 'cn-iic-dal-01'; connectionStatus = 'Connected' })
+            (Invoke-Conn (New-InfraFile)).Rows[0].Detail | Should -Match 'has BGP settings, the file has none'
+        }
+
+        It 'does not create a connection to a local network gateway that differs from the file, and fails that row with the reason' {
+            Add-AzRoute 'network local-gateway show*' ([ordered]@{ name = 'lgw-iic-dal-01'; gatewayIpAddress = '203.0.113.99'; localNetworkAddressSpace = [ordered]@{ addressPrefixes = @('192.0.2.0/24', '198.51.100.0/24') } })
+            $r = Invoke-Conn (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match 'was not created because the existing local network gateway differs from the file'
+            $r.Rows[0].Detail | Should -Match 'peer address 203.0.113.99'
+            Get-AzCall 'network vpn-connection create*' | Should -BeNullOrEmpty
+            Get-AzCall 'keyvault secret show*' | Should -BeNullOrEmpty
+        }
+
         It 'creates only the connection when the local network gateway is there and the connection is not' {
             Add-AzRoute 'network local-gateway show*' ([ordered]@{ name = 'lgw-iic-dal-01'; gatewayIpAddress = '203.0.113.1'; localNetworkAddressSpace = [ordered]@{ addressPrefixes = @('192.0.2.0/24', '198.51.100.0/24') } })
             $r = Invoke-Conn (New-InfraFile)
@@ -228,6 +256,28 @@ Describe 'New-VpnConnection.azcli.ps1' {
             $global:AzlFakeCalls | Should -BeNullOrEmpty
         }
 
+        It 'refuses two connections that share a local network gateway, with exit code 2 and no az call' {
+            $r = Invoke-Conn (New-InfraFile -Sites @((New-Site 'cn-iic-dal-01'), (New-Site 'cn-iic-hou-01' @{ local_gateway_name = 'LGW-IIC-DAL-01'; peer_public_ip = '203.0.113.2' })))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'used by two connections'
+            $global:AzlFakeCalls | Should -BeNullOrEmpty
+        }
+
+        It 'refuses a tag, the gateway name or the location with a character az.cmd cannot carry, naming the key and the value, with no az call' -ForEach @(
+            @{ Tags = [ordered]@{ owner = 'a&b' }; Gateway = $null; Match = "tags.owner holds the value 'a&b'" }
+            @{ Tags = [ordered]@{ 'k|ey' = 'x' }; Gateway = $null; Match = "key 'k\|ey'" }
+            @{ Tags = $null; Gateway = @{ resource_group = 'rg^x' }; Match = "rg\^x" }
+        ) {
+            $file = New-InfraFile -Tags $Tags -Gateway $Gateway
+            foreach ($dry in $false, $true) {
+                $r = if ($dry) { Invoke-Conn $file -DryRun } else { Invoke-Conn $file }
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Text | Should -Match $Match
+                Get-AzWriteCall | Should -BeNullOrEmpty
+                $global:AzlFakeCalls | Should -BeNullOrEmpty
+            }
+        }
+
         It 'refuses the same connection twice' {
             $r = Invoke-Conn (New-InfraFile -Sites @((New-Site 'cn-iic-dal-01'), (New-Site 'CN-IIC-DAL-01')))
             $r.ExitCode | Should -Be 2
@@ -283,11 +333,15 @@ Describe 'New-VpnConnection.azcli.ps1' {
             Get-AzCall 'network vpn-connection create*' | Should -BeNullOrEmpty
         }
 
-        It 'fails the connection when the vault of the reference is not listed under key_vaults, and does not call the vault' {
-            $r = Invoke-Conn (New-InfraFile -Vaults @([ordered]@{ name = 'kv-iic-other-01'; subscription_id = $global:AzlVcSub; resource_group = 'rg-iic-mgmt-01' }))
-            $r.ExitCode | Should -Be 1
-            $r.Rows[0].Detail | Should -Match 'not listed under key_vaults'
-            Get-AzCall 'keyvault secret show*' | Should -BeNullOrEmpty
+        It 'refuses, with exit code 2 at plan time, a vault that is not listed under key_vaults, also under -WhatIf, before any az call' {
+            foreach ($dry in $false, $true) {
+                $global:AzlFakeCalls.Clear()
+                $file = New-InfraFile -Vaults @([ordered]@{ name = 'kv-iic-other-01'; subscription_id = $global:AzlVcSub; resource_group = 'rg-iic-mgmt-01' })
+                $r = if ($dry) { Invoke-Conn $file -DryRun } else { Invoke-Conn $file }
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Text | Should -Match 'not listed under key_vaults'
+                $global:AzlFakeCalls | Should -BeNullOrEmpty
+            }
         }
 
         It 'fails the connection when the secret is empty' {
@@ -310,6 +364,43 @@ Describe 'New-VpnConnection.azcli.ps1' {
             $r = Invoke-Conn (New-InfraFile)
             $r.ExitCode | Should -Be 1
             Get-AzWriteCall | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'a shared key that az.cmd cannot carry' {
+        It 'refuses a key with <Name>, with exit code 2, creates nothing, and prints the key nowhere' -ForEach @(
+            @{ Name = 'an ampersand'; Key = 'Canary&calc' }
+            @{ Name = 'a percent sign'; Key = 'Canary%PATH%x' }
+            @{ Name = 'a pipe'; Key = 'Canary|x' }
+            @{ Name = 'a line break'; Key = "Canary`nx" }
+        ) {
+            Add-AzRoute 'keyvault secret show*' $Key
+            $r = Invoke-Conn (New-InfraFile)
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'keyvault://kv-iic-mgmt-01/vpn-dal-key'
+            $r.Everything | Should -Not -Match 'Canary'
+            Get-AzCall 'network vpn-connection create*' | Should -BeNullOrEmpty
+            @($global:AzlFakeCalls | Where-Object { $_ -match 'Canary' }) | Should -BeNullOrEmpty
+        }
+
+        It 'refuses an env:// key with an unsafe character the same way' {
+            $env:AZL_TEST_VPN_KEY = 'Canary&env'
+            try {
+                $r = Invoke-Conn (New-InfraFile -Sites @(New-Site 'cn-iic-dal-01' @{ shared_key = 'env://AZL_TEST_VPN_KEY' }))
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Everything | Should -Not -Match 'Canary'
+                Get-AzCall 'network vpn-connection create*' | Should -BeNullOrEmpty
+            }
+            finally { $env:AZL_TEST_VPN_KEY = $global:AzlVcCanary }
+        }
+    }
+
+    Context 'the answer of az network vpn-connection create' {
+        It 'reads the status from resource.connectionStatus, and from the top level when there is no resource' {
+            Add-AzRoute 'network vpn-connection create*' { [ordered]@{ resource = [ordered]@{ name = 'cn'; connectionStatus = 'Connecting'; sharedKey = $global:AzlVcCanary } } | ConvertTo-Json -Compress }
+            (Invoke-Conn (New-InfraFile)).Rows[0].ConnectionStatus | Should -Be 'Connecting'
+            Add-AzRoute 'network vpn-connection create*' { [ordered]@{ name = 'cn'; connectionStatus = 'Unknown' } | ConvertTo-Json -Compress }
+            (Invoke-Conn (New-InfraFile)).Rows[0].ConnectionStatus | Should -Be 'Unknown'
         }
     }
 

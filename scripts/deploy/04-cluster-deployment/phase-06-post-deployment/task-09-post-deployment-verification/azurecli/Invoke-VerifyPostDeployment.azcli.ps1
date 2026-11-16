@@ -30,6 +30,12 @@
         cluster.witness.storage_account, nodes[].name, nodes[].arc_machine_name, storage.paths[], storage.vm_images[],
         networking.logical_networks[].enabled, networking.network_security_groups[]
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every check passed (or planned under -WhatIf); 1 a check failed or a precondition failed (az missing, not signed in, wrong tenant);
     2 a value in the file is missing or unusable (nothing was checked).
 
@@ -61,11 +67,10 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 # The Arc extensions that the Azure Local registration installs (Microsoft Learn, Known issues in Azure Local 24xx releases: the mandatory extensions for
 # device deployment) and the OpenSSH extension of task 04 (Microsoft Learn, SSH access to Azure Arc-enabled servers).
 $RegistrationExtension = @('AzureEdgeTelemetryAndDiagnostics', 'AzureEdgeDeviceManagement', 'AzureEdgeLifecycleManager', 'AzureEdgeRemoteSupport')
@@ -101,9 +106,8 @@ function Get-Reported($Object, [string]$Name) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -137,16 +141,15 @@ if (-not $group) { Exit-InputProblem 'azure.resource_group is missing. The insta
 if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing in the infrastructure file.' }
 if (-not $customLocation) { Exit-InputProblem 'azure.custom_location is missing. It is the custom location of the Azure Local instance.' }
 if ($witnessType -eq 'cloud' -and -not $witnessAccount) { Exit-InputProblem 'cluster.witness.type is cloud, but cluster.witness.storage_account is missing.' }
-foreach ($value in @($group, $clusterName, $customLocation, $witnessAccount)) {
-    if ($value -match $UnsafeArgument) { Exit-InputProblem "A value of the file holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $value" }
-}
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group; 'cluster.name' = $clusterName; 'azure.custom_location' = $customLocation; 'cluster.witness.storage_account' = $witnessAccount }); if ($problem) { Exit-InputProblem $problem }
 
 $fileNodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
 $nodes = @(if ($TargetNode.Count -gt 0) { $fileNodes | Where-Object { $_.Name -in $TargetNode } } else { $fileNodes })
 if ($fileNodes.Count -eq 0) { Exit-InputProblem 'nodes[] is empty in the infrastructure file.' }
 if ($nodes.Count -eq 0) { Exit-InputProblem "-TargetNode matches no node of the file ($($TargetNode -join ', '))." }
 foreach ($node in $nodes) {
-    if (-not $node.ArcMachineName -or $node.ArcMachineName -match $UnsafeArgument) { Exit-InputProblem "Node '$($node.Name)' has no usable Arc machine name (nodes[].arc_machine_name)." }
+    if (-not $node.ArcMachineName) { Exit-InputProblem "Node '$($node.Name)' has no usable Arc machine name (nodes[].arc_machine_name)." }
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "nodes[].arc_machine_name of '$($node.Name)'" = $node.ArcMachineName }); if ($problem) { Exit-InputProblem $problem }
 }
 
 Write-Line "Post-deployment verification (Azure): cluster '$clusterName', $($nodes.Count) machine(s), resource group '$group'"

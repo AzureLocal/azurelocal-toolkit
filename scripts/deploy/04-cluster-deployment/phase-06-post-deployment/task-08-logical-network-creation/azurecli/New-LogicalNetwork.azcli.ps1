@@ -41,6 +41,12 @@
         networking.logical_networks[]: name, enabled, ip_allocation_method, vlan_id, address_prefix, gateway, dns_servers, ip_pool.start,
                                        ip_pool.end, nsg_name, vm_switch_name
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every logical network exists (created now, already there, planned under -WhatIf, disabled) or the file lists none; 1 a call or a
     precondition failed (az missing, not signed in, wrong tenant, extension missing, a lookup or a creation failed); 2 a value in the file is missing
     or not usable, including an enabled network without vm_switch_name. On exit code 2 nothing is sent to Azure.
@@ -73,6 +79,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -83,8 +90,6 @@ $Ipv4 = "^($Octet\.){3}$Octet$"
 $Cidr = "^($Octet\.){3}$Octet/([0-9]|[12][0-9]|3[0-2])$"
 # The registry default of networking.logical_networks[].ip_allocation_method (the key is optional); Microsoft Learn: Static or Dynamic.
 $DefaultAllocationMethod = 'Static'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -120,9 +125,8 @@ function Test-InSubnet([string]$Address, [string]$Subnet) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -141,7 +145,7 @@ if ($networkList.Count -eq 0) {
     Write-Line 'The file lists no networking.logical_networks: nothing to do.'
     exit 0
 }
-$groupNames = @(@(Get-Field $networking 'network_security_groups' @()) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { ([string](Get-Field $_ 'name' '')).Trim().ToLowerInvariant() })
+$groupNames = @(@(Get-Field $networking 'network_security_groups' @()) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne (Get-Field $networking 'network_security_groups' @())) { Exit-InputProblem 'An entry of networking.network_security_groups is not a map (names with their settings).' } } | ForEach-Object { ([string](Get-Field $_ 'name' '')).Trim().ToLowerInvariant() })
 
 $tenantId = Get-Text 'azure.tenant_id'
 $subscriptionId = Get-Text 'azure.subscription_id'
@@ -155,7 +159,7 @@ if ($rawTags -is [System.Collections.IDictionary]) {
     foreach ($k in $rawTags.Keys) {
         if ($null -eq $rawTags[$k]) { continue }
         $pair = "$k=$($rawTags[$k])"
-        if ($pair -match $UnsafeArgument) { Exit-InputProblem "The tag '$k' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+        $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "tags.$k" = $pair }); if ($problem) { Exit-InputProblem $problem }
         $tagArguments += $pair
     }
 }
@@ -228,7 +232,7 @@ foreach ($entry in $networkList) {
         $plan.Nsg = $nsgName
     }
     $switchName = ([string](Get-Field $entry 'vm_switch_name' '')).Trim()
-    if ($switchName -match $UnsafeArgument) { Exit-InputProblem "$at.vm_switch_name holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "$at.vm_switch_name" = $switchName }); if ($problem) { Exit-InputProblem $problem }
     if (-not $switchName) { Exit-InputProblem "$at.vm_switch_name is missing. This script does not reach the cluster, so it cannot read the external virtual switch (Get-VMSwitch -SwitchType External on a node). Name the switch in the file, or use New-LogicalNetwork.ps1." }
     $plan.Switch = $switchName
     $plans.Add([pscustomobject]$plan)
@@ -245,6 +249,10 @@ for ($i = 0; $i -lt $active.Count; $i++) {
         }
     }
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group; 'azure.location' = $location; 'azure.custom_location' = $customLocation })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, then run az login --tenant <azure.tenant_id>.' }

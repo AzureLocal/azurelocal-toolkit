@@ -239,6 +239,36 @@ Describe 'Configure-P2sVpn.azcli.ps1' {
             Get-AzCall 'network vnet-gateway update*' | Should -BeNullOrEmpty
         }
 
+        It 'refuses, with exit code 2, certificate data that holds a character az.cmd cannot carry, and does not update the gateway' -ForEach @(
+            @{ Name = 'an ampersand'; Data = 'Canary&calc' }
+            @{ Name = 'a percent sign'; Data = 'Canary%PATH%x' }
+            @{ Name = 'a line break'; Data = "Canary`nx" }
+        ) {
+            Add-AzRoute 'keyvault secret show*' $Data
+            $r = Invoke-AzCliScript $script:Script (New-InfraFile (New-CertificateP2sSetting))
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'keyvault://kv-iic-mgmt-01/p2s-root-cert'
+            ($r.Text + ($r.Rows | Out-String)) | Should -Not -Match 'Canary'
+            Get-AzCall 'network vnet-gateway update*' | Should -BeNullOrEmpty
+            @($global:AzlFakeCalls | Where-Object { $_ -match 'Canary' }) | Should -BeNullOrEmpty
+        }
+
+        It 'refuses, at plan time and also under -WhatIf, a certificate reference whose vault is not listed under key_vaults, and a root certificate name with an ampersand' {
+            foreach ($dry in $false, $true) {
+                $global:AzlFakeCalls.Clear()
+                $file = New-InfraFile (New-CertificateP2sSetting @{ root_certificate = 'keyvault://kv-iic-other-01/p2s-root-cert' })
+                $r = if ($dry) { Invoke-AzCliScript $script:Script $file -DryRun } else { Invoke-AzCliScript $script:Script $file }
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Text | Should -Match 'not listed under key_vaults'
+                $global:AzlFakeCalls | Should -BeNullOrEmpty
+                $file = New-InfraFile (New-CertificateP2sSetting @{ root_certificate_name = 'root&cert' })
+                $r = if ($dry) { Invoke-AzCliScript $script:Script $file -DryRun } else { Invoke-AzCliScript $script:Script $file }
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Text | Should -Match "root_certificate_name holds the value 'root&cert'"
+                $global:AzlFakeCalls | Should -BeNullOrEmpty
+            }
+        }
+
         It 'reports an update that fails and exits 1' {
             Add-AzRoute 'network vnet-gateway update*' 'ERROR: (GatewayNotReady) The gateway is not ready.' 1
             $r = Invoke-AzCliScript $script:Script (New-InfraFile)

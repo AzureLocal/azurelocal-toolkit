@@ -37,6 +37,12 @@
         key_vaults[].name, .subscription_id, .resource_group, .soft_delete_retention_days
         operations.monitoring.enabled, .log_analytics_workspace, .workspace_resource_group, .retention_days
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every check passed; 1 a check failed, an az call failed or a precondition failed (az missing, not signed in, wrong tenant); 2 the
     file describes nothing to check, or a value is not usable (a network the file does not list, a subscription without an id).
 
@@ -62,6 +68,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = '(?i)NotFound|not found|could not be found|does not exist|\b404\b'
@@ -82,6 +89,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 # One az call. Returns the text of standard output; throws, with the error text, when az ends with an error (warnings on standard error are dropped).
 function Invoke-Az {
     param([Parameter(Mandatory)][string[]]$AzArgument)
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $AzArgument
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @AzArgument 2>&1)
     $code = $LASTEXITCODE
     $errorText = (@($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join ' ').Trim()
@@ -96,7 +105,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 function Get-List([string]$Path) {
     $raw = Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path
-    @(@($raw) | Where-Object { $_ -is [System.Collections.IDictionary] })
+    @(@($raw) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($raw)) { Exit-InputProblem "An entry of $Path is not a map (names with their settings)." } })
 }
 
 $tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
@@ -163,7 +172,7 @@ foreach ($network in $networkEntries) {
     $name = Get-Entry $network 'name'
     if (-not $name) { Exit-InputProblem 'An entry of landing_zone.networks has no name.' }
     $place = Get-NetworkPlace -NetworkName $name -At 'landing_zone.networks'
-    $subnets = @(@($network['subnets']) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object {
+    $subnets = @(@($network['subnets']) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($network['subnets'])) { Exit-InputProblem 'An entry of landing_zone.networks[].subnets is not a map (names with their settings).' } } | ForEach-Object {
             [pscustomobject]@{ Name = (Get-Entry $_ 'name'); Prefix = (Get-Entry $_ 'prefix'); Nsg = (Get-Entry $_ 'network_security_group') } })
     $space = @(@($(if ($network.Contains('address_space')) { $network['address_space'] })) | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() })
     Add-Target -Kind 'VirtualNetwork' -Name $name -Group $place.ResourceGroup -SubscriptionId $place.SubscriptionId -Expect @{ AddressSpace = $space; Subnets = $subnets }
@@ -201,6 +210,12 @@ foreach ($machine in $machineEntries) {
     Add-Target -Kind 'VirtualMachine' -Name $name -Group (Get-Entry $machine 'resource_group') -SubscriptionId (Get-SubscriptionIdByName (Get-Entry $machine 'subscription') "landing_zone.virtual_machines '$name'")
 }
 if ($targets.Count -eq 0) { Exit-InputProblem 'The file describes no resource to check: list landing_zone.resource_groups, networks, connectivity, key_vaults or virtual_machines.' }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A name that has its own pattern above is already safe.
+foreach ($target in $targets) {
+    $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "the name of the $($target.Kind) '$($target.Name)'" = $target.Name; "the resource group of the $($target.Kind) '$($target.Name)'" = $target.ResourceGroup })
+    if ($problem) { Exit-InputProblem $problem }
+}
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Invoke-VerifyResources-Orchestrated.ps1.' }

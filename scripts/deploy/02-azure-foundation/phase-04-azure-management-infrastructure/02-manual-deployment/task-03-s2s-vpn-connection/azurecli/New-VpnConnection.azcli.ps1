@@ -17,7 +17,11 @@
     The shared key is a secret reference. A keyvault://<vault>/<secret> reference is read at run time with "az keyvault secret show" (the vault must
     be listed under key_vaults; you need Key Vault Secrets User on it). env://, file:// and command:// references are read by the toolkit's secret
     resolver. The key is never written, logged, printed or returned, and an az error text that would hold it is cleaned before it is shown. "az network
-    vpn-connection create" takes the key as an argument, so it is on the command line of that one az process for the seconds the call lasts. On Windows az is a batch file (az.cmd), which reads a percent sign in an argument as a variable: give the secret no percent sign.
+    vpn-connection create" takes the key as an argument, so it is on the command line of that one az process for the seconds the call lasts.
+    On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and a double quote or a line break
+    breaks the argument. The script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag
+    key or value ...) that holds one of & | < > ^ % " or a line break. It refuses a shared key that holds one right after reading it (the message names the
+    reference, never the key: create the secret again without these characters). Every az call is checked again in the one function that starts az.
 
     The script reads Azure (read only) and writes only with "az network local-gateway create" and "az network vpn-connection create", behind
     -WhatIf. It does not sign in: run "az login --tenant <azure.tenant_id>" first. You need Network Contributor (or Contributor) on the
@@ -34,7 +38,7 @@
 
     Exit codes: 0 every connection exists (created now, already there, or planned under -WhatIf), or the file lists none; 1 an az call failed
     or a precondition failed (az missing, not signed in, wrong tenant, the gateway does not exist, a secret could not be read) or a
-    creation failed; 2 a value in the file is missing or not usable.
+    creation failed; 2 a value in the file is missing or not usable (a secret reference whose vault is not listed under key_vaults, a value or a shared key with a character that az.cmd cannot carry, two connections that share a local network gateway).
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
@@ -64,6 +68,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecretAzureCli.psm1'))) -Force
 
@@ -88,6 +93,8 @@ function Get-Entry([object]$Entry, [string]$Key) {
 
 # One az call. Returns the text of standard output (warnings on standard error are dropped); throws with the error text when az fails.
 function Invoke-Az {
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $args
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $out = @(& az @args 2>&1)
     if ($LASTEXITCODE -ne 0) { throw (($out | ForEach-Object { "$_" }) -join ' ').Trim() }
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -108,9 +115,9 @@ $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'az
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $gateway = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.vpn_gateway'
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networks = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networks = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptions = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptions = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -141,8 +148,14 @@ if (-not $group) { Exit-InputProblem "Neither the gateway nor the network '$netw
 $location = if (Get-Entry $network 'location') { Get-Entry $network 'location' } else { $defaultLocation }
 if (-not $location) { Exit-InputProblem "No region: the network '$networkName' has no location and azure.location is empty." }
 
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). The names of the connections and local network
+# gateways, the addresses and the ASN are checked by their own patterns below.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'landing_zone.connectivity.vpn_gateway.name' = $gatewayName; 'the resource group' = $group; 'the location' = $location; 'tags' = $tags })
+if ($problem) { Exit-InputProblem $problem }
+
 $plan = [System.Collections.Generic.List[object]]::new()
 $seen = @{}
+$seenLocal = @{}
 $index = -1
 foreach ($site in $sites) {
     $index++
@@ -154,6 +167,8 @@ foreach ($site in $sites) {
     $seen[$connection.ToLowerInvariant()] = $true
     $localName = if (Get-Entry $site 'local_gateway_name') { Get-Entry $site 'local_gateway_name' } else { "$connection-lgw" }
     if ($localName -notmatch $ResourceName) { Exit-InputProblem "$at.local_gateway_name '$localName' is not a valid name." }
+    if ($seenLocal.ContainsKey($localName.ToLowerInvariant())) { Exit-InputProblem "$at.local_gateway_name '$localName' is used by two connections. Give each connection its own local network gateway." }
+    $seenLocal[$localName.ToLowerInvariant()] = $true
     $peerIp = Get-Entry $site 'peer_public_ip'
     if ($peerIp -notmatch $Ipv4) { Exit-InputProblem "$at.peer_public_ip '$peerIp' is missing or is not an IPv4 address. It is the public address of the on-premises VPN device." }
     $rawPrefixes = if ($site.Contains('peer_address_prefixes')) { $site['peer_address_prefixes'] } else { $null }
@@ -168,7 +183,9 @@ foreach ($site in $sites) {
     if ($asnText -and (-not [uint64]::TryParse($asnText, [ref]$asn) -or $asn -lt 1 -or $asn -gt 4294967295)) { Exit-InputProblem "$at.peer_asn '$asnText' is not a number from 1 to 4294967295." }
     $key = Get-Entry $site 'shared_key'
     if (-not $key) { Exit-InputProblem "$at.shared_key is missing. It is a secret reference (for example keyvault://<vault>/<secret>), never the key itself." }
-    if (-not (Get-AzlSecretProvider -Reference $key)) { Exit-InputProblem "$at.shared_key is not a secret reference (keyvault://, env://, file:// or command://). The key itself is never written to the file." }
+    # The reference is checked now, also under -WhatIf: the form, and that the vault is listed under key_vaults. Nothing is read.
+    try { Assert-AzlSecretReferenceAzureCli -Reference $key -Infrastructure $infra }
+    catch { Exit-InputProblem "$at.shared_key is not usable: $($_.Exception.Message)" }
     $plan.Add([pscustomobject]@{ Connection = $connection; LocalGateway = $localName; PeerIp = $peerIp; Prefixes = $prefixes; BgpAddress = $bgpAddress; Asn = $asn; KeyReference = $key })
 }
 
@@ -218,9 +235,17 @@ try {
             $differs = [System.Collections.Generic.List[string]]::new()
             if ($local) {
                 $currentIp = [string](Get-JsonValue $local 'gatewayIpAddress')
-                if ($currentIp -and $currentIp -ne $item.PeerIp) { $differs.Add("the local network gateway has peer address $currentIp, the file says $($item.PeerIp)") }
+                if ($currentIp -ne $item.PeerIp) { $differs.Add("the local network gateway has $(if ($currentIp) { "peer address $currentIp" } else { 'no peer address' }), the file says $($item.PeerIp)") }
                 $currentPrefixes = @(@(Get-JsonValue $local 'localNetworkAddressSpace.addressPrefixes') | Where-Object { $_ } | ForEach-Object { [string]$_ })
-                if ($currentPrefixes.Count -and (Compare-Object -ReferenceObject $currentPrefixes -DifferenceObject $item.Prefixes)) { $differs.Add("the local network gateway has ranges $($currentPrefixes -join ', '), the file says $($item.Prefixes -join ', ')") }
+                if (-not $currentPrefixes.Count) { $differs.Add("the local network gateway has no address ranges, the file says $($item.Prefixes -join ', ')") }
+                elseif (Compare-Object -ReferenceObject $currentPrefixes -DifferenceObject $item.Prefixes) { $differs.Add("the local network gateway has ranges $($currentPrefixes -join ', '), the file says $($item.Prefixes -join ', ')") }
+                $currentAsn = [string](Get-JsonValue $local 'bgpSettings.asn')
+                $currentBgp = [string](Get-JsonValue $local 'bgpSettings.bgpPeeringAddress')
+                if ($item.BgpAddress) {
+                    if ($currentAsn -ne [string]$item.Asn) { $differs.Add("the local network gateway has ASN '$currentAsn', the file says $($item.Asn)") }
+                    if ($currentBgp -ne $item.BgpAddress) { $differs.Add("the local network gateway has BGP peering address '$currentBgp', the file says $($item.BgpAddress)") }
+                }
+                elseif ($currentAsn -or $currentBgp) { $differs.Add('the local network gateway has BGP settings, the file has none') }
                 Write-Line "[exists]  Local network gateway '$($item.LocalGateway)' is already there."
             }
             elseif ($PSCmdlet.ShouldProcess("local network gateway '$($item.LocalGateway)' in '$group'", "Create (peer $($item.PeerIp))")) {
@@ -243,9 +268,18 @@ try {
                 $row.ConnectionStatus = [string](Get-JsonValue $existing 'connectionStatus')
                 Write-Line "[exists]  Connection '$($item.Connection)' is already there ($($row.ConnectionStatus)), nothing changed."
             }
+            elseif ($differs.Count) {
+                # A connection to a local network gateway that is not the one the file describes would carry traffic to the wrong peer: not created.
+                throw "The connection '$($item.Connection)' was not created because the existing local network gateway differs from the file: $($differs -join '; '). Correct the gateway or the file."
+            }
             elseif ($PSCmdlet.ShouldProcess("connection '$($item.Connection)' in '$group'", "Create an IPsec connection from '$gatewayName' to '$($item.LocalGateway)'")) {
                 if (-not $localExists) { throw "The local network gateway '$($item.LocalGateway)' does not exist, so the connection cannot be created." }
-                $sharedKey = Get-SecretText $item.KeyReference
+                # The secret is read and checked right here. AzlExit 2 is a reference that cannot be read or a key with a character az.cmd cannot carry: exit code 2.
+                try { $sharedKey = Get-SecretText $item.KeyReference }
+                catch {
+                    if ($_.Exception.Data['AzlExit'] -eq 2) { Exit-InputProblem "$($item.Connection): $($_.Exception.Message)" }
+                    throw
+                }
                 $connArgs = @('network', 'vpn-connection', 'create', '--name', $item.Connection, '--resource-group', $group, '--location', $location, '--subscription', $subscriptionId,
                     '--vnet-gateway1', $gatewayId, '--local-gateway2', $item.LocalGateway, '--shared-key', $sharedKey)
                 if ($item.BgpAddress) { $connArgs += '--enable-bgp' }
@@ -254,7 +288,10 @@ try {
                 catch { throw ([string]$_.Exception.Message).Replace($sharedKey, '<shared key>') }
                 finally { $sharedKey = $null; $connArgs = $null }
                 $row.Action = 'Created'
-                $row.ConnectionStatus = [string](Get-JsonValue $created 'connectionStatus')
+                # az network vpn-connection create wraps its answer in 'resource'; the status is read from there, else from the top level.
+                $createdStatus = Get-JsonValue $created 'resource.connectionStatus'
+                if ($null -eq $createdStatus) { $createdStatus = Get-JsonValue $created 'connectionStatus' }
+                $row.ConnectionStatus = [string]$createdStatus
                 $created = $null   # the answer of az can hold the shared key; it is never shown
                 Write-Line "[created] Connection '$($item.Connection)'. Configure the matching shared key on the on-premises VPN device."
             }

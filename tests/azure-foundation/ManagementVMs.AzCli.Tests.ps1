@@ -272,11 +272,54 @@ Describe 'Deploy-ManagementVMs.azcli.ps1' {
             Get-AzCall 'vm create*' | Should -BeNullOrEmpty
         }
 
-        It 'fails the machine when the vault of the reference is not listed under key_vaults' {
-            $r = Invoke-Vm (New-InfraFile -Machines @(New-Machine 'vm-iic-dc-01' @{ admin_password = 'keyvault://kv-iic-other-01/vm-admin-password' }))
-            $r.ExitCode | Should -Be 1
-            $r.Rows[0].Detail | Should -Match 'not listed under key_vaults'
-            Get-AzCall 'keyvault secret show*' | Should -BeNullOrEmpty
+        It 'refuses, with exit code 2 at plan time and also under -WhatIf, a vault of the reference that is not listed under key_vaults, before any az call' {
+            foreach ($dry in $false, $true) {
+                $global:AzlFakeCalls.Clear()
+                $file = New-InfraFile -Machines @(New-Machine 'vm-iic-dc-01' @{ admin_password = 'keyvault://kv-iic-other-01/vm-admin-password' })
+                $r = if ($dry) { Invoke-Vm $file -DryRun } else { Invoke-Vm $file }
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Text | Should -Match 'not listed under key_vaults'
+                $global:AzlFakeCalls | Should -BeNullOrEmpty
+            }
+        }
+
+        It 'refuses a password with <Name>, with exit code 2, before it creates the network interface, and prints the password nowhere' -ForEach @(
+            @{ Name = 'an ampersand'; Password = 'Canary&calc' }
+            @{ Name = 'a percent sign'; Password = 'Canary%PATH%x' }
+            @{ Name = 'a caret'; Password = 'Canary^x' }
+            @{ Name = 'a double quote'; Password = 'Canary"x' }
+            @{ Name = 'a line break'; Password = "Canary`nx" }
+        ) {
+            Add-AzRoute 'keyvault secret show*' $Password
+            $r = Invoke-Vm (New-InfraFile)
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'keyvault://kv-iic-mgmt-01/vm-admin-password'
+            $r.Everything | Should -Not -Match 'Canary'
+            Get-AzCall 'network nic create*' | Should -BeNullOrEmpty
+            Get-AzCall 'vm create*' | Should -BeNullOrEmpty
+            @($global:AzlFakeCalls | Where-Object { $_ -match 'Canary' }) | Should -BeNullOrEmpty
+        }
+
+        It 'refuses a password from an env:// reference with an unsafe character the same way' {
+            $env:AZL_TEST_VM_PASSWORD = 'Canary&env'
+            try {
+                $r = Invoke-Vm (New-InfraFile -Machines @(New-Machine 'vm-iic-dc-01' @{ admin_password = 'env://AZL_TEST_VM_PASSWORD' }))
+                $r.ExitCode | Should -Be 2 -Because $r.Text
+                $r.Everything | Should -Not -Match 'Canary'
+                Get-AzCall 'vm create*' | Should -BeNullOrEmpty
+            }
+            finally { $env:AZL_TEST_VM_PASSWORD = $global:AzlVmCanary }
+        }
+
+        It 'refuses a size, a user name or a subnet with a character az.cmd cannot carry, naming the key and the value, with no az call' -ForEach @(
+            @{ Override = @{ size = 'Standard&D2' }; Match = "size holds the value 'Standard&D2'" }
+            @{ Override = @{ admin_username = 'adm|in' }; Match = "admin_username holds the value 'adm\|in'" }
+            @{ Override = @{ subnet = 'snet^x' }; Match = "subnet holds the value 'snet\^x'" }
+        ) {
+            $r = Invoke-Vm (New-InfraFile -Machines @(New-Machine 'vm-iic-dc-01' $Override))
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match $Match
+            $global:AzlFakeCalls | Should -BeNullOrEmpty
         }
 
         It 'reports a machine that cannot be created, goes on with the next one, and exits 1' {

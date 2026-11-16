@@ -72,6 +72,17 @@ Describe 'Parameters per scenario' {
         $infra.networking.management.gateway = '192.0.2.2'
         Get-AzlArmParameterHash -ParameterSet (New-AzlArmParameterSet -Infrastructure $infra -Mode Validate -AllowUnresolvedSanLun) | Should -Not -Be $a
     }
+    It 'the identity of the template is part of the hash when it is given, and the hash is the same as before when it is not' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-TestInfra) -Mode Validate -AllowUnresolvedSanLun
+        $plain = Get-AzlArmParameterHash -ParameterSet $set
+        $a = Get-AzlArmParameterHash -ParameterSet $set -TemplateIdentity 'https://example.test/templates/a/azuredeploy.json'
+        $b = Get-AzlArmParameterHash -ParameterSet $set -TemplateIdentity 'https://example.test/templates/b/azuredeploy.json'
+        $a | Should -Match '^[0-9a-f]{12}$'
+        $a | Should -Not -Be $b
+        $a | Should -Not -Be $plain
+        (Get-AzlArmParameterHash -ParameterSet $set -TemplateIdentity 'https://example.test/templates/a/azuredeploy.json') | Should -Be $a
+        (Get-AzlArmParameterHash -ParameterSet $set -TemplateIdentity '') | Should -Be $plain
+    }
     It 'a secret never appears as a value in the parameter set or its hash input' {
         $set = New-AzlArmParameterSet -Infrastructure (Get-TestInfra) -Mode Validate -AllowUnresolvedSanLun
         $set.Parameters.localAdminPassword | Should -BeOfType [System.Collections.IDictionary]

@@ -21,6 +21,12 @@
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure): azure.tenant_id, azure.subscription_id, azure.resource_group.
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every check passed (or planned under -WhatIf); 1 a check failed or a precondition failed (az missing, not signed in, wrong tenant);
     2 a value in the file is missing or unusable (nothing was checked).
 
@@ -49,12 +55,11 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 Import-Module ([IO.Path]::Combine($common, 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 # Microsoft Learn, Assign required permissions for Azure Local deployment: the roles that register the machines as Arc resources, unless the account owns the resource group.
 $OwnerRole = 'Owner'
 $ArcRegistrationRole = @('Azure Connected Machine Onboarding', 'Azure Connected Machine Resource Administrator')
@@ -79,9 +84,8 @@ function Get-Prop($Object, [string[]]$Path) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -100,7 +104,7 @@ $group = Get-Text 'azure.resource_group'
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder.' }
 if (-not $group) { Exit-InputProblem 'azure.resource_group is missing. The Arc machines are registered into it.' }
-if ($group -match $UnsafeArgument) { Exit-InputProblem 'azure.resource_group holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote).' }
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group }); if ($problem) { Exit-InputProblem $problem }
 $providers = @(Get-AzlArmMandatoryProvider)
 
 Write-Line "Arc registration prerequisites (Azure): subscription $subscriptionId, resource group '$group', $($providers.Count) resource providers"

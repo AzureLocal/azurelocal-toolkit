@@ -121,6 +121,7 @@ if (-not $location) { Exit-InputProblem "No region: the network '$networkName' h
 
 $plan = [System.Collections.Generic.List[object]]::new()
 $seen = @{}
+$seenLocal = @{}
 $index = -1
 foreach ($site in $sites) {
     $index++
@@ -132,6 +133,8 @@ foreach ($site in $sites) {
     $seen[$connection.ToLowerInvariant()] = $true
     $localName = if (Get-Entry $site 'local_gateway_name') { Get-Entry $site 'local_gateway_name' } else { "$connection-lgw" }
     if ($localName -notmatch $ResourceName) { Exit-InputProblem "$at.local_gateway_name '$localName' is not a valid name." }
+    if ($seenLocal.ContainsKey($localName.ToLowerInvariant())) { Exit-InputProblem "$at.local_gateway_name '$localName' is used by two connections. Give each connection its own local network gateway." }
+    $seenLocal[$localName.ToLowerInvariant()] = $true
     $peerIp = Get-Entry $site 'peer_public_ip'
     if ($peerIp -notmatch $Ipv4) { Exit-InputProblem "$at.peer_public_ip '$peerIp' is missing or is not an IPv4 address. It is the public address of the on-premises VPN device." }
     $rawPrefixes = if ($site.Contains('peer_address_prefixes')) { $site['peer_address_prefixes'] } else { $null }
@@ -178,9 +181,18 @@ try {
             $differs = [System.Collections.Generic.List[string]]::new()
             if ($local) {
                 $currentIp = if ($local.PSObject.Properties['GatewayIpAddress']) { [string]$local.GatewayIpAddress } else { '' }
-                if ($currentIp -and $currentIp -ne $item.PeerIp) { $differs.Add("the local network gateway has peer address $currentIp, the file says $($item.PeerIp)") }
+                if ($currentIp -ne $item.PeerIp) { $differs.Add("the local network gateway has $(if ($currentIp) { "peer address $currentIp" } else { 'no peer address' }), the file says $($item.PeerIp)") }
                 $currentPrefixes = @(if ($local.PSObject.Properties['LocalNetworkAddressSpace'] -and $local.LocalNetworkAddressSpace) { $local.LocalNetworkAddressSpace.AddressPrefixes })
-                if ($currentPrefixes.Count -and (Compare-Object -ReferenceObject $currentPrefixes -DifferenceObject $item.Prefixes)) { $differs.Add("the local network gateway has ranges $($currentPrefixes -join ', '), the file says $($item.Prefixes -join ', ')") }
+                if (-not $currentPrefixes.Count) { $differs.Add("the local network gateway has no address ranges, the file says $($item.Prefixes -join ', ')") }
+                elseif (Compare-Object -ReferenceObject $currentPrefixes -DifferenceObject $item.Prefixes) { $differs.Add("the local network gateway has ranges $($currentPrefixes -join ', '), the file says $($item.Prefixes -join ', ')") }
+                $bgp = if ($local.PSObject.Properties['BgpSettings']) { $local.BgpSettings } else { $null }
+                $currentAsn = if ($bgp -and $bgp.PSObject.Properties['Asn']) { [string]$bgp.Asn } else { '' }
+                $currentBgp = if ($bgp -and $bgp.PSObject.Properties['BgpPeeringAddress']) { [string]$bgp.BgpPeeringAddress } else { '' }
+                if ($item.BgpAddress) {
+                    if ($currentAsn -ne [string]$item.Asn) { $differs.Add("the local network gateway has ASN '$currentAsn', the file says $($item.Asn)") }
+                    if ($currentBgp -ne $item.BgpAddress) { $differs.Add("the local network gateway has BGP peering address '$currentBgp', the file says $($item.BgpAddress)") }
+                }
+                elseif ($currentAsn -or $currentBgp) { $differs.Add('the local network gateway has BGP settings, the file has none') }
                 Write-Line "[exists]  Local network gateway '$($item.LocalGateway)' is already there."
             }
             elseif ($PSCmdlet.ShouldProcess("local network gateway '$($item.LocalGateway)' in '$group'", "Create (peer $($item.PeerIp))")) {
@@ -202,6 +214,10 @@ try {
                 $row.Action = 'AlreadyExists'
                 $row.ConnectionStatus = if ($existing.PSObject.Properties['ConnectionStatus']) { [string]$existing.ConnectionStatus } else { '' }
                 Write-Line "[exists]  Connection '$($item.Connection)' is already there ($($row.ConnectionStatus)), nothing changed."
+            }
+            elseif ($differs.Count) {
+                # A connection to a local network gateway that is not the one the file describes would carry traffic to the wrong peer: not created.
+                throw "The connection '$($item.Connection)' was not created because the existing local network gateway differs from the file: $($differs -join '; '). Correct the gateway or the file."
             }
             elseif ($PSCmdlet.ShouldProcess("connection '$($item.Connection)' in '$group'", "Create an IPsec connection from '$gatewayName' to '$($item.LocalGateway)'")) {
                 if (-not $local) { throw "The local network gateway '$($item.LocalGateway)' does not exist, so the connection cannot be created." }

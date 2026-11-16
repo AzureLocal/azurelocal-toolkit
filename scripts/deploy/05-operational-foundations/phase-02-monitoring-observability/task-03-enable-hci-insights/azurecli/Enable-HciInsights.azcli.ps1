@@ -33,6 +33,12 @@
         operations.monitoring.workspace_resource_group              the resource group of the rule
         operations.monitoring.data_collection_rule                  the name of the existing rule
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every node is associated (created now, already there, planned under -WhatIf) or monitoring is switched off in the file; 1 an Azure call
     failed or a precondition failed (az missing, not signed in, wrong tenant, extension stack-hci missing, no Azure Monitor Agent on the instance, the rule
     does not exist, an association failed or is in conflict); 2 a value in the file is missing or not usable.
@@ -59,11 +65,10 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 # Fixed by Microsoft (Learn, Azure Arc extension management on Azure Local): the extension and the one Arc setting of an instance.
 $AgentExtensionName = 'AzureMonitorWindowsAgent'
@@ -79,9 +84,8 @@ function Get-Text([string]$Path) { $v = Get-AzlInfrastructureValue -Infrastructu
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -119,7 +123,11 @@ foreach ($node in @(Get-AzlInfrastructureNode -Infrastructure $infra)) {
     if ($node.ArcMachineName -and -not @($machines | Where-Object { $_ -ieq $node.ArcMachineName })) { $machines.Add([string]$node.ArcMachineName) }
 }
 if ($machines.Count -eq 0) { Exit-InputProblem 'nodes[] lists no machine. The data collection rule is associated with the Arc machine of every node.' }
-foreach ($machine in $machines) { if ($machine -match $UnsafeArgument) { Exit-InputProblem "The machine name '$machine' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." } }
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'the machine names' = $machines }); if ($problem) { Exit-InputProblem $problem }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $armGroup; 'cluster.name' = $clusterName; 'operations.monitoring.workspace_resource_group' = $group })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Enable-HciInsights.ps1.' }

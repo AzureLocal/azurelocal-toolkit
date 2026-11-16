@@ -9,7 +9,8 @@
          The script registers the provider (az provider register) when it is not.
       2. The Microsoft cloud security benchmark initiative, assigned to the subscription (az policy assignment create). The script assigns it when no
          assignment of it applies to the subscription or above it. It never replaces an assignment it did not create: an assignment with the name
-         Defender for Cloud gives it that points at another definition stops the run with exit code 2.
+         Defender for Cloud gives it that points at another definition, at the subscription itself (a name is unique within one scope), stops the run with
+         exit code 2. The assignment list and this check run first, before any change: nothing is registered or assigned when the run stops with exit code 2.
     When security.defender_for_cloud.security_contact_email holds an address and the subscription has no security contact yet, the script also sets that
     address as the security contact (az security contact create, free). It never replaces a contact that exists. The Azure CLI command is a preview
     command of Microsoft.
@@ -28,6 +29,12 @@
         security.defender_for_cloud.enabled                           default true (the registry default)
         security.defender_for_cloud.apply_cloud_security_benchmark    default true (the registry default)
         security.defender_for_cloud.security_contact_email            empty or absent: no contact is set
+
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
 
     Exit codes: 0 every item is in place (done now, already there, planned under -WhatIf) or the file turns Defender for Cloud off; 1 an Azure call
     failed or a precondition failed (az missing, not signed in, wrong tenant); 2 a value in the file is missing or not usable, or an assignment would be
@@ -58,6 +65,7 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 # Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
 $BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
@@ -73,8 +81,6 @@ $ContactAlertState = 'On'
 $ContactMinimalSeverity = 'High'
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -98,9 +104,8 @@ function Get-RowTemplate([string]$Item) { [ordered]@{ Item = $Item; Action = '';
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -127,7 +132,7 @@ if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToStri
 $addresses = @()
 if ($contactEmail) {
     $addresses = @($contactEmail -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $invalid = @($addresses | Where-Object { $_ -notmatch '^[^@\s;]+@[^@\s;]+\.[^@\s;]+$' -or $_ -match $UnsafeArgument })
+    $invalid = @($addresses | Where-Object { $_ -notmatch '^[^@\s;]+@[^@\s;]+\.[^@\s;]+$' -or -not (Test-AzlAzureCliSafeValue $_) })
     if (-not $addresses.Count -or $invalid.Count) { Exit-InputProblem "security.defender_for_cloud.security_contact_email must hold one email address or several separated by semicolons; found '$contactEmail'." }
 }
 $scope = "/subscriptions/$subscriptionId"
@@ -140,6 +145,25 @@ if ($signedInTenant -ne $tenantId) { Exit-Failed "Signed in to tenant $signedInT
 
 $rows = [System.Collections.Generic.List[object]]::new()
 Write-Line "Subscription: $subscriptionId"
+
+# Read before any change: the benchmark assignments that apply to the subscription, and the name conflict. A conflict stops the run with exit code 2 before the
+# provider is registered or anything is assigned.
+$benchmarkExists = $false
+$benchmarkReadError = ''
+if ($applyBenchmark) {
+    try {
+        # The assignments that apply to the subscription: its own and those of the management groups above it, not those of its resource groups.
+        $assignments = @(@(Invoke-Az policy assignment list --subscription $subscriptionId --scope $scope --disable-scope-strict-match --output json | ConvertFrom-Json) |
+                Where-Object { $null -ne $_ -and -not ([string]$_.scope).StartsWith("$scope/", [StringComparison]::OrdinalIgnoreCase) })
+        $benchmarkExists = @($assignments | Where-Object { [string]$_.policyDefinitionId -eq $BenchmarkDefinitionId }).Count -gt 0
+        # az policy assignment create would overwrite an assignment of the same name at the same scope (a name is unique within one scope, so the same name at a
+        # management group above is no conflict). Never replace an assignment this script did not create.
+        if (-not $benchmarkExists -and @($assignments | Where-Object { [string]$_.name -eq $BenchmarkAssignmentName -and ([string]$_.scope).TrimEnd('/') -ieq $scope }).Count -gt 0) {
+            Exit-InputProblem "A policy assignment named '$BenchmarkAssignmentName' exists on $scope and points at another definition. Remove or rename it, or set security.defender_for_cloud.apply_cloud_security_benchmark to false."
+        }
+    }
+    catch { $benchmarkReadError = $_.Exception.Message }
+}
 
 # 1. Foundational CSPM (free): on once Microsoft.Security is registered.
 $row = Get-RowTemplate 'Foundational CSPM'
@@ -171,16 +195,10 @@ if (-not $applyBenchmark) {
 }
 else {
     try {
-        # The assignments that apply to the subscription: its own and those of the management groups above it, not those of its resource groups.
-        $assignments = @(@(Invoke-Az policy assignment list --subscription $subscriptionId --scope $scope --disable-scope-strict-match --output json | ConvertFrom-Json) |
-                Where-Object { $null -ne $_ -and -not ([string]$_.scope).StartsWith("$scope/", [StringComparison]::OrdinalIgnoreCase) })
-        if (@($assignments | Where-Object { [string]$_.policyDefinitionId -eq $BenchmarkDefinitionId }).Count -gt 0) {
+        if ($benchmarkReadError) { throw $benchmarkReadError }
+        if ($benchmarkExists) {
             $row.Action = 'Exists'
             Write-Line '[exists]  The Microsoft cloud security benchmark is already assigned on this subscription or above it.'
-        }
-        elseif (@($assignments | Where-Object { [string]$_.name -eq $BenchmarkAssignmentName }).Count -gt 0) {
-            # az policy assignment create would overwrite it. Never replace an assignment this script did not create.
-            Exit-InputProblem "A policy assignment named '$BenchmarkAssignmentName' applies to $scope but points at another definition. Remove or rename it, or set security.defender_for_cloud.apply_cloud_security_benchmark to false."
         }
         elseif ($PSCmdlet.ShouldProcess($scope, 'Assign the Microsoft cloud security benchmark initiative')) {
             $null = Invoke-Az policy set-definition show --subscription $subscriptionId --name $BenchmarkDefinitionId.Split('/')[-1] --output none

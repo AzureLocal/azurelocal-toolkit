@@ -29,6 +29,12 @@
         operations.monitoring.workspace_resource_group   the resource group of the workspace and of the endpoint
         operations.monitoring.data_collection_endpoint   the endpoint name
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 the endpoint exists (created now, already there, planned under -WhatIf) or monitoring is switched off in the file; 1 an Azure call
     failed or a precondition failed (az missing, not signed in, wrong tenant, the workspace does not exist, the creation failed); 2 a value in the file
     is missing or not usable.
@@ -56,13 +62,12 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
 # Fixed by the Azure CLI: az monitor data-collection endpoint create requires --public-network-access. Enabled is the Azure default (public), as in the PowerShell variant.
 $PublicNetworkAccess = 'Enabled'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -75,9 +80,8 @@ function ConvertTo-RegionKey([string]$Region) { ($Region -replace '\s', '').ToLo
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the text of standard output; throws when az ends with an error.
 function Invoke-Az {
     $arguments = @($args | ForEach-Object { $_ } | ForEach-Object { [string]$_ })
-    foreach ($argument in $arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @arguments '--only-show-errors' 2>&1)
     $code = $LASTEXITCODE
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -112,7 +116,11 @@ if (-not $group) { Exit-InputProblem 'operations.monitoring.workspace_resource_g
 if (-not $endpointName) { Exit-InputProblem 'operations.monitoring.data_collection_endpoint is missing. Name the endpoint to create.' }
 if ($endpointName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9_]$|^[A-Za-z0-9]$') { Exit-InputProblem "operations.monitoring.data_collection_endpoint '$endpointName' is not a valid name (1 to 64 letters, digits, . _ -; starts with a letter or digit)." }
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder. The workspace is looked up there.' }
-foreach ($pair in $tagArguments) { if ($pair -match $UnsafeArgument) { Exit-InputProblem "The tag '$pair' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." } }
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ tags = $tagArguments }); if ($problem) { Exit-InputProblem $problem }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'operations.monitoring.log_analytics_workspace' = $workspaceName; 'operations.monitoring.workspace_resource_group' = $group; 'azure.location' = $defaultLocation })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Deploy-DataCollectionEndpoint.ps1.' }

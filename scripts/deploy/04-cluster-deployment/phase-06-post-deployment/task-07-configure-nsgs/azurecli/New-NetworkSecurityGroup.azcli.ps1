@@ -35,6 +35,12 @@
             rules[]: name, priority, direction, access, protocol, source_address_prefixes, destination_address_prefixes,
                      source_port_ranges, destination_port_ranges, description
 
+    Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
+    a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
+    script therefore refuses, with exit code 2 and before it calls Azure (also under -WhatIf), a value of the file (a name, a tag key or value, a display name,
+    an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
+    names the position of the argument, never the value.
+
     Exit codes: 0 every group and rule exists (created now, already there, planned under -WhatIf) or the file lists no group; 1 a call or a precondition
     failed (az missing, not signed in, wrong tenant, extension missing, a creation failed); 2 a value in the file is missing or not usable, or SDN is
     off. On exit code 2 nothing is sent to Azure.
@@ -67,6 +73,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -75,8 +82,6 @@ $ResourceName = '^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$'
 $Octet = '(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
 $Ipv4 = "^($Octet\.){3}$Octet$"
 $Cidr = "^($Octet\.){3}$Octet/([0-9]|[12][0-9]|3[0-2])$"
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 $ProtocolName = @{ '*' = '*'; tcp = 'Tcp'; udp = 'Udp'; icmp = 'Icmp' }
 
 function Write-Line([string]$Text) {
@@ -103,9 +108,8 @@ function Get-Prop($Object, [string[]]$Path) {
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -159,7 +163,7 @@ if ($rawTags -is [System.Collections.IDictionary]) {
     foreach ($k in $rawTags.Keys) {
         if ($null -eq $rawTags[$k]) { continue }
         $pair = "$k=$($rawTags[$k])"
-        if ($pair -match $UnsafeArgument) { Exit-InputProblem "The tag '$k' holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote)." }
+        $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "tags.$k" = $pair }); if ($problem) { Exit-InputProblem $problem }
         $tagArguments += $pair
     }
 }
@@ -229,7 +233,7 @@ foreach ($entry in $groupList) {
 
         $description = ([string](Get-Field $rule 'description' '')).Trim()
         if ($description.Length -gt 140) { Exit-InputProblem "$ruleAt.description has $($description.Length) characters; Microsoft Learn allows at most 140." }
-        if ($description -match $UnsafeArgument) { Exit-InputProblem "$ruleAt.description holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote). Rewrite it without." }
+        $problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ "$ruleAt.description" = $description }); if ($problem) { Exit-InputProblem $problem }
 
         $rules.Add([pscustomobject]@{
                 Name = $ruleName; Priority = $priority; Direction = $directionName; Access = $accessName; Protocol = $ProtocolName[$protocol]
@@ -238,6 +242,10 @@ foreach ($entry in $groupList) {
     }
     $plans.Add([pscustomobject]@{ Name = $name; Rules = $rules })
 }
+
+# Every value of the file that goes into an az argument, checked before any Azure call (also under -WhatIf). A value that has its own pattern above is already safe.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $group; 'azure.location' = $location; 'azure.custom_location' = $customLocation })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, then run az login --tenant <azure.tenant_id>.' }

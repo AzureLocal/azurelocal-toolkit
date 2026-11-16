@@ -63,7 +63,7 @@ function Set-AzSignIn([string]$Tenant, [string]$Subscription, [string]$UserType 
     Set-AzHandler 'account show' {
         param($o, $a)
         $null = $a
-        ('{{"tenantId":"{0}","id":"{1}","state":"Enabled","user":{{"name":"{2}","type":"{3}"}}}}' -f $global:AzlFakeSignIn.Tenant, $o['--subscription'][0], $global:AzlFakeSignIn.UserName, $global:AzlFakeSignIn.UserType)
+        ('{{"tenantId":"{0}","id":"{1}","state":"Enabled","user":{{"name":"{2}","type":"{3}"}}}}' -f $global:AzlFakeSignIn.Tenant, $(if ($o.ContainsKey('--subscription')) { $o['--subscription'][0] } else { $global:AzlFakeSignIn.Subscription }), $global:AzlFakeSignIn.UserName, $global:AzlFakeSignIn.UserType)
     }
 }
 

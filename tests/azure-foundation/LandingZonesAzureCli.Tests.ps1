@@ -281,6 +281,44 @@ Describe 'Deploy-Subscriptions.azcli.ps1' {
         $r.Rows[0].Detail | Should -Match $script:NewId
     }
 
+    It 'refuses an id that is not a GUID, and an entry that is not a map, with exit code 2 and no az call' {
+        $r = Invoke-Tool $script:SubCreate (New-InfraFile -LandingZone @{ subscriptions = @($script:Subs[0], [ordered]@{ name = 'sub-iic-bad'; id = 'not-a-guid'; management_group = 'mg-iic' }) })
+        $r.ExitCode | Should -Be 2 -Because $r.Text
+        $r.Text | Should -Match "id 'not-a-guid' is not a GUID"
+        $r = Invoke-Tool $script:SubCreate (New-InfraFile -LandingZone @{ subscriptions = @($script:Subs[0], 'sub-iic-oops') })
+        $r.ExitCode | Should -Be 2 -Because $r.Text
+        $r.Text | Should -Match 'entry of landing_zone.subscriptions is not a map'
+        $global:AzlK6Calls.Count | Should -Be 0
+    }
+
+    It 'fails the row, and applies no management group or tag, when az returns no subscription id for the new alias' {
+        $global:AzlK6Responder = {
+            param($Line)
+            if ($Line -like 'account show*') { return $global:AzlK6Tenant }
+            if ($Line -like 'extension list*') { return 'account' }
+            if ($Line -like 'account alias show*') { return @{ Fail = '(ResourceNotFound) The alias was not found.' } }
+            if ($Line -like 'account alias create*') { return 'Accepted' }
+        }
+        $r = Invoke-Tool $script:SubCreate (New-InfraFile -Tags ([ordered]@{ Project = 'azl' }) -LandingZone @{ subscriptions = @($script:Subs[0]) })
+        $r.ExitCode | Should -Be 1
+        $r.Rows[0].Action | Should -Be 'Failed'
+        $r.Rows[0].Detail | Should -Match 'returned no subscription id'
+        (Get-Call 'subscription add|tag update').Count | Should -Be 0
+    }
+
+    It 'fails the row for an alias that exists but reports no subscription id yet' {
+        $global:AzlK6Responder = {
+            param($Line)
+            if ($Line -like 'account show*') { return $global:AzlK6Tenant }
+            if ($Line -like 'extension list*') { return 'account' }
+            if ($Line -like 'account alias show*') { return '' }
+        }
+        $r = Invoke-Tool $script:SubCreate (New-InfraFile -LandingZone @{ subscriptions = @($script:Subs[1]) })
+        $r.ExitCode | Should -Be 1
+        $r.Rows[0].Action | Should -Be 'Failed'
+        $r.Rows[0].Detail | Should -Match 'reports no subscription id yet'
+    }
+
     It 'stops with exit code 1 when the account extension is missing, az is signed in to another tenant, and with exit code 2 for bad values' {
         $global:AzlK6Responder = { param($Line) if ($Line -like 'account show*') { return $global:AzlK6Tenant } }
         $r = Invoke-Tool $script:SubCreate (New-InfraFile -LandingZone @{ subscriptions = $script:Subs })

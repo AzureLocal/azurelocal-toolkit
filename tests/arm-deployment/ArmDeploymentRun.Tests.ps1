@@ -647,3 +647,18 @@ Describe 'Events, report and exit codes' {
         $last.exitCode | Should -Be 0
     }
 }
+
+Describe 'Run: the deployment name follows the template' {
+    It 'a template file that changed gives another deployment name, so the earlier succeeded deployment is not taken for it' {
+        $before = Get-Content -LiteralPath $script:TemplateFile -Raw
+        try {
+            $one = (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash
+            $again = (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash
+            '{ "parameters": {}, "resources": [ { "type": "Microsoft.Resources/deployments" } ] }' | Set-Content -LiteralPath $script:TemplateFile
+            $two = (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash
+        }
+        finally { Set-Content -LiteralPath $script:TemplateFile -Value $before -NoNewline }
+        $again | Should -Be $one
+        $two | Should -Not -Be $one
+    }
+}

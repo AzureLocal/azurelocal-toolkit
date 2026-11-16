@@ -123,7 +123,14 @@ Describe 'Deploy-KeyVaults.ps1' {
             Should -Invoke New-AzKeyVault -Times 1 -Exactly -ParameterFilter { $Name -eq 'kv-deploy-01' -and $SoftDeleteRetentionInDays -eq 90 }
         }
 
-        It 'refuses a retention Azure does not accept: <Days>' -ForEach @(@{ Days = 6 }, @{ Days = 91 }, @{ Days = 'thirty' }) {
+        It 'refuses an entry that is not a map, with exit code 2 and no Azure call (it is not skipped)' {
+            $r = Invoke-Vault (New-InfraFile -Vaults @((New-Vault 'kv-mgmt-01'), 'kv-deploy-01'))
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'entry of key_vaults is not a map'
+            Should -Invoke New-AzKeyVault -Times 0 -Exactly
+        }
+
+        It 'refuses a retention Azure does not accept: <Days>' -ForEach @(@{ Days = 6 }, @{ Days = 91 }, @{ Days = 'thirty' }, @{ Days = '99999999999999999999' }) {
             $bad = New-Vault 'kv-mgmt-01'; $bad.soft_delete_retention_days = $Days
             $r = Invoke-Vault (New-InfraFile -Vaults @($bad))
             $r.ExitCode | Should -Be 2
