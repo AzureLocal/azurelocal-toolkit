@@ -10,6 +10,9 @@
 param()
 
 BeforeDiscovery {
+    # The repository root at discovery time: BeforeAll has not run yet, so a -ForEach list must not use $script:Repo.
+    $script:RepoAtDiscovery = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
+    $script:GitHubPipelineFiles = @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:RepoAtDiscovery, 'pipelines', 'github-actions')) -Filter '*.yml' | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } })
     $script:Pipelines = @(
         @{ Name = 'discovery'; Platform = 'GitHub'; File = 'pipelines/github-actions/discovery.yml' }
         @{ Name = 'discovery'; Platform = 'GitLab'; File = 'pipelines/gitlab/stages/discovery.yml' }
@@ -217,7 +220,7 @@ Describe 'The pre-cluster verification pipelines' {
             $line | Should -Not -Match '"\{[0-3]\}"'
         }
     }
-    It 'every GitHub pipeline builds creds the safe way, and the JSON it makes is valid for a secret that holds a quote or a backslash' -ForEach @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'github-actions')) -Filter '*.yml' | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } }) {
+    It 'every GitHub pipeline builds creds the safe way, and the JSON it makes is valid for a secret that holds a quote or a backslash' -ForEach $script:GitHubPipelineFiles {
         $lines = @((Get-Text $File) -split "`r?`n" | Where-Object { $_ -match '^\s+creds:' })
         foreach ($line in $lines) { $line | Should -Match 'toJSON\(secrets\.ARM_CLIENT_SECRET\)' -Because $File }
         # what the expression makes: format() puts toJSON(value) (a JSON string, with its quotes and escapes) into the template
