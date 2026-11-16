@@ -9,7 +9,7 @@
 #   ansible-playbook -i inventory/hosts.yml playbooks/site.yml --tags ad-preparation
 #
 # The inventory and group_vars/host_vars are written by config/variables/scripts/New-IacVariableFiles.ps1 from
-# infrastructure.yml. Phase 3 runs Invoke-AzureLocalOsConfiguration.ps1 through the ansible/os-configuration role.
+# infrastructure.yml. Phase 3 runs Invoke-AzureLocalOsConfiguration.ps1 through the azurelocal_os_configuration role.
 # Windows Admin Center and the syslog receiver are not run (out of scope).
 # =============================================================================
 ---

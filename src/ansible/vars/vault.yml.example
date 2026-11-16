@@ -1,0 +1,7 @@
+---
+# Copy to a folder outside the repository (for example ~/azl/vault.yml), replace the value, then encrypt the file:
+#   ansible-vault encrypt ~/azl/vault.yml
+# Never commit the file unencrypted. Pass it to the run with  -e @~/azl/vault.yml --ask-vault-pass  (or --vault-password-file).
+# Point the role variable at it in the vars file of the run (see os-configuration.yml.example):
+#   azurelocal_os_configuration_node_admin_password: "{{ vault_azl_node_admin_password }}"
+vault_azl_node_admin_password: "<the nodes' local administrator password>"

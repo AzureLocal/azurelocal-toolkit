@@ -2,13 +2,13 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # A YAML mapping that names a key twice keeps only one of them, and which one depends on the reader: the registry
 # loaders read without -Ordered and keep the last copy silently. This test reads every YAML file of the registry,
-# the variable templates and examples, the pipelines and the Ansible trees with ConvertFrom-Yaml -Ordered, which
+# the variable templates and examples, the pipelines and the Ansible tree with ConvertFrom-Yaml -Ordered, which
 # stops on a repeated key. Nothing is run and nothing is sent anywhere.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/variables/YamlDuplicateKeys.Tests.ps1
 
 BeforeDiscovery {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $roots = 'config', 'pipelines', 'src/ansible', 'ansible'
+    $roots = 'config', 'pipelines', 'src/ansible'
     $script:Files = @(foreach ($r in $roots) {
             $path = [IO.Path]::Combine($repo, $r)
             if (Test-Path -LiteralPath $path) {

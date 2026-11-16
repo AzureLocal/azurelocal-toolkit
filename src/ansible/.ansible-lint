@@ -1,0 +1,8 @@
+---
+# ansible-lint configuration of src/ansible. Run from this folder, as the pipelines do:  ansible-lint playbooks/ roles/
+# The profile moderate is the standard the OS configuration role was written to; it is a subset of the rules ansible-lint runs without a profile.
+profile: moderate
+exclude_paths:
+  - .git/
+warn_list:
+  - experimental

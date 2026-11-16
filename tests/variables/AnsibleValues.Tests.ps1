@@ -4,7 +4,7 @@
 # config/variables/scripts/New-IacVariableFiles.ps1 writes from infrastructure.yml, or is a setting of the code registered in
 # the master registry (class c) with the same default as the role.
 #
-# The test reads every role, playbook, inventory, configuration and script file of src/ansible and ansible/ (comment lines
+# The test reads every role, playbook, inventory, configuration and script file of src/ansible (comment lines
 # excepted: they are documentation) and fails on a deployment-choice literal: an IPv4 address outside the documentation
 # ranges, a distinguished name or the name of an organization, a cloud DNS suffix or endpoint, a version pin or 'latest'
 # (outside a role default that is registered class c), and a URL whose host is not a vendor download address. It also fails
@@ -16,7 +16,7 @@
 param()
 
 BeforeDiscovery {
-    $script:Roots = 'src/ansible', 'ansible'
+    $script:Roots = 'src/ansible'
 }
 
 BeforeAll {
@@ -36,7 +36,7 @@ BeforeAll {
     )
 
     # Every file of the two trees that git tracks or would track (a generated inventory in the tree is ignored by git).
-    $script:Files = @(& git -C $script:Repo ls-files --cached --others --exclude-standard -- 'src/ansible' 'ansible' |
+    $script:Files = @(& git -C $script:Repo ls-files --cached --others --exclude-standard -- 'src/ansible' |
             Where-Object { $_ -match '\.(ya?ml|cfg|j2|ps1|example)$' -and (Test-Path -LiteralPath (Join-Path $script:Repo $_)) } | Sort-Object -Unique)
 
     # The generated examples: New-IacVariableFiles.ps1 writes them from config/variables/examples/infrastructure.example.yml, and
@@ -132,10 +132,10 @@ BeforeAll {
 }
 
 Describe 'The Ansible code holds no deployment value (D121)' {
-    It 'reads the files of src/ansible and ansible/' {
+    It 'reads the files of src/ansible' {
         $script:Files.Count | Should -BeGreaterThan 30
         $script:Files | Should -Contain 'src/ansible/ansible.cfg'
-        $script:Files | Should -Contain 'ansible/os-configuration/roles/azurelocal_os_configuration/defaults/main.yml'
+        $script:Files | Should -Contain 'src/ansible/roles/azurelocal_os_configuration/defaults/main.yml'
         $script:Defaults.Count | Should -BeGreaterThan 7
     }
 
@@ -154,7 +154,7 @@ Describe 'The Ansible code holds no deployment value (D121)' {
     It 'registers every variable of every role default (<_>)' -ForEach @(
         'src/ansible/roles/ad-preparation/defaults/main.yml', 'src/ansible/roles/arc-registration/defaults/main.yml', 'src/ansible/roles/cicd_runner/defaults/main.yml',
         'src/ansible/roles/domain-controller/defaults/main.yml', 'src/ansible/roles/monitoring-agents/defaults/main.yml', 'src/ansible/roles/syslog-receiver/defaults/main.yml',
-        'src/ansible/roles/wac-server/defaults/main.yml', 'ansible/os-configuration/roles/azurelocal_os_configuration/defaults/main.yml'
+        'src/ansible/roles/wac-server/defaults/main.yml', 'src/ansible/roles/azurelocal_os_configuration/defaults/main.yml'
     ) {
         $file = $_
         $script:Defaults.Contains($file) | Should -BeTrue
@@ -199,10 +199,11 @@ Describe 'The Ansible code holds no deployment value (D121)' {
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'runs only the OS configuration route of ansible/os-configuration: no node configuration role in src/ansible' {
+    It 'runs only the OS configuration route of the role azurelocal_os_configuration: no node configuration role in src/ansible, and no second Ansible tree' {
+        Test-Path (Join-Path $script:Repo 'ansible') | Should -BeFalse
         Test-Path (Join-Path $script:Repo 'src\ansible\roles\os-configuration') | Should -BeFalse
         $playbook = [IO.File]::ReadAllText((Join-Path $script:Repo 'src\ansible\playbooks\02-os-configuration.yml'))
-        $playbook | Should -Match 'ansible/os-configuration/roles/azurelocal_os_configuration'
+        $playbook | Should -Match '(?m)^\s*- role: azurelocal_os_configuration\s*$'
         $playbook | Should -Not -Match 'role:\s*os-configuration\s*$'
     }
 

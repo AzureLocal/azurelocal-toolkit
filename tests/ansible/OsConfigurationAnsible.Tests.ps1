@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# The Ansible front end of the OS configuration (ansible/os-configuration): every YAML file parses, the tasks that carry the node
+# The Ansible front end of the OS configuration (the role azurelocal_os_configuration of src/ansible, run by playbooks/02-os-configuration.yml): every YAML file parses, the tasks that carry the node
 # credential have no_log, the credential is never a command line argument, no file holds a secret, an ID or a real address, and the
 # parameters the role passes are the parameters of Invoke-AzureLocalOsConfiguration.ps1. The launcher runs against a stub wrapper in
 # the test drive. Nothing here runs Ansible, contacts Azure or touches a node.
@@ -10,14 +10,17 @@ param()
 
 BeforeDiscovery {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $root = Join-Path (Join-Path $repo 'ansible') 'os-configuration'
-    $script:DiscoveredFiles = @(Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -match '\.(yml|example)$|^\.(yamllint|ansible-lint)$' -or $_.Extension -in '.ps1', '.cfg', '.md' } |
+    $root = Join-Path (Join-Path $repo 'src') 'ansible'
+    # the files of the front end: the role, the vars examples, the play and the settings that apply to it
+    $own = @(Get-ChildItem -LiteralPath (Join-Path $root 'roles/azurelocal_os_configuration') -Recurse -File) + @(Get-ChildItem -LiteralPath (Join-Path $root 'vars') -File) +
+        @(Get-Item -LiteralPath (Join-Path $root 'playbooks/02-os-configuration.yml'), (Join-Path $root 'ansible.cfg'), (Join-Path $root '.ansible-lint'))
+    $script:DiscoveredFiles = @($own | Where-Object { $_.Name -match '\.(yml|example)$|^\.(yamllint|ansible-lint)$' -or $_.Extension -in '.ps1', '.cfg', '.md' } |
             ForEach-Object { @{ Relative = $_.FullName.Substring($root.Length + 1).Replace('\', '/'); Path = $_.FullName } })
 }
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Root = Join-Path (Join-Path $repo 'ansible') 'os-configuration'
+    $script:Root = Join-Path (Join-Path $repo 'src') 'ansible'
     $script:RoleRoot = Join-Path (Join-Path $script:Root 'roles') 'azurelocal_os_configuration'
     $script:Wrapper = Join-Path (Join-Path (Join-Path (Join-Path (Join-Path $repo 'scripts') 'deploy') '04-cluster-deployment') 'phase-03-os-configuration') 'Invoke-AzureLocalOsConfiguration.ps1'
     $script:Launcher = Join-Path (Join-Path $script:RoleRoot 'files') 'Invoke-OsConfigurationFromAnsible.ps1'
@@ -39,7 +42,7 @@ BeforeAll {
     $script:Phase = Get-RoleYaml 'tasks/phase.yml'
     $script:Defaults = Get-RoleYaml 'defaults/main.yml'
     $script:Specs = Get-RoleYaml 'meta/argument_specs.yml'
-    $script:Playbook = Read-Yaml (Join-Path $script:Root 'os-configuration.yml')
+    $script:Playbook = Read-Yaml (Join-Path $script:Root 'playbooks/02-os-configuration.yml')
     $script:AllTasks = @(Get-Task $script:Main) + @(Get-Task $script:Phase)
 
     # The wrapper's parameters, their ValidateSet values and its documented exit codes, from its source.
@@ -64,8 +67,8 @@ BeforeAll {
 
 Describe 'The files' {
     It 'has the role, the playbook, the inventory examples, the lint configuration and the README' {
-        foreach ($rel in 'os-configuration.yml', 'README.md', 'ansible.cfg', '.yamllint', '.ansible-lint', '.gitignore', 'inventory/hosts.yml.example', 'inventory/vault.yml.example',
-            'roles/azurelocal_os_configuration/tasks/main.yml', 'roles/azurelocal_os_configuration/tasks/phase.yml', 'roles/azurelocal_os_configuration/defaults/main.yml',
+        foreach ($rel in 'playbooks/02-os-configuration.yml', 'ansible.cfg', 'roles/azurelocal_os_configuration/.yamllint', '.ansible-lint', 'vars/os-configuration.yml.example', 'vars/vault.yml.example',
+            'roles/azurelocal_os_configuration/README.md', 'roles/azurelocal_os_configuration/tasks/main.yml', 'roles/azurelocal_os_configuration/tasks/phase.yml', 'roles/azurelocal_os_configuration/defaults/main.yml',
             'roles/azurelocal_os_configuration/meta/main.yml', 'roles/azurelocal_os_configuration/meta/argument_specs.yml',
             'roles/azurelocal_os_configuration/files/Invoke-OsConfigurationFromAnsible.ps1') {
             Test-Path -LiteralPath (Join-Path $script:Root $rel) | Should -BeTrue -Because $rel
@@ -81,8 +84,9 @@ Describe 'The files' {
             @($errors).Count | Should -Be 0
         }
     }
-    It 'the playbook runs the role on the os_config_runner group' {
-        $script:Playbook[0]['hosts'] | Should -Be 'os_config_runner'
+    It 'the playbook runs the role on the controller, and the only copy of the front end is in src/ansible' {
+        $script:Playbook[0]['hosts'] | Should -Be 'localhost'
+        Test-Path -LiteralPath (Join-Path (Split-Path -Parent (Split-Path -Parent $script:Root)) 'ansible') | Should -BeFalse
         @($script:Playbook[0]['roles'] | ForEach-Object { $_['role'] }) | Should -Contain 'azurelocal_os_configuration'
     }
     It 'every task has a name' {
@@ -227,7 +231,7 @@ Describe 'The parameters match Invoke-AzureLocalOsConfiguration.ps1' {
         $options.Keys | Should -Contain 'azurelocal_os_configuration_event_log_path'
     }
     It 'the README names every wrapper parameter' {
-        $readme = Get-Content -LiteralPath (Join-Path $script:Root 'README.md') -Raw
+        $readme = Get-Content -LiteralPath (Join-Path $script:RoleRoot 'README.md') -Raw
         foreach ($p in $script:WrapperParameters) { $readme | Should -Match "-$p\b" -Because $p }
     }
 }
