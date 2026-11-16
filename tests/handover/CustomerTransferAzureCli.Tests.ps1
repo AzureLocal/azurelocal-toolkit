@@ -43,20 +43,25 @@ BeforeAll {
 }
 
 Describe 'Set-CustomerTransfer.azcli.ps1' {
-    AfterAll { Remove-Variable -Name AzlCtTenant, AzlCtSubscription, AzlCtHome, AzlCtCustomerTenant, AzlCtUser, AzlCtState, AzlCtCalls -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-Variable -Name AzlCtFilter, AzlCtShowId, AzlCtTenant, AzlCtSubscription, AzlCtHome, AzlCtCustomerTenant, AzlCtUser, AzlCtState, AzlCtCalls -Scope Global -ErrorAction SilentlyContinue }
 
     BeforeEach {
         $global:AzlCtCalls = [System.Collections.Generic.List[string]]::new()
-        $global:AzlCtState = @{ SignedIn = $true; Tenant = $global:AzlCtTenant; UserByName = $true; ByMail = $false; Existing = @{}; CreateFails = $false }
+        $global:AzlCtState = @{ SignedIn = $true; Tenant = $global:AzlCtTenant; UserByName = $true; ByMail = $false; Existing = @{}; CreateFails = $false; RestoreFails = $false }
+        $global:AzlCtFilter = ''
+        $global:AzlCtShowId = ''
         Mock az {
             $global:LASTEXITCODE = 0
             $line = $args -join ' '
             $global:AzlCtCalls.Add($line)
             $s = $global:AzlCtState
             if ($line -like 'account show*') { if (-not $s.SignedIn) { $global:LASTEXITCODE = 1; return 'run az login' }; return @($s.Tenant, $global:AzlCtHome) }
-            if ($line -like 'account set*') { return }
-            if ($line -like 'ad user show*') { if ($s.UserByName) { return $global:AzlCtUser }; $global:LASTEXITCODE = 1; return 'ResourceNotFound' }
-            if ($line -like 'ad user list*') { if ($s.ByMail) { return $global:AzlCtUser }; return '' }
+            if ($line -like 'account set*') {
+                if ($s.RestoreFails -and $args[-1] -eq $global:AzlCtHome) { $global:LASTEXITCODE = 1; return 'ERROR: the subscription was removed' }
+                return
+            }
+            if ($line -like 'ad user show*') { $global:AzlCtShowId = [string]$args[$args.IndexOf('--id') + 1]; if ($s.UserByName) { return $global:AzlCtUser }; $global:LASTEXITCODE = 1; return 'ResourceNotFound' }
+            if ($line -like 'ad user list*') { $global:AzlCtFilter = [string]$args[$args.IndexOf('--filter') + 1]; if ($s.ByMail) { return $global:AzlCtUser }; return '' }
             if ($line -like 'role assignment list*--scope*') {
                 $role = $args[$args.IndexOf('--role') + 1]; $scope = $args[$args.IndexOf('--scope') + 1]
                 if ($s.Existing.ContainsKey("$role|$scope")) { return '/subscriptions/x/providers/Microsoft.Authorization/roleAssignments/1' }
@@ -104,6 +109,40 @@ Describe 'Set-CustomerTransfer.azcli.ps1' {
         @($global:AzlCtCalls | Where-Object { $_ -like 'role assignment create*' }).Count | Should -Be 2
     }
 
+    It 'doubles an apostrophe of the address in the OData filter, and the whole address reaches az (the apostrophe is not a character the guard refuses)' {
+        $global:AzlCtState.UserByName = $false; $global:AzlCtState.ByMail = $true
+        $r = Invoke-Transfer (New-InfraFile) @{ CustomerAdminUPN = "o'brien@improbability.cloud" }
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $global:AzlCtFilter | Should -Be "mail eq 'o''brien@improbability.cloud'"
+        $global:AzlCtShowId | Should -Be "o'brien@improbability.cloud"
+        @($global:AzlCtCalls | Where-Object { $_ -like 'role assignment create*' }).Count | Should -Be 2
+    }
+
+    It 'leaves an address without an apostrophe as it is in the filter' {
+        $global:AzlCtState.UserByName = $false; $global:AzlCtState.ByMail = $true
+        $null = Invoke-Transfer (New-InfraFile)
+        $global:AzlCtFilter | Should -Be "mail eq 'admin@improbability.cloud'"
+    }
+
+    It 'refuses an address that holds <Bad> (exit 2, no az call, also under -WhatIf)' -ForEach @(@{ Bad = 'a&b@improbability.cloud' }, @{ Bad = 'a|b@improbability.cloud' }, @{ Bad = 'a^b@improbability.cloud' }, @{ Bad = 'a%b@improbability.cloud' }, @{ Bad = 'a"b@improbability.cloud' }) {
+        foreach ($dry in $false, $true) {
+            $global:AzlCtCalls.Clear()
+            $r = if ($dry) { Invoke-Transfer (New-InfraFile) @{ CustomerAdminUPN = $Bad } -DryRun } else { Invoke-Transfer (New-InfraFile) @{ CustomerAdminUPN = $Bad } }
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match 'CustomerAdminUPN'
+            $global:AzlCtCalls.Count | Should -Be 0
+        }
+    }
+
+    It 'warns, records a Failed step and exits 1 when the earlier subscription cannot be put back, although every role was assigned' {
+        $global:AzlCtState.RestoreFails = $true
+        $r = Invoke-Transfer (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'could not be put back'
+        @($r.Rows | Where-Object { $_.Step -eq 'Original subscription' -and $_.Status -eq 'Failed' }).Count | Should -Be 1
+        @($r.Rows | Where-Object Status -EQ 'Assigned').Count | Should -Be 2
+    }
+
     It 'exits 1 when the administrator is not found in Microsoft Entra ID' {
         $global:AzlCtState.UserByName = $false
         $r = Invoke-Transfer (New-InfraFile)
@@ -148,7 +187,10 @@ Describe 'Set-CustomerTransfer.azcli.ps1' {
     It 'has one guarded call site of az and never signs in' {
         $text = Get-Content -LiteralPath $script:Script -Raw
         ([regex]::Matches($text, '&\s+az\s')).Count | Should -Be 1
-        $text | Should -Match 'UnsafeArgument'
+        $text | Should -Match 'AzlAzureCliArgument\.psm1'
+        $text | Should -Match 'Get-AzlAzureCliArgumentProblem'
+        $text | Should -Match 'Get-AzlAzureCliValueProblem'
+        $text | Should -Not -Match 'UnsafeArgument'
         $text | Should -Not -Match '(?m)^\s*(\$null = )?(az login|Invoke-AzCli @\(.login)'
     }
 }

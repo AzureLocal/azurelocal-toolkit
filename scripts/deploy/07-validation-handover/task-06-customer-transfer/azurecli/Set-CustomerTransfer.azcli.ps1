@@ -6,7 +6,9 @@
     Stage 07 (validation and handover), task 06, Azure CLI variant of Set-CustomerTransfer.ps1. It does the same with az commands, for a host that has the Azure CLI and not the
     Az PowerShell modules. For the instance that infrastructure.yml describes (cluster.name in the resource group azure.resource_group of the subscription azure.subscription_id):
 
-      1. looks the customer administrator up in Microsoft Entra ID: az ad user show --id <user principal name>, then, for a guest, az ad user list --filter "mail eq '<mail>'";
+      1. looks the customer administrator up in Microsoft Entra ID: az ad user show --id <user principal name>, then, for a guest, az ad user list --filter "mail eq '<mail>'"
+         (an apostrophe in the address is doubled in the OData filter, as OData requires: o'brien@x becomes o''brien@x; the apostrophe is not one of the characters az.cmd cannot
+         carry, so the whole address reaches az);
       2. assigns the built-in role Contributor on the resource group and Reader on the subscription when the administrator does not have them
          (az role assignment list, then az role assignment create --assignee-object-id --assignee-principal-type User --role --scope; Microsoft Learn: Assign Azure roles using Azure CLI);
       3. counts the role assignments the administrator now has;
@@ -19,8 +21,12 @@
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure): cluster.name, azure.tenant_id, azure.subscription_id, azure.resource_group, site.customer.
 
+    Every az argument is checked by the toolkit's one guard (scripts/common/azure-cli/AzlAzureCliArgument.psm1): a value of the file, or the user principal name, that holds
+    & | < > ^ % " or a line break is refused at plan time (also under -WhatIf) with exit code 2, before any az call (on Windows az is a batch file, az.cmd).
+
     Exit codes: 0 the transfer is in place (assigned now, already there, planned under -WhatIf) and the record is written; 1 an az call failed or a precondition failed (az missing,
-    not signed in, wrong tenant, the administrator not found, an assignment failed); 2 a value in the file or a parameter is missing or not usable.
+    not signed in, wrong tenant, the administrator not found, an assignment failed), or the subscription that was selected before could not be put back (a warning and a Failed
+    step say so: az stays set to the subscription of the file); 2 a value in the file or a parameter is missing or not usable.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read.
@@ -55,11 +61,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 # The two roles of the transfer: the customer administrator manages the resource group and can read the subscription. They are the definition of the handover (Azure built-in
 # role names, Microsoft Learn: Azure built-in roles), not a setting of a deployment: access beyond these two roles is the customer's own decision after the transfer.
 $ResourceGroupRole = 'Contributor'
@@ -75,9 +81,8 @@ function Get-Text([string]$Path) { ([string](Get-AzlInfrastructureValue -Infrast
 
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. Returns the exit code, stdout and stderr.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -99,11 +104,14 @@ if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. It is the n
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder.' }
 if (-not $resourceGroup) { Exit-InputProblem 'azure.resource_group is missing. The roles are assigned on it.' }
-if ($resourceGroup -match $UnsafeArgument -or $resourceGroup -match '\s') { Exit-InputProblem 'azure.resource_group holds a character that is not sent to the Azure CLI.' }
+if ($resourceGroup -match '\s') { Exit-InputProblem 'azure.resource_group holds a space, which is not allowed in an Azure resource group name.' }
 if ($CustomerTenantId.Trim() -notmatch $Guid) { Exit-InputProblem '-CustomerTenantId is not a GUID.' }
 $admin = $CustomerAdminUPN.Trim()
-if ($admin -notmatch '^[^@\s]+@[^@\s]+$' -or $admin -match $UnsafeArgument) { Exit-InputProblem '-CustomerAdminUPN is not a user principal name (name@domain).' }
+if ($admin -notmatch '^[^@\s]+@[^@\s]+$') { Exit-InputProblem '-CustomerAdminUPN is not a user principal name (name@domain).' }
 $CustomerTenantId = $CustomerTenantId.Trim()
+# At plan time, before any az call, also under -WhatIf: a value that az.cmd cannot carry ends the run with exit code 2.
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $resourceGroup; 'cluster.name' = $clusterName; '-CustomerAdminUPN' = $admin })
+if ($problem) { Exit-InputProblem $problem }
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Set-CustomerTransfer.ps1.' }
@@ -131,7 +139,9 @@ try {
     $byName = Invoke-AzCli @('ad', 'user', 'show', '--id', $admin, '--query', 'id', '--output', 'tsv')
     if ($byName.ExitCode -eq 0 -and $byName.Output.Trim() -match $Guid) { $userId = $byName.Output.Trim() }
     else {
-        $byMail = Invoke-AzCli @('ad', 'user', 'list', '--filter', "mail eq '$admin'", '--query', '[0].id', '--output', 'tsv')
+        # OData: a single quote inside a string literal is written twice. The quote is not a character the guard refuses, so the address reaches az whole.
+        $odataMail = $admin.Replace("'", "''")
+        $byMail = Invoke-AzCli @('ad', 'user', 'list', '--filter', "mail eq '$odataMail'", '--query', '[0].id', '--output', 'tsv')
         if ($byMail.ExitCode -eq 0 -and $byMail.Output.Trim() -match $Guid) { $userId = $byMail.Output.Trim() }
     }
     if (-not $userId) {
@@ -164,7 +174,10 @@ catch { Add-Step 'Azure' 'Failed' $_.Exception.Message }
 finally {
     if ($originalSubscription -and $originalSubscription -ne $subscriptionId) {
         $back = Invoke-AzCli @('account', 'set', '--subscription', $originalSubscription)
-        if ($back.ExitCode -ne 0) { Write-Verbose "Could not restore the original subscription: $($back.Detail)" }
+        if ($back.ExitCode -ne 0) {
+            Write-Warning "The subscription that az had selected before could not be put back: $($back.Detail) az stays set to the subscription of infrastructure.yml. Run az account set --subscription <your earlier subscription>."
+            Add-Step 'Original subscription' 'Failed' 'The subscription that az had selected before could not be put back; az stays set to the subscription of infrastructure.yml.'
+        }
     }
 }
 
