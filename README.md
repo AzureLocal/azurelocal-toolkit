@@ -9,7 +9,7 @@ Primary automation repository for Azure Local deployment, configuration, validat
 This repository is the operational toolkit for building and running Azure Local automation. It includes:
 
 - deployment and validation scripts across the full lifecycle
-- infrastructure-as-code sources for Terraform, Bicep, ARM templates, and Ansible
+- infrastructure-as-code sources for Terraform and Ansible, and the ARM parameter map and examples for Microsoft's Azure Local quickstart template (the template itself is downloaded at run time)
 - CI/CD pipeline samples for GitLab, GitHub Actions, and Azure DevOps
 - config-driven variable handling and schema assets
 - repo-management artifacts for planning, checklists, and working notes
@@ -27,7 +27,7 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 | 1 | Hardware discovery (optional): the inventory of every node from its BMC, any maker; Dell also proposes `nodes[]` | `Get-HardwareInventory.ps1`, `Invoke-HardwareDiscovery.ps1` | [docs/hardware-discovery.md](docs/hardware-discovery.md) |
 | 2 | ZTP: install the OS from Azure and register the machines with Azure Arc | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | its README |
 | 3 | OS configuration | `Invoke-AzureLocalOsConfiguration.ps1` | [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) |
-| 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | the toolkit, watched by the Sonar Verification monitor | [see the gate note](#the-pre-cluster-verification-gate) |
+| 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | `Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify`, watched by the Sonar Verification monitor | [docs/pre-cluster-verification.md](docs/pre-cluster-verification.md) |
 | 5 | ARM Validate | `Invoke-AzureLocalArmDeployment.ps1 -Mode Validate` | [docs/arm-deployment-guide.md](docs/arm-deployment-guide.md) |
 | 6 | ARM Deploy | the same script, `-Mode Deploy` | same |
 | 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/deploy/07-validation-handover`, `scripts/deploy/08-day2-operations` | the Azure Local docs |
@@ -36,7 +36,7 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 
 ### The pre-cluster verification gate
 
-The gate sits between OS configuration and ARM Validate and changes nothing. Until its page is published, the input to ARM Validate is the OS configuration report (`-OsConfigurationReport <report directory>`): a node whose report says it is not converged is not ready for a cluster.
+The gate sits between OS configuration and ARM Validate and changes nothing unless you ask it to (`-Fix` registers missing resource providers on the Azure side only). Run `Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify` with the OS configuration report (`-OsConfigurationReport <report directory>`): it checks Azure, Active Directory, the nodes, the network, the storage and the Environment Checker readiness, and writes `report.json`, `summary.md` and an event feed. `Invoke-AzureLocalArmDeployment.ps1` in Mode Validate or Deploy refuses to run unless the latest gate result for the same infrastructure file has the verdict Pass, covers all six categories and has not expired; the only way past it is the switch `-SkipPreClusterVerification`, which is warned and recorded in the ARM report as `Bypassed`. Each CI/CD platform has a pipeline for the gate (`pre-cluster-verification.yml`) and one for hardware discovery (`discovery.yml`); see [pipelines/README.md](pipelines/README.md). The checks, statuses and settings are in [docs/pre-cluster-verification.md](docs/pre-cluster-verification.md).
 
 ### The Solution Builder Extension (SBE) package is a requirement
 
@@ -81,7 +81,7 @@ Terraform handles Azure resource provisioning. PowerShell and Ansible handle on-
 | `pipelines/` | Reusable CI/CD samples for GitLab, GitHub Actions, and Azure DevOps |
 | `repo-management/` | Plans, checklists, reports, helper scripts, and working artifacts for this repo |
 | `scripts/` | PowerShell automation organized by deployment stage plus common helpers and validation tooling |
-| `src/` | Source assets for `ansible/`, `arm-templates/`, `bicep/`, and `terraform/` |
+| `src/` | Source assets for `ansible/` and `terraform/` (the ARM parameter map and examples are in `config/azure/arm-templates/`) |
 | `tests/` | Test scaffolding and future automated validation suites |
 | `tools/` | Standalone utilities such as planning and sizing helpers |
 
