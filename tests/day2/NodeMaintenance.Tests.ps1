@@ -42,7 +42,13 @@ BeforeAll {
         $global:AzlNmCalls = [System.Collections.Generic.List[object]]::new()
         $global:AzlNmPings = 0
         $global:AzlNmNow = [datetime]'2026-01-01T00:00:00Z'
-        $global:AzlNmSafe = @{ Problems = @(); MissingCmdlet = @() }
+        $global:AzlNmSafe = @{ Problems = @(); MissingCmdlet = @(); NodeState = 'Up' }
+        $global:AzlNmBootBefore = [datetime]'2025-12-31T00:00:00Z'
+        $global:AzlNmBootAfter = [datetime]'2026-01-01T00:00:30Z'
+        $global:AzlNmRestarted = $false
+        $global:AzlNmRebootWorks = $true
+        $global:AzlNmRestartFails = ''
+        $global:AzlNmAlwaysUp = $false
         $global:AzlNmResumeMissing = @()
         $global:AzlNmSuspendState = 'Paused'
         $global:AzlNmStorageBusyReads = 0
@@ -69,21 +75,22 @@ Describe 'Invoke-NodeMaintenanceReboot.ps1' {
     }
     AfterAll {
         Remove-Item Env:AZL_TEST_LOCAL_ADMIN, Env:AZL_TEST_LCM -ErrorAction SilentlyContinue
-        Remove-Variable -Name AzlNmCalls, AzlNmPings, AzlNmNow, AzlNmSafe, AzlNmResumeMissing, AzlNmSuspendState, AzlNmStorageBusyReads, AzlNmStorageReads, AzlNmFinalState, AzlNmNeverBack -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzlNmBootBefore, AzlNmBootAfter, AzlNmRestarted, AzlNmRebootWorks, AzlNmRestartFails, AzlNmAlwaysUp, AzlNmCalls, AzlNmPings, AzlNmNow, AzlNmSafe, AzlNmResumeMissing, AzlNmSuspendState, AzlNmStorageBusyReads, AzlNmStorageReads, AzlNmFinalState, AzlNmNeverBack -Scope Global -ErrorAction SilentlyContinue
     }
     BeforeEach {
         Reset-Cluster
         Mock Get-Date { if ($Format) { $global:AzlNmNow.ToString($Format) } else { $global:AzlNmNow } }
         Mock Start-Sleep { $global:AzlNmNow = $global:AzlNmNow.AddSeconds($Seconds) }
-        Mock Test-Connection { $global:AzlNmPings++; (-not $global:AzlNmNeverBack) -and $global:AzlNmPings -gt 1 }
+        Mock Test-Connection { $global:AzlNmPings++; if ($global:AzlNmAlwaysUp) { return $true }; (-not $global:AzlNmNeverBack) -and $global:AzlNmPings -gt 1 }
         Mock Invoke-Command {
             $text = $ScriptBlock.ToString()
             $global:AzlNmCalls.Add([pscustomobject]@{ Text = $text; Computer = [string]$ComputerName; Credential = $Credential; Arguments = @($ArgumentList) })
             switch -Regex ($text) {
+                'LastBootUpTime' { if ($global:AzlNmRestarted) { return $global:AzlNmBootAfter } else { return $global:AzlNmBootBefore } }
                 'MissingCmdlet' { return $global:AzlNmSafe }
                 'Suspend-ClusterNode' { return $global:AzlNmSuspendState }
                 'Remove-MocPhysicalNode -NodeName' { return }
-                'Restart-Computer' { return }
+                'Restart-Computer' { if ($global:AzlNmRebootWorks) { $global:AzlNmRestarted = $true }; if ($global:AzlNmRestartFails) { throw $global:AzlNmRestartFails }; return }
                 'Resume-ClusterNode' { return }
                 'New-MocPhysicalNode -NodeName' { return @('iic-n01', 'iic-n02') }
                 'DrainStatus' { return [pscustomobject]@{ Name = 'iic-n01'; State = $global:AzlNmFinalState; DrainStatus = 'NotInitiated' } }
@@ -272,11 +279,104 @@ Describe 'Invoke-NodeMaintenanceReboot.ps1' {
             (Get-Call 'Restart-Computer').Count | Should -Be 1
         }
 
-        It '-SkipDrain reboots without the safety checks, the suspend and the VM configuration change' {
+        It '-SkipDrain on a node that is already Paused reboots it without the suspend and the VM configuration change, and still reads the node state and the storage first' {
+            $global:AzlNmSafe.NodeState = 'Paused'
             $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipDrain = $true; LogPath = (Join-Path $TestDrive 'c4.log') }
             $r.ExitCode | Should -BeIn 0, $null -Because $r.Text
-            (Get-Call 'MissingCmdlet|Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName').Count | Should -Be 0
+            (Get-Call 'MissingCmdlet').Count | Should -Be 1
+            (Get-Call 'Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName').Count | Should -Be 0
             (Get-Call 'Restart-Computer').Count | Should -Be 1
+        }
+
+        It '-SkipDrain refuses a node that is <State>: exit 1 and nothing is rebooted, suspended or resumed' -ForEach @(@{ State = 'Up' }, @{ State = 'Down' }, @{ State = '' }) {
+            $global:AzlNmSafe.NodeState = $State
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipDrain = $true; LogPath = (Join-Path $TestDrive 'c5.log') }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'already Paused'
+            (Get-Call 'Restart-Computer|Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName|Resume-ClusterNode|New-MocPhysicalNode -NodeName').Count | Should -Be 0
+        }
+
+        It '-SkipDrain on a Paused node still stops when another node is not Up or a repair job is running' {
+            $global:AzlNmSafe = @{ Problems = @('iic-n02 is Down'); MissingCmdlet = @(); NodeState = 'Paused' }
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipDrain = $true; LogPath = (Join-Path $TestDrive 'c6.log') }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'Not safe'
+            (Get-Call 'Restart-Computer').Count | Should -Be 0
+        }
+
+        It '-SkipDrain does not ask for Remove-MocPhysicalNode, only for New-MocPhysicalNode (the node is resumed), and for nothing with -SkipResume' {
+            $global:AzlNmSafe.NodeState = 'Paused'
+            $null = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipDrain = $true; LogPath = (Join-Path $TestDrive 'c7.log') }
+            @((Get-Call 'MissingCmdlet')[0].Arguments[1]) | Should -Be @('New-MocPhysicalNode')
+            Reset-Cluster
+            $global:AzlNmSafe.NodeState = 'Paused'
+            $null = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipDrain = $true; SkipResume = $true; LogPath = (Join-Path $TestDrive 'c8.log') }
+            @(@((Get-Call 'MissingCmdlet')[0].Arguments[1]) | Where-Object { $_ }).Count | Should -Be 0
+        }
+    }
+
+    Context 'the reboot must be proven before the node is resumed' {
+        It 'a restart command that fails with an unexpected error ends with exit 1, says the node stays Paused, and resumes nothing' {
+            $global:AzlNmRestartFails = 'The RPC server is unavailable'
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'd1.log') }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'Restart-Computer failed'
+            $r.Text | Should -Match 'stays Paused'
+            (Get-Call 'Resume-ClusterNode|New-MocPhysicalNode -NodeName').Count | Should -Be 0
+        }
+
+        It 'a connection that drops while the node restarts is expected and is not an error' {
+            $global:AzlNmRestartFails = 'The network connection was closed'
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'd2.log') }
+            $r.ExitCode | Should -BeIn 0, $null -Because $r.Text
+            $r.Text | Should -Match 'The node rebooted'
+        }
+
+        It 'a reboot that never happened (the node never goes offline and its boot time is the same) ends with exit 1 and the node is not resumed' {
+            $global:AzlNmAlwaysUp = $true
+            $global:AzlNmRebootWorks = $false
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'd3.log') }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'no proof'
+            (Get-Call 'Resume-ClusterNode|New-MocPhysicalNode -NodeName').Count | Should -Be 0
+        }
+
+        It 'a node that was seen offline but whose boot time did not change is not accepted as rebooted' {
+            $global:AzlNmRebootWorks = $false
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'd4.log') }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            (Get-Call 'Resume-ClusterNode').Count | Should -Be 0
+        }
+
+        It 'a newer boot time is proof of the reboot even when the node was never seen offline' {
+            $global:AzlNmAlwaysUp = $true
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'd5.log') }
+            $r.ExitCode | Should -BeIn 0, $null -Because $r.Text
+            (Get-Call 'Resume-ClusterNode').Count | Should -Be 1
+        }
+    }
+
+    Context 'what exit code 0 means with the documented opt-outs' {
+        It 'the help says what exit 0 means for -SkipResume and for -StorageRepairTimeoutMinutes 0' {
+            $help = Get-Help -Full $script:Script
+            $description = ($help.description | Out-String)
+            $description | Should -Match '(?s)-SkipResume\s+the node was rebooted and came back, and it is still Paused.*NOT resumed'
+            $description | Should -Match '(?s)-StorageRepairTimeoutMinutes 0\s+the node was rebooted, resumed and is Up, but the storage repair was NOT waited for'
+            $description | Should -Match 'Only a result with Resumed true and StorageRepair Repaired means that the next node is safe'
+        }
+
+        It '-SkipResume ends with exit 0, and the result says the node was not resumed' {
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; SkipResume = $true; LogPath = (Join-Path $TestDrive 'e1.log') }
+            $r.ExitCode | Should -BeIn 0, $null -Because $r.Text
+            $r.Result[0].Resumed | Should -BeFalse
+            $r.Result[0].StorageRepair | Should -Be 'NotWaited'
+            $r.Text | Should -Match 'NOT resumed'
+        }
+
+        It 'a full run says Resumed and Repaired' {
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'e2.log') }
+            $r.Result[0].Resumed | Should -BeTrue
+            $r.Result[0].StorageRepair | Should -Be 'Repaired'
         }
     }
 

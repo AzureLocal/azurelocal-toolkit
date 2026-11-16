@@ -10,7 +10,9 @@
          script stops before it changes anything.
       1. Suspend-ClusterNode -Drain -Wait: the roles and virtual machines live migrate to the other nodes; the node must show Paused.
       2. Remove-MocPhysicalNode: no new virtual machine is placed on the node.
-      3. Restart-Computer, then wait for the node: it goes offline, comes back (ping), and PowerShell remoting works again.
+      3. Restart-Computer, then wait for the node: it goes offline, comes back (ping), and PowerShell remoting works again. The reboot must be proven before the
+         node is resumed: the last boot time (Win32_OperatingSystem.LastBootUpTime) must be newer than before the restart (when it cannot be read, the node must have been
+         seen offline). A restart command that fails with an unexpected error, or a node that comes back without a new boot, ends the run with exit code 1 and the node stays Paused.
       4. Resume-ClusterNode -Failback <mode>: the node is Up and its roles fail back; New-MocPhysicalNode adds it to the virtual machine configuration again.
       5. Wait for the storage to repair: Get-StorageJob shows no job that is running or suspended, and every virtual disk is Healthy and OK again. Learn: it is not safe to take
          another server offline until the repair jobs finish. Run the script for the next node only after this one has ended with exit code 0.
@@ -29,8 +31,16 @@
 
     -WhatIf prints the plan and sends nothing to any machine.
 
-    Exit codes: 0 done and the storage is healthy (or planned under -WhatIf); 1 it was not safe, the node did not come back, a step failed, or the storage had not repaired when
-    -StorageRepairTimeoutMinutes ran out; 2 the file is missing or unusable, or no credential could be built.
+    Exit codes: 0 done and the storage is healthy (or planned under -WhatIf); 1 it was not safe, -SkipDrain was given for a node that is not Paused, the restart failed, there is no
+    proof that the node rebooted, the node did not come back, a step failed, or the storage had not repaired when -StorageRepairTimeoutMinutes ran out; 2 the file is missing or
+    unusable, or no credential could be built.
+
+    What exit code 0 means with the two documented opt-outs (the script does not end them with a different code; read the result object, which says it too):
+      -SkipResume                       the node was rebooted and came back, and it is still Paused (in maintenance). It was NOT resumed, it is not in the virtual machine
+                                        configuration again, and the storage was not checked (StorageRepair is NotWaited, Resumed is false). Run -ResumeOnly next.
+      -StorageRepairTimeoutMinutes 0    the node was rebooted, resumed and is Up, but the storage repair was NOT waited for (StorageRepair is NotWaited). Exit code 0 does not
+                                        say the storage is healthy: do not take another node offline until Get-StorageJob shows no job and every virtual disk is Healthy.
+    Only a result with Resumed true and StorageRepair Repaired means that the next node is safe to take.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Reads nodes[] (name and management address), identity.active_directory.domain_fqdn, identity.local_admin (username, password reference) and identity.active_directory.lcm_user (username, password reference) with identity.active_directory.netbios_name.
@@ -45,10 +55,12 @@
     Optional. The log file. Default: logs\node-maintenance-reboot\<date>_<time>_<node>.log in the current folder.
 
 .PARAMETER SkipDrain
-    Reboot without suspending the node first (and without the safety checks of step 0). Use it only for a node that is already suspended.
+    Reboot without draining the node (no Suspend-ClusterNode, no Remove-MocPhysicalNode). The node must already be Paused: the script reads its state first and stops with exit
+    code 1, before anything is changed, when it is not. The other checks of step 0 still apply (every other node Up, every virtual disk Healthy and OK, no storage repair job
+    running, and New-MocPhysicalNode present when the node is resumed).
 
 .PARAMETER SkipResume
-    Leave the node in maintenance after the reboot (no resume, no wait for the storage). Run again with -ResumeOnly when ready.
+    Leave the node in maintenance after the reboot (no resume, no wait for the storage). Exit code 0 then means: rebooted and back, still Paused. Run again with -ResumeOnly when ready.
 
 .PARAMETER ResumeOnly
     Skip the drain and the reboot; only resume a node that is in maintenance and wait for the storage to repair.
@@ -63,7 +75,7 @@
     Seconds between connectivity checks while waiting.
 
 .PARAMETER StorageRepairTimeoutMinutes
-    Most minutes to wait for the storage repair jobs to finish after the resume (0 to 1440). 0 does not wait, and the script says the next node must not be taken offline yet. Default: 180.
+    Most minutes to wait for the storage repair jobs to finish after the resume (0 to 1440). 0 does not wait: exit code 0 then does not say the storage is healthy (StorageRepair is NotWaited), and the script says the next node must not be taken offline yet. Default: 180.
 
 .PARAMETER StoragePollSeconds
     Seconds between two reads of the storage repair jobs while waiting (5 to 600). Default: 30.
@@ -254,18 +266,19 @@ function Invoke-OnNode([scriptblock]$Block, [object[]]$Arguments = $null) {
 
 # -- The remote blocks (Windows PowerShell on the node)
 $CheckSafe = {
-    param($NodeName)
+    param($NodeName, $RequiredCmdlet)
     $others = @(Get-ClusterNode | Where-Object { $_.Name -ne $NodeName -and [string]$_.State -ne 'Up' } | ForEach-Object { "$($_.Name) is $($_.State)" })
     $disks = @(Get-VirtualDisk | Where-Object { [string]$_.HealthStatus -ne 'Healthy' -or [string]$_.OperationalStatus -ne 'OK' } | ForEach-Object { "virtual disk $($_.FriendlyName) is $($_.HealthStatus)/$($_.OperationalStatus)" })
     $jobs = @(Get-StorageJob | Where-Object { [string]$_.JobState -ne 'Completed' } | ForEach-Object { "storage job $($_.Name) is $($_.JobState) at $($_.PercentComplete) percent" })
-    $missing = @('Remove-MocPhysicalNode', 'New-MocPhysicalNode' | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
-    @{ Problems = @($others + $disks + $jobs); MissingCmdlet = @($missing) }
+    $missing = @($RequiredCmdlet | Where-Object { $_ -and -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+    @{ Problems = @($others + $disks + $jobs); MissingCmdlet = @($missing); NodeState = [string](Get-ClusterNode -Name $NodeName -ErrorAction SilentlyContinue).State }
 }
 $CheckResumeCmdlet = { @('New-MocPhysicalNode' | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }) }
 $SuspendNode = { param($NodeName) Suspend-ClusterNode -Name $NodeName -Drain -Wait -ErrorAction Stop | Out-Null; [string](Get-ClusterNode -Name $NodeName).State }
 $RemoveMoc = { param($NodeName) Remove-MocPhysicalNode -NodeName $NodeName -ErrorAction Stop | Out-Null }
 $RestartNode = { Restart-Computer -Force }
 $ProbeNode = { [string](Get-ClusterNode -Name $env:COMPUTERNAME -ErrorAction SilentlyContinue).State }
+$ReadBootTime = { (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime }
 $ResumeNode = { param($NodeName, $FbMode) Resume-ClusterNode -Name $NodeName -Failback $FbMode -ErrorAction Stop | Out-Null }
 $AddMoc = { param($NodeName) New-MocPhysicalNode -NodeName $NodeName -ErrorAction Stop | Out-Null; @(Get-MocPhysicalNode | ForEach-Object { [string]$_.NodeName }) }
 $ReadNodeState = {
@@ -288,10 +301,11 @@ if ($WhatIfPreference) {
     }
     else {
         if (-not $SkipDrain) { Write-Log "[WhatIf] Would check that it is safe (other nodes Up, virtual disks Healthy, no repair job running)" 'WARN' }
-        Write-Log "[WhatIf] Would suspend cluster node  : $nodeHostname ($nodeIp)" 'WARN'
+        else { Write-Log "[WhatIf] Would check that the node is Paused (-SkipDrain) and that it is safe (other nodes Up, virtual disks Healthy, no repair job running)" 'WARN' }
+        if (-not $SkipDrain) { Write-Log "[WhatIf] Would suspend cluster node  : $nodeHostname ($nodeIp)" 'WARN' }
         if (-not $SkipDrain) { Write-Log "[WhatIf] Would remove the node from the virtual machine configuration (Remove-MocPhysicalNode)" 'WARN' }
         Write-Log "[WhatIf] Would reboot                : $nodeHostname ($nodeIp)" 'WARN'
-        Write-Log "[WhatIf] Would wait up to            : $TimeoutSeconds seconds for node to return" 'WARN'
+        Write-Log "[WhatIf] Would wait up to            : $TimeoutSeconds seconds for node to return, and check that it really rebooted before it is resumed" 'WARN'
         if (-not $SkipResume) {
             Write-Log "[WhatIf] Would resume cluster node   : $nodeHostname ($nodeIp) (Failback: $FailbackMode)" 'WARN'
             Write-Log "[WhatIf] Would wait up to $StorageRepairTimeoutMinutes minutes for the storage repair jobs to finish" 'WARN'
@@ -345,13 +359,17 @@ try {
         $storageResult = Resume-NodeAndWait
     }
     else {
-        # -- Step 0: is it safe
+        # -- Step 0: is it safe (also with -SkipDrain: the node must already be Paused, and the cluster and the storage must still be fit for a reboot)
+        $requiredCmdlet = if ($SkipDrain) { if ($SkipResume) { @() } else { @('New-MocPhysicalNode') } } else { @('Remove-MocPhysicalNode', 'New-MocPhysicalNode') }
+        Write-Log 'Checking that it is safe to take the node out (other nodes Up, virtual disks Healthy, no repair job running)...'
+        $safe = Invoke-OnNode $CheckSafe @($nodeHostname, @($requiredCmdlet))
+        if ($SkipDrain -and [string]$safe.NodeState -ne 'Paused') {
+            Exit-Failed "-SkipDrain needs a node that is already Paused (Suspend-ClusterNode -Drain), but node '$nodeHostname' is '$([string]$safe.NodeState)'. It was not rebooted and nothing was changed. Drain it first (run without -SkipDrain), or suspend it by hand."
+        }
+        if (@($safe.MissingCmdlet).Count -gt 0) { Exit-Failed "The node does not have $(@($safe.MissingCmdlet) -join ', ') (Azure Local 2311.2 or later); nothing was changed." }
+        if (@($safe.Problems).Count -gt 0) { Exit-Failed "Not safe to take '$nodeHostname' out: $(@($safe.Problems) -join '; '). Nothing was changed. Wait for the storage repair to finish, then run again." }
+        Write-Log 'It is safe.' 'SUCCESS'
         if (-not $SkipDrain) {
-            Write-Log 'Checking that it is safe to take the node out (other nodes Up, virtual disks Healthy, no repair job running)...'
-            $safe = Invoke-OnNode $CheckSafe @($nodeHostname)
-            if (@($safe.MissingCmdlet).Count -gt 0) { Exit-Failed "The node does not have $(@($safe.MissingCmdlet) -join ', ') (Azure Local 2311.2 or later); nothing was changed." }
-            if (@($safe.Problems).Count -gt 0) { Exit-Failed "Not safe to take '$nodeHostname' out: $(@($safe.Problems) -join '; '). Nothing was changed. Wait for the storage repair to finish, then run again." }
-            Write-Log 'It is safe.' 'SUCCESS'
             # -- Step 1 and 2: suspend, drain, remove from the virtual machine configuration
             Write-Log "Suspending cluster node '$nodeHostname' (draining workloads)..."
             $state = [string](Invoke-OnNode $SuspendNode @($nodeHostname))
@@ -361,24 +379,28 @@ try {
             Write-Log 'The node was removed from the virtual machine configuration (Remove-MocPhysicalNode).' 'SUCCESS'
         }
         else {
-            Write-Log 'SkipDrain specified - skipping the safety checks, Suspend-ClusterNode and Remove-MocPhysicalNode' 'WARN'
+            Write-Log "SkipDrain specified - the node is Paused as required; Suspend-ClusterNode and Remove-MocPhysicalNode are skipped" 'WARN'
         }
 
-        # -- Step 3: reboot
+        # -- Step 3: reboot. The last boot time before the restart is the proof afterwards.
+        $bootBefore = $null
+        try { $bootBefore = [datetime](Invoke-OnNode $ReadBootTime) }
+        catch { Write-Log "  The last boot time could not be read before the restart ($($_.Exception.Message)); the node must then be seen offline." 'WARN' }
         Write-Log "Sending reboot to '$nodeHostname' ($nodeIp)..."
         try { Invoke-OnNode $RestartNode }
         catch {
             # WinRM will drop the connection mid-reboot: this is expected
             if ($_ -match 'pipeline has been stopped|connection.*closed|network|The system is shutting down') { Write-Log '  Connection dropped (expected - node is rebooting).' }
-            else { Write-Log "  Unexpected error during reboot: $_" 'WARN' }
+            else { Exit-Failed "Restart-Computer failed: $($_.Exception.Message). The node was not rebooted as far as the script can tell, and it stays Paused: nothing was resumed. Check the node, then run again." }
         }
         $rebootTime = Get-Date
         Write-Log "Reboot command sent at $rebootTime."
 
         Write-Log 'Waiting for node to go offline...'
+        $sawOffline = $false
         $offlineDeadline = $rebootTime.AddSeconds(120)
         while ((Get-Date) -lt $offlineDeadline) {
-            if (-not (Test-Connection -ComputerName $nodeIp -Count 1 -Quiet -ErrorAction SilentlyContinue)) { Write-Log '  Node is offline.'; break }
+            if (-not (Test-Connection -ComputerName $nodeIp -Count 1 -Quiet -ErrorAction SilentlyContinue)) { Write-Log '  Node is offline.'; $sawOffline = $true; break }
             Start-Sleep -Seconds 5
         }
 
@@ -403,9 +425,19 @@ try {
         }
         if (-not $isOnline) { Exit-Failed "Node '$nodeHostname' did not come back online within $TimeoutSeconds seconds." }
 
+        # -- Proof of the reboot before anything is resumed: a newer last boot time; when a boot time cannot be compared, the node must have been seen offline.
+        $bootAfter = $null
+        try { $bootAfter = [datetime](Invoke-OnNode $ReadBootTime) }
+        catch { Write-Log "  The last boot time could not be read after the restart ($($_.Exception.Message))." 'WARN' }
+        $rebooted = if ($null -ne $bootBefore -and $null -ne $bootAfter) { $bootAfter -gt $bootBefore } else { $sawOffline }
+        if (-not $rebooted) {
+            Exit-Failed "There is no proof that node '$nodeHostname' rebooted: it $(if ($sawOffline) { 'was seen offline' } else { 'was never seen offline' }) and its last boot time did not change. It stays Paused and was not resumed. Check the node, reboot it, then run with -ResumeOnly."
+        }
+        Write-Log "The node rebooted (last boot time $(if ($null -ne $bootAfter) { $bootAfter.ToString('s') } else { 'not readable' }); seen offline: $sawOffline)." 'SUCCESS'
+
         # -- Step 4 and 5: resume, add to the virtual machine configuration, wait for the storage
         if (-not $SkipResume) { $storageResult = Resume-NodeAndWait }
-        else { Write-Log 'SkipResume specified - node remains in maintenance mode. Run with -ResumeOnly when ready.' 'WARN' }
+        else { Write-Log 'SkipResume specified - the node remains Paused (in maintenance). Exit code 0 means: rebooted and back, NOT resumed, storage not checked. Run with -ResumeOnly when ready.' 'WARN' }
     }
 
     # -- Final validation
@@ -425,6 +457,7 @@ try {
         NodeIp        = $nodeIp
         State         = $finalState.State
         DrainStatus   = $finalState.DrainStatus
+        Resumed       = [bool]$expectUp
         StorageRepair = $storageResult
         Duration      = [int]((Get-Date) - $rebootTime).TotalSeconds
     }

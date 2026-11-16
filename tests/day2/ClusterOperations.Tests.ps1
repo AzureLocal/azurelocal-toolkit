@@ -45,6 +45,7 @@ BeforeAll {
         $global:AzlOpCsv = @(@{ Name = 'Volume1'; Owner = 'iic-n01' }, @{ Name = 'Volume2'; Owner = 'iic-n01' }, @{ Name = 'Volume3'; Owner = 'iic-n01' })
         $global:AzlOpFaults = @{ Faults = @(); Actions = @(); Events = @() }
         $global:AzlOpFail = ''
+        $global:AzlOpMocMissing = @()
     }
     function Get-Call([string]$Pattern) { @($global:AzlOpCalls | Where-Object { $_.Text -match $Pattern }) }
     function Invoke-Operation([string]$File, [hashtable]$Extra = @{}, [switch]$DryRun) {
@@ -59,7 +60,7 @@ BeforeAll {
 }
 
 Describe 'Invoke-ClusterOperations.ps1' {
-    AfterAll { Remove-Variable -Name AzlOpCalls, AzlOpNodes, AzlOpStorage, AzlOpNetworks, AzlOpArc, AzlOpSuspendState, AzlOpResumeState, AzlOpVmGroups, AzlOpVmOwners, AzlOpCsv, AzlOpFaults, AzlOpFail -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-Variable -Name AzlOpMocMissing, AzlOpCalls, AzlOpNodes, AzlOpStorage, AzlOpNetworks, AzlOpArc, AzlOpSuspendState, AzlOpResumeState, AzlOpVmGroups, AzlOpVmOwners, AzlOpCsv, AzlOpFaults, AzlOpFail -Scope Global -ErrorAction SilentlyContinue }
 
     BeforeEach {
         Reset-Cluster
@@ -68,6 +69,7 @@ Describe 'Invoke-ClusterOperations.ps1' {
             $global:AzlOpCalls.Add([pscustomobject]@{ Text = $text; Computer = [string]$ComputerName; Credential = $Credential; Arguments = @($ArgumentList) })
             if ($global:AzlOpFail -and $text -match $global:AzlOpFail) { throw "simulated failure of $($global:AzlOpFail)" }
             switch -Regex ($text) {
+                'Get-Command' { return $global:AzlOpMocMissing }
                 'Suspend-ClusterNode' { return $global:AzlOpSuspendState }
                 'Resume-ClusterNode' { return $global:AzlOpResumeState }
                 'Remove-MocPhysicalNode' { return @('iic-n02', 'iic-n03') }
@@ -162,9 +164,9 @@ Describe 'Invoke-ClusterOperations.ps1' {
             (Get-Call 'Suspend-ClusterNode')[0].Text | Should -Match 'Suspend-ClusterNode -Name \$Name -Drain -Wait'
             (Get-Call 'Suspend-ClusterNode')[0].Arguments | Should -Contain 'iic-n01'
             (Get-Call 'Suspend-ClusterNode')[0].Computer | Should -Be 'iic-clus-01'
-            (Get-Call 'Remove-MocPhysicalNode')[0].Computer | Should -Be 'iic-n01'
-            $order = @($global:AzlOpCalls | ForEach-Object { [regex]::Match($_.Text, 'Suspend-ClusterNode|Remove-MocPhysicalNode').Value } | Where-Object { $_ })
-            $order | Should -Be @('Suspend-ClusterNode', 'Remove-MocPhysicalNode')
+            (Get-Call 'Remove-MocPhysicalNode -NodeName')[0].Computer | Should -Be 'iic-n01'
+            $order = @($global:AzlOpCalls | ForEach-Object { [regex]::Match($_.Text, 'Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName').Value } | Where-Object { $_ })
+            $order | Should -Be @('Suspend-ClusterNode', 'Remove-MocPhysicalNode -NodeName')
             @($r.Rows | ForEach-Object Action) | Should -Contain 'Suspended'
         }
 
@@ -176,7 +178,7 @@ Describe 'Invoke-ClusterOperations.ps1' {
         It 'plans under -WhatIf: it reads, and changes nothing' {
             $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01'; Enable = $true } -DryRun
             $r.ExitCode | Should -Be 0 -Because $r.Text
-            (Get-Call 'Suspend-ClusterNode|Remove-MocPhysicalNode|Resume-ClusterNode').Count | Should -Be 0
+            (Get-Call 'Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName|Resume-ClusterNode').Count | Should -Be 0
             $r.Rows[-1].Action | Should -Be 'WouldSuspend'
         }
 
@@ -192,11 +194,25 @@ Describe 'Invoke-ClusterOperations.ps1' {
             (Get-Call 'Suspend-ClusterNode').Count | Should -Be 0
         }
 
+        It 'refuses before it changes anything when the node lacks <Missing>: no drain, also under -WhatIf, exit 1' -ForEach @(
+            @{ Missing = 'Remove-MocPhysicalNode'; DryRun = $false }
+            @{ Missing = 'New-MocPhysicalNode'; DryRun = $false }
+            @{ Missing = 'Remove-MocPhysicalNode'; DryRun = $true }
+        ) {
+            $global:AzlOpMocMissing = @($Missing)
+            $r = if ($DryRun) { Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01'; Enable = $true } -DryRun } else { Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01'; Enable = $true } }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match ([regex]::Escape($Missing))
+            $r.Text | Should -Match '2311\.2'
+            (Get-Call 'Suspend-ClusterNode|Remove-MocPhysicalNode -NodeName|Resume-ClusterNode').Count | Should -Be 0
+            (Get-Call 'Get-Command')[0].Computer | Should -Be 'iic-n01'
+        }
+
         It 'stops when the node is not Paused after the drain, and does not remove it from the VM configuration' {
             $global:AzlOpSuspendState = 'Up'
             $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01'; Enable = $true }
             $r.ExitCode | Should -Be 1
-            (Get-Call 'Remove-MocPhysicalNode').Count | Should -Be 0
+            (Get-Call 'Remove-MocPhysicalNode -NodeName').Count | Should -Be 0
         }
 
         It 'ends with exit code 1 when the drain fails' {
@@ -219,8 +235,16 @@ Describe 'Invoke-ClusterOperations.ps1' {
             $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01' }
             $r.ExitCode | Should -Be 0 -Because $r.Text
             (Get-Call 'Resume-ClusterNode')[0].Text | Should -Match 'Failback Immediate'
-            (Get-Call 'New-MocPhysicalNode')[0].Computer | Should -Be 'iic-n01'
+            (Get-Call 'New-MocPhysicalNode -NodeName')[0].Computer | Should -Be 'iic-n01'
             ($r.Rows | Where-Object Item -EQ 'Storage').Action | Should -Be 'Healthy'
+        }
+
+        It 'does not resume the node when it lacks New-MocPhysicalNode: exit 1, nothing resumed' {
+            $global:AzlOpMocMissing = @('New-MocPhysicalNode')
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01' }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'New-MocPhysicalNode'
+            (Get-Call 'Resume-ClusterNode').Count | Should -Be 0
         }
 
         It 'warns that another node must wait while a repair job runs' {
@@ -234,14 +258,14 @@ Describe 'Invoke-ClusterOperations.ps1' {
 
         It 'plans under -WhatIf and resumes nothing' {
             $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01' } -DryRun
-            (Get-Call 'Resume-ClusterNode|New-MocPhysicalNode').Count | Should -Be 0
+            (Get-Call 'Resume-ClusterNode|New-MocPhysicalNode -NodeName').Count | Should -Be 0
             $r.Rows[-1].Action | Should -Be 'WouldResume'
         }
 
         It 'ends with exit code 1 when the node is not Up after the resume' {
             $global:AzlOpResumeState = 'Paused'
             (Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n01' }).ExitCode | Should -Be 1
-            (Get-Call 'New-MocPhysicalNode').Count | Should -Be 0
+            (Get-Call 'New-MocPhysicalNode -NodeName').Count | Should -Be 0
         }
     }
 
@@ -303,6 +327,49 @@ Describe 'Invoke-ClusterOperations.ps1' {
             Reset-Cluster
             $null = Invoke-Operation (New-InfraFile) @{ Action = 'Rebalance' } -DryRun
             (Get-Call 'Move-ClusterSharedVolume').Count | Should -Be 0
+        }
+    }
+
+    Context 'Rebalance ownership (the floor and the ceiling of volumes per node)' {
+        It 'moves one volume to the node that owns none when ownership is <Owners> (the old share of ceiling(n/m) moved nothing for 2, 2, 0)' -ForEach @(
+            @{ Owners = @('iic-n01', 'iic-n01', 'iic-n02', 'iic-n02'); Moves = 1; To = @('iic-n03') }
+            @{ Owners = @('iic-n01', 'iic-n01', 'iic-n01', 'iic-n01', 'iic-n02'); Moves = 2; To = @('iic-n02', 'iic-n03') }
+            @{ Owners = @('iic-n01', 'iic-n01', 'iic-n02', 'iic-n02', 'iic-n03', 'iic-n03', 'iic-n03', 'iic-n03'); Moves = 1; To = @('iic-n01') }
+        ) {
+            $global:AzlOpCsv = @(for ($i = 0; $i -lt $Owners.Count; $i++) { @{ Name = "Volume$($i + 1)"; Owner = $Owners[$i] } })
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Rebalance' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $issued = @(Get-Call 'Move-ClusterSharedVolume')
+            $issued.Count | Should -Be $Moves
+            @($issued | ForEach-Object { $_.Arguments[1] } | Sort-Object) | Should -Be $To
+            @($r.Rows | Where-Object Action -EQ 'Moved').Count | Should -Be $Moves
+        }
+
+        It 'reports what it would move under -WhatIf for 2, 2, 0 and changes nothing' {
+            $global:AzlOpCsv = @(@{ Name = 'V1'; Owner = 'iic-n01' }, @{ Name = 'V2'; Owner = 'iic-n01' }, @{ Name = 'V3'; Owner = 'iic-n02' }, @{ Name = 'V4'; Owner = 'iic-n02' })
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Rebalance' } -DryRun
+            (Get-Call 'Move-ClusterSharedVolume').Count | Should -Be 0
+            @($r.Rows | Where-Object Action -EQ 'WouldMove').Count | Should -Be 1
+        }
+
+        It 'moves nothing when the counts differ by one at most: <Owners>' -ForEach @(
+            @{ Owners = @('iic-n01', 'iic-n02', 'iic-n03') }
+            @{ Owners = @('iic-n01', 'iic-n01', 'iic-n02', 'iic-n03') }
+            @{ Owners = @('iic-n01', 'iic-n01', 'iic-n02', 'iic-n02', 'iic-n03') }
+        ) {
+            $global:AzlOpCsv = @(for ($i = 0; $i -lt $Owners.Count; $i++) { @{ Name = "Volume$($i + 1)"; Owner = $Owners[$i] } })
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Rebalance' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            (Get-Call 'Move-ClusterSharedVolume').Count | Should -Be 0
+            $r.Rows[-1].Detail | Should -Match 'balanced'
+        }
+
+        It 'stops after a failed move and ends with exit code 1' {
+            $global:AzlOpFail = 'Move-ClusterSharedVolume'
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Rebalance' }
+            $r.ExitCode | Should -Be 1
+            @($r.Rows | Where-Object Action -EQ 'Failed').Count | Should -Be 1
+            @($r.Rows | Where-Object Detail -Match 'balanced').Count | Should -Be 0 -Because 'a failed first move is not "balanced"'
         }
     }
 

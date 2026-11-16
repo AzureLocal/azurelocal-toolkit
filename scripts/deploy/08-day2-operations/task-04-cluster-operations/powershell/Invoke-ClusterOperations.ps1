@@ -12,15 +12,19 @@
 
       HealthCheck       cluster nodes (all Up), storage pools and virtual disks (Healthy, OK), storage repair jobs (Get-StorageJob: no repair running), cluster networks (Up) and the
                         Azure Arc agent of every node that is Up (azcmagent show). Exit code 1 when anything is not healthy.
-      MaintenanceMode   -Enable: checks that it is safe (the other nodes are Up, every virtual disk is Healthy and OK, no storage repair job is running), then
+      MaintenanceMode   -Enable: checks that it is safe (the other nodes are Up, every virtual disk is Healthy and OK, no storage repair job is running, and the node has
+                        Remove-MocPhysicalNode and New-MocPhysicalNode: if not, the run stops before anything is changed), then
                         Suspend-ClusterNode -Drain -Wait (the roles and virtual machines move to the other nodes and the node shows Paused), then Remove-MocPhysicalNode on that
                         node, so that no new virtual machine is placed on it (the Azure Local step of Learn; it exists on 2311.2 or later and is done from PowerShell only).
-                        Without -Enable: Resume-ClusterNode -Failback Immediate, New-MocPhysicalNode (the node takes virtual machines again), and a read of the storage repair
+                        Without -Enable: first checks that the node has New-MocPhysicalNode (if not, nothing is resumed), then Resume-ClusterNode -Failback Immediate,
+                        New-MocPhysicalNode (the node takes virtual machines again), and a read of the storage repair
                         jobs: wait until they have finished before another node is taken offline (Get-StorageJob; Learn: it is not safe to take another server offline until the
                         repair jobs finish). To reboot a node in one run, use task 03 (Invoke-NodeMaintenanceReboot.ps1), which also waits for the repair.
       LiveMigrate       moves the clustered virtual machines of -NodeName to the other nodes that are Up, each to the node with the fewest virtual machines, with
                         Move-ClusterVirtualMachineRole -MigrationType Live (the cmdlet for a clustered virtual machine; Move-VM is not used on a clustered one).
-      Rebalance         spreads the cluster shared volumes evenly over the nodes that are Up with Move-ClusterSharedVolume. A volume is moved only when a node owns more than its share.
+      Rebalance         spreads the cluster shared volumes evenly over the nodes that are Up with Move-ClusterSharedVolume: one volume at a time moves from the node that owns the most
+                        to the node that owns the fewest, until no two nodes differ by more than one volume (every node owns the floor or the ceiling of volumes divided by nodes). A
+                        node with fewer than the floor gets volumes when others are above it; 2, 2 and 0 volumes become 1, 2 and 1. A balanced cluster moves nothing. A failed move stops the run (exit code 1).
       Capacity          size and used space of the storage pools, memory and virtual processors assigned on every node that is Up.
       Alerts            the faults of the Health Service (Debug-StorageSubSystem on the clustered subsystem), the storage health actions, and the Critical, Error and Warning events of the
                         failover clustering operational log of the last 24 hours (at most 20).
@@ -160,6 +164,8 @@ $ReadFaults = {
 $ReadVmGroups = { param($Node) @(Get-ClusterNode -Name $Node | Get-ClusterGroup | Where-Object { Get-ClusterResource -InputObject $_ | Where-Object ResourceType -Like 'Virtual Machine' } | ForEach-Object { [string]$_.Name }) }
 $ReadVmCounts = { @(Get-ClusterGroup | Where-Object { Get-ClusterResource -InputObject $_ | Where-Object ResourceType -Like 'Virtual Machine' } | ForEach-Object { @{ Name = [string]$_.Name; Owner = [string]$_.OwnerNode } }) }
 $ReadCsv = { @(Get-ClusterSharedVolume | ForEach-Object { @{ Name = [string]$_.Name; Owner = [string]$_.OwnerNode } }) }
+$CheckEnableCmdlet = { @('Remove-MocPhysicalNode', 'New-MocPhysicalNode' | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }) }
+$CheckResumeCmdlet = { @('New-MocPhysicalNode' | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }) }
 $MoveVm = { param($Name, $Target) Move-ClusterVirtualMachineRole -Name $Name -Node $Target -MigrationType Live -ErrorAction Stop | Out-Null }
 $MoveCsv = { param($Name, $Target) Move-ClusterSharedVolume -Name $Name -Node $Target -ErrorAction Stop | Out-Null }
 $SuspendNode = { param($Name) Suspend-ClusterNode -Name $Name -Drain -Wait -ErrorAction Stop | Out-Null; [string](Get-ClusterNode -Name $Name).State }
@@ -214,6 +220,9 @@ function Invoke-MaintenanceMode {
         if ($others.Count -gt 0) { throw "Not safe: node $($others[0].Name) is $($others[0].State). Every other node must be Up before $node is taken out." }
         $problems = @(Get-StorageProblem (Invoke-Remote $clusterName $ReadStorage))
         if ($problems.Count -gt 0) { throw "Not safe: $($problems -join '; '). Wait for the storage to be healthy and the repair jobs to finish (Get-StorageJob), then try again." }
+        # Both Azure Local cmdlets of the procedure must exist before anything is drained (Learn: 2311.2 or later); a drained node that cannot be taken out of the VM configuration is left half way.
+        $missing = @(Invoke-Remote $node $CheckEnableCmdlet)
+        if ($missing.Count -gt 0) { throw "The node $node does not have $($missing -join ', ') (Azure Local 2311.2 or later); nothing was changed." }
         if ($PSCmdlet.ShouldProcess($node, 'Suspend-ClusterNode -Drain (the roles and virtual machines move to the other nodes)')) {
             $state = [string](Invoke-Remote $clusterName $SuspendNode @($node))
             if ($state -ne 'Paused') { throw "Node $node is $state after the drain; it should be Paused." }
@@ -228,6 +237,8 @@ function Invoke-MaintenanceMode {
         else { Add-Row "Node $node" 'WouldSuspend' 'drain, then Remove-MocPhysicalNode' }
     }
     else {
+        $missing = @(Invoke-Remote $node $CheckResumeCmdlet)
+        if ($missing.Count -gt 0) { throw "The node $node does not have $($missing -join ', ') (Azure Local 2311.2 or later); nothing was resumed." }
         if ($PSCmdlet.ShouldProcess($node, 'Resume-ClusterNode -Failback Immediate')) {
             $state = [string](Invoke-Remote $clusterName $ResumeNode @($node))
             if ($state -ne 'Up') { throw "Node $node is $state after the resume; it should be Up." }
@@ -277,23 +288,27 @@ function Invoke-StorageRebalance {
     $owned = @{}
     foreach ($n in $nodes) { $owned[$n] = [System.Collections.Generic.List[string]]::new() }
     foreach ($csv in $csvs) { if ($owned.ContainsKey([string]$csv.Owner)) { $owned[[string]$csv.Owner].Add([string]$csv.Name) } }
-    $share = [math]::Ceiling($csvs.Count / $nodes.Count)
-    Add-Row 'Cluster shared volumes' 'Info' "$($csvs.Count) volume(s) on $($nodes.Count) node(s): $(@($nodes | ForEach-Object { "$_ $($owned[$_].Count)" }) -join ', '); share about $share per node"
+    # Every node ends with the floor or the ceiling of volumes / nodes: the node that owns the most gives one volume to the node that owns the fewest until the two differ by one at most.
+    # (A rule of "only a node above the ceiling gives" leaves 2, 2 and 0 as they are.)
+    $total = 0
+    foreach ($n in $nodes) { $total += $owned[$n].Count }
+    $floor = [math]::Floor($total / $nodes.Count)
+    $ceiling = [math]::Ceiling($total / $nodes.Count)
+    Add-Row 'Cluster shared volumes' 'Info' "$total volume(s) on $($nodes.Count) node(s): $(@($nodes | ForEach-Object { "$_ $($owned[$_].Count)" }) -join ', '); each node should own $(if ($floor -eq $ceiling) { $floor } else { "$floor or $ceiling" })"
     $moves = 0
-    foreach ($from in @($nodes | Where-Object { $owned[$_].Count -gt $share })) {
-        while ($owned[$from].Count -gt $share) {
-            $to = ($nodes | Where-Object { $owned[$_].Count -lt $share } | Sort-Object { $owned[$_].Count } | Select-Object -First 1)
-            if (-not $to) { break }
-            $csv = $owned[$from][0]
-            if ($PSCmdlet.ShouldProcess($csv, "Move the volume from $from to $to")) {
-                try { Invoke-Remote $clusterName $MoveCsv @($csv, $to); Add-Row $csv 'Moved' "$from to $to" }
-                catch { Add-Row $csv 'Failed' $_.Exception.Message; $script:failed = $true; break }
-            }
-            else { Add-Row $csv 'WouldMove' "$from to $to" }
-            $owned[$from].RemoveAt(0); $owned[$to].Add($csv); $moves++
+    while ($moves -lt $total) {
+        $from = @($nodes | Sort-Object @{ Expression = { $owned[$_].Count }; Descending = $true }, @{ Expression = { $_ } })[0]
+        $to = @($nodes | Sort-Object @{ Expression = { $owned[$_].Count } }, @{ Expression = { $_ } })[0]
+        if ($owned[$from].Count - $owned[$to].Count -le 1) { break }
+        $csv = $owned[$from][0]
+        if ($PSCmdlet.ShouldProcess($csv, "Move the volume from $from to $to")) {
+            try { Invoke-Remote $clusterName $MoveCsv @($csv, $to); Add-Row $csv 'Moved' "$from to $to" }
+            catch { Add-Row $csv 'Failed' $_.Exception.Message; $script:failed = $true; break }
         }
+        else { Add-Row $csv 'WouldMove' "$from to $to" }
+        $owned[$from].RemoveAt(0); $owned[$to].Add($csv); $moves++
     }
-    if ($moves -eq 0) { Add-Row 'Cluster shared volumes' 'Healthy' 'ownership is balanced' }
+    if ($moves -eq 0 -and -not $script:failed) { Add-Row 'Cluster shared volumes' 'Healthy' 'ownership is balanced' }
 }
 
 function Get-CapacityReport {
