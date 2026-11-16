@@ -16,6 +16,7 @@ BeforeAll {
     $script:Example = [IO.Path]::Combine($script:Repo, 'config', 'variables', 'examples', 'infrastructure.example.yml')
     Import-Module powershell-yaml
     Import-Module ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'cicd-infra', 'AzlCicdInfra.psm1')) -Force
+    Import-Module ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'secrets', 'AzlSecret.psm1'))
     $env:GH_TOKEN = $null; $env:GITLAB_TOKEN = $null; $env:AZURE_DEVOPS_EXT_PAT = $null; $env:GITHUB_TOKEN = $null; $env:GITLAB_PRIVATE_TOKEN = $null
 
     function az { }
@@ -71,7 +72,7 @@ BeforeAll {
         if ($Line -like 'ad app federated-credential list*') { return '[]' }
         if ($Line -like 'role assignment list*') { return '[]' }
         if ($Line -like 'feature show*') { return 'NotRegistered' }
-        if ($Line -like 'keyvault secret show*') { return @{ Fail = '(SecretNotFound) A secret with this name was not found.' } }
+
         if ($Line -like 'ad app credential reset*') { return $global:AzlK6Secret }
     }
 }
@@ -92,6 +93,8 @@ Describe 'New-CicdBootstrap.azcli.ps1' {
         $text | Should -Match "\`$ErrorActionPreference = 'Stop'"
         $text | Should -Match 'SupportsShouldProcess'
         $text | Should -Not -Match 'Read-Host|Get-Credential|Connect-AzAccount|New-AzADApplication|Invoke-AzlNative|az login(?! --tenant)'
+        # A secret is read only through the resolver (tests/secrets/ScriptsUseResolver.Tests.ps1).
+        $text | Should -Not -Match "(?i)Get-AzKeyVaultSecret|'keyvault', 'secret', 'show'"
         $text | Should -Not -Match 'NOT IMPLEMENTED'
         $param = (Get-Command $script:Script).Parameters['InfrastructureFile']
         $param.Attributes.Where({ $_ -is [System.Management.Automation.ParameterAttribute] }).Mandatory | Should -BeTrue
@@ -139,6 +142,7 @@ Describe 'New-CicdBootstrap.azcli.ps1' {
     }
 
     It 'sends a client secret to Key Vault from a file, never on a command line, and does not print it' {
+        Mock Test-AzlSecretReference { $false }
         $file = New-InfraFile { param($d) $d.devops.authentication.method = 'client_secret'; $d.devops.authentication.client_secret = 'keyvault://kv-iic-mgmt-01/automation-spn-secret' }
         $global:AzlK6Responder = {
             param($Line)
@@ -158,12 +162,12 @@ Describe 'New-CicdBootstrap.azcli.ps1' {
     }
 
     It 'does not issue a second client secret when the Key Vault secret exists' {
+        Mock Test-AzlSecretReference { $true }
         $file = New-InfraFile { param($d) $d.devops.authentication.method = 'client_secret'; $d.devops.authentication.client_secret = 'keyvault://kv-iic-mgmt-01/automation-spn-secret' }
         $global:AzlK6Responder = {
             param($Line)
             if ($Line -like 'ad app list*') { return "[`"$($global:AzlK6App)`"]" }
             if ($Line -like 'ad sp show*') { return $global:AzlK6Sp }
-            if ($Line -like 'keyvault secret show*') { return 'https://example.invalid/secrets/automation-spn-secret/1' }
             if ($Line -like 'role assignment list*') { return '["Contributor","User Access Administrator"]' }
             if ($Line -like 'feature show*') { return 'Registered' }
             & $global:AzlK6Empty $Line

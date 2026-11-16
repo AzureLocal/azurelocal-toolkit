@@ -12,7 +12,9 @@
 
     Reads the devops, azure, key_vaults and landing_zone sections of infrastructure.yml (schema 5) through the same settings reader as the PowerShell
     script (Get-AzlCicdSetting in scripts/common/cicd-infra/AzlCicdInfra.psm1) and takes the federated credentials from the same plan
-    (Get-AzlFederatedCredentialPlan), so both scripts make the same objects. Every Azure call in this script is an az command.
+    (Get-AzlFederatedCredentialPlan), so both scripts make the same objects. Every Azure call in this script is an az command, except one: with the
+    client secret method the check "is the secret in Key Vault" goes through the toolkit's secret resolver (Test-AzlSecretReference, which needs the
+    Az.KeyVault module), as the secrets rule of the toolkit requires.
 
     Idempotent: it creates what is missing and leaves the rest. -WhatIf reads what exists and lists what it would do. A client secret is not
     rotated: delete the Key Vault secret to have a new one issued. The secret goes to Key Vault from a temporary file that is removed at once, never on
@@ -93,6 +95,8 @@ function Add-Result {
 }
 
 Import-Module (Get-CicdModulePath)
+# The one secret resolver of the toolkit (it answers "is the secret there" for the client secret method).
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1')))
 try { $settings = Get-AzlCicdSetting -InfrastructureFile $InfrastructureFile -Platform $Platform }
 catch { Write-Error "The infrastructure file cannot be used: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
@@ -155,8 +159,8 @@ try {
     else {
         $reference = [string]$settings.Authentication.ClientSecretReference
         $vault, $secretName = ($reference -replace '^keyvault://', '').Split('/', 2)
-        # Is it there? Ask for the id only: the value is not read into the script.
-        $present = Invoke-Az -AzArgument @('keyvault', 'secret', 'show', '--vault-name', $vault, '--name', $secretName, '--query', 'id', '--output', 'tsv') -AllowFailure
+        # Is it there? The resolver proves it (the value is read into memory and dropped). Any failure counts as "not there".
+        $present = Test-AzlSecretReference -Reference $reference -Infrastructure $settings.Infrastructure
         if ($present) { Add-Result -Action 'Client secret' -Target $reference -Status Exists -Detail 'Not rotated. Delete the Key Vault secret to issue a new one.' }
         elseif ($appId -and $PSCmdlet.ShouldProcess($reference, 'Create a client secret and store it in Key Vault')) {
             $file = Join-Path ([IO.Path]::GetTempPath()) ('azl-sec-{0}.txt' -f [guid]::NewGuid())
