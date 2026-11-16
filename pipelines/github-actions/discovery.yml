@@ -1,0 +1,144 @@
+# Azure Local discovery, GitHub Actions.
+#
+# Copy to .github/workflows/discovery.yml. It runs the command an operator runs by hand:
+#   pwsh -File scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1 ...
+# and nothing else; the logic is in the script, not here. The script runs the discovery scripts of the toolkit one after the other:
+#   hardware   Get-HardwareInventory.ps1: every BMC of nodes[] over the standard Redfish API (any maker; GET requests only)
+#   dell       Invoke-HardwareDiscovery.ps1: the Dell iDRAC reading, with the proposal for nodes[] (Dell only; GET requests only)
+#   tenant     Inventory-AzureTenant.ps1: the Azure tenant of azure.tenant_id (read only)
+#   directory  Get-OnPremInventory.ps1: the computer objects of the Active Directory OU of the instance (read only)
+#   all        hardware, tenant and directory
+# Nothing in this run changes a BMC, a node, Azure or Active Directory, so there is no approval gate.
+#
+# The report, summary.md and what each step wrote are the artifact `discovery-report` and the job summary. The run fails when a step fails.
+# With the input write_back (scope dell) the run also prepares the serial numbers and MAC addresses it found in a COPY of the master file,
+# in the artifact (write-back/). The file in the repository is not changed and nothing is committed: review the copy and commit it through a
+# pull request.
+#
+# Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets
+# every variable below from infrastructure.yml. GitHub reads runs-on and env from the vars context
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  the app registration of azure.automation_identity, azure.tenant_id, azure.subscription_id
+#                                     (Reader on the subscriptions of the tenant inventory; Get on the Key Vault secrets of the BMC login)
+#   AZL_AUTH_METHOD                   devops.authentication.method: oidc (a federated credential, no secret) or client_secret (the secret
+#                                     ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_OS, AZL_RUNNER_LABEL   devops.runners[].os_type of the general runner and devops.pipelines.runner_label
+#   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# The BMC login is never in this file or in a variable of this repository: it is the secret reference of the master file (hardware.bmc, or
+# nodes[].bmc), and the toolkit secret resolver reads it from Key Vault at run time with the Azure sign-in of this job.
+# Runner: the general self-hosted runner with pwsh 7, a route to the BMC addresses (HTTPS, TCP 443) and, for the directory step, the
+# ActiveDirectory module (RSAT) on a domain-joined runner. A step the runner cannot do fails with its reason in the report.
+name: Azure Local discovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to discover: all (hardware inventory, Azure tenant, Active Directory), hardware, dell, tenant or directory'
+        type: choice
+        options:
+          - all
+          - hardware
+          - dell
+          - tenant
+          - directory
+        default: all
+      management_port:
+        description: 'Scope dell: the management port of every node, by suggested name or MAC (leave empty to use the MAC already in the file)'
+        required: false
+        default: ''
+      write_back:
+        description: 'Scope dell: prepare the serial numbers and MAC addresses found in a copy of the master file (artifact); the file in the repository is not changed'
+        type: boolean
+        default: false
+      include_rbac:
+        description: 'Scope tenant: also record the role assignments'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+# One discovery at a time per repository (GitLab: resource_group; Azure DevOps: lockBehavior).
+concurrency:
+  group: azure-local-discovery
+  cancel-in-progress: false
+
+# Every run step is PowerShell 7.
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  DISCOVERY_SCRIPT: scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1
+  AZL_INFRASTRUCTURE_FILE: ${{ vars.AZL_INFRASTRUCTURE_FILE }}
+  AZL_POWERSHELL_YAML_VERSION: ${{ vars.AZL_POWERSHELL_YAML_VERSION }}
+  AZL_AZ_POWERSHELL_VERSION: ${{ vars.AZL_AZ_POWERSHELL_VERSION }}
+  AZL_AZ_KEYVAULT_VERSION: ${{ vars.AZL_AZ_KEYVAULT_VERSION }}
+  DISCOVERY_SCOPE: ${{ inputs.scope }}
+  MANAGEMENT_PORT: ${{ inputs.management_port }}
+  WRITE_BACK: ${{ inputs.write_back }}
+  INCLUDE_RBAC: ${{ inputs.include_rbac }}
+
+jobs:
+  discover:
+    name: Discover (read only)
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # A read-only run: the toolkit's limit, not a figure from Microsoft. A BMC is read for at most 900 seconds (Invoke-HardwareDiscovery.ps1, NodeBudgetSeconds), four at a time.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
+
+      - name: Discover
+        shell: pwsh
+        run: |
+          $scopes = @{ all = @('HardwareInventory', 'AzureTenant', 'ActiveDirectory'); hardware = @('HardwareInventory'); dell = @('DellDiscovery'); tenant = @('AzureTenant'); directory = @('ActiveDirectory') }
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputDirectory = "$env:RUNNER_TEMP/discovery"; Scope = $scopes[$env:DISCOVERY_SCOPE] }
+          if ($env:MANAGEMENT_PORT) { $p.ManagementPort = $env:MANAGEMENT_PORT }
+          if ($env:WRITE_BACK -eq 'true') { $p.WriteBack = $true }
+          if ($env:INCLUDE_RBAC -eq 'true') { $p.IncludeRBAC = $true }
+          & $env:DISCOVERY_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $summary = "$env:RUNNER_TEMP/discovery/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
+
+      # The artifact holds serial numbers and MAC addresses, and with write_back a copy of the master file (its secrets are references, never values).
+      - name: Publish the discovery report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-report
+          path: ${{ runner.temp }}/discovery
+          # The report of a discovery run: 30 days is the toolkit's retention for reports, long enough to review a write-back copy.
+          retention-days: 30
+          if-no-files-found: warn

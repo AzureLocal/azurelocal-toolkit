@@ -58,6 +58,18 @@ Learn says to run the Environment Checker before the deployment and to uninstall
 removes it again in a `finally` block at the end, also when the run fails; `-KeepEnvironmentChecker` skips the removal. `report.json` (`environmentChecker`) and `summary.md` say whether the module was installed, removed or
 kept, and on which nodes. The nodes need to reach the PowerShell Gallery. Only an explicit success status of a validator counts as a pass; ERROR, SKIPPED or an unknown status never does.
 
+## Run it in a pipeline
+
+Each CI/CD platform has a pipeline for the gate: `pipelines/github-actions/pre-cluster-verification.yml`, `pipelines/gitlab/stages/pre-cluster-verification.yml` and
+`pipelines/azure-devops/pre-cluster-verification.yml` (see [pipelines/README.md](../pipelines/README.md)). It runs the command above on the general self-hosted runner
+with the sign-in of `devops.authentication.method`, publishes `report.json`, `summary.md` and the event feed as an artifact and in the run summary, and **fails the run
+when the verdict is not Pass** (exit code 1, or 3 for a partial run). It passes no `-ReportDirectory`: the result goes where the ARM run reads it, so the ARM run must run
+on the same runner, or `deployment.pre_cluster_verification_report_directory` must be a folder both runs reach.
+
+The read-only job runs Plan or Verify. `-Fix` (the resource provider registration, Azure side only) and `-InstallEnvironmentChecker` (the Environment Checker on the nodes for
+the run) run only in a second job behind the approval environment of the ARM deployment (`devops.pipelines.environments.arm_deployment`). A Skipped check blocks the verdict; the
+pipeline input `accept_skipped` takes the ids to accept, and the report records that you did.
+
 ## Statuses and the verdict
 
 | Status | Meaning | Blocks the verdict |

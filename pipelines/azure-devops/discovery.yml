@@ -1,0 +1,146 @@
+# Azure Local discovery, Azure DevOps.
+#
+# Create a pipeline from this file (Pipelines > New pipeline > Existing Azure Pipelines YAML file). It runs the command an operator runs by hand:
+#   scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1
+# and nothing else; the logic is in the script, not here. PowerShell 7 only (AzurePowerShell@5 with pwsh: true). The script runs the discovery
+# scripts of the toolkit one after the other:
+#   hardware   Get-HardwareInventory.ps1: every BMC of nodes[] over the standard Redfish API (any maker; GET requests only)
+#   dell       Invoke-HardwareDiscovery.ps1: the Dell iDRAC reading, with the proposal for nodes[] (Dell only; GET requests only)
+#   tenant     Inventory-AzureTenant.ps1: the Azure tenant of azure.tenant_id (read only)
+#   directory  Get-OnPremInventory.ps1: the computer objects of the Active Directory OU of the instance (read only)
+#   all        hardware, tenant and directory
+# Nothing in this run changes a BMC, a node, Azure or Active Directory, so there is no approval environment.
+#
+# The run fails when a step fails; the report, summary.md and what each step wrote are the build artifact discovery-report and the run summary.
+# With the parameter write_back (scope dell) the run also prepares the serial numbers and MAC addresses it found in a COPY of the master file, in
+# the artifact (write-back/). The file in the repository is not changed and nothing is committed: review the copy and commit it through a pull request.
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the
+# value of every run parameter to enter.
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), a route to the
+#                   BMC addresses (HTTPS, TCP 443) and, for the directory step, the ActiveDirectory module (RSAT) on a domain-joined agent.
+#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#                   creates it), workload identity federation, with Reader on the subscriptions of the tenant inventory and Key Vault Secrets User
+#                   on the vault of the BMC login (the secret reference of hardware.bmc or nodes[].bmc in the master file).
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
+#                   It holds no BMC password: the script reads it from Key Vault at run time.
+#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other
+#                   keywords take template expressions or runtime parameters
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection, the
+#                   variable group and the file path are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+name: discovery-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# Runs queue one after the other, never in parallel (GitHub: concurrency group; GitLab: resource_group).
+lockBehavior: sequential
+
+parameters:
+  - name: infrastructure_file
+    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
+    type: string
+  - name: scope
+    displayName: 'What to discover: all (hardware inventory, Azure tenant, Active Directory), hardware, dell, tenant or directory'
+    type: string
+    default: all
+    values:
+      - all
+      - hardware
+      - dell
+      - tenant
+      - directory
+  - name: management_port
+    displayName: 'Scope dell: the management port of every node, by suggested name or MAC (none: the MAC already in the file)'
+    type: string
+    default: none
+  - name: write_back
+    displayName: 'Scope dell: prepare the serial numbers and MAC addresses found in a copy of the master file (artifact); the file in the repository is not changed'
+    type: boolean
+    default: false
+  - name: include_rbac
+    displayName: 'Scope tenant: also record the role assignments'
+    type: boolean
+    default: false
+  - name: agent_pool
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the BMCs). Enter devops.runners[].pool of the general runner'
+    type: string
+  - name: service_connection
+    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
+    type: string
+  - name: variable_group
+    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
+    type: string
+
+variables:
+  - group: ${{ parameters.variable_group }}
+  - name: DISCOVERY_SCRIPT
+    value: scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1
+
+stages:
+  - stage: Discover
+    displayName: 'Discover (read only)'
+    jobs:
+      - job: Discover
+        displayName: 'Discover (read only)'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        # A read-only run: the toolkit's limit, not a figure from Microsoft. A BMC is read for at most 900 seconds (Invoke-HardwareDiscovery.ps1, NodeBudgetSeconds), four at a time.
+        timeoutInMinutes: 120
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+              foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+            displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+          - task: AzurePowerShell@5
+            displayName: 'Discover'
+            inputs:
+              azureSubscription: ${{ parameters.service_connection }}
+              azurePowerShellVersion: OtherVersion
+              preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+              pwsh: true
+              ScriptType: InlineScript
+              workingDirectory: $(Build.SourcesDirectory)
+              Inline: |
+                Set-StrictMode -Version Latest
+                $ErrorActionPreference = 'Stop'
+                $scopes = @{ all = @('HardwareInventory', 'AzureTenant', 'ActiveDirectory'); hardware = @('HardwareInventory'); dell = @('DellDiscovery'); tenant = @('AzureTenant'); directory = @('ActiveDirectory') }
+                $p = @{ InfrastructureFile = $env:DISCOVERY_INFRASTRUCTURE_FILE; OutputDirectory = $env:DISCOVERY_REPORT_DIRECTORY; Scope = $scopes[$env:DISCOVERY_SCOPE] }
+                if ($env:DISCOVERY_MANAGEMENT_PORT -and $env:DISCOVERY_MANAGEMENT_PORT -ne 'none') { $p.ManagementPort = $env:DISCOVERY_MANAGEMENT_PORT }
+                if ($env:DISCOVERY_WRITE_BACK -eq 'true') { $p.WriteBack = $true }
+                if ($env:DISCOVERY_INCLUDE_RBAC -eq 'true') { $p.IncludeRBAC = $true }
+                & $env:DISCOVERY_SCRIPT @p
+                if ($LASTEXITCODE -ne 0) { throw "Invoke-AzlDiscoveryRun.ps1 exited with code $LASTEXITCODE." }
+            env:
+              DISCOVERY_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              DISCOVERY_SCOPE: ${{ parameters.scope }}
+              DISCOVERY_MANAGEMENT_PORT: ${{ parameters.management_port }}
+              DISCOVERY_WRITE_BACK: ${{ parameters.write_back }}
+              DISCOVERY_INCLUDE_RBAC: ${{ parameters.include_rbac }}
+              DISCOVERY_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/discovery-report
+
+          - pwsh: |
+              $summary = "$env:DISCOVERY_REPORT_DIRECTORY/summary.md"
+              if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+            displayName: 'Run summary'
+            condition: always()
+            env:
+              DISCOVERY_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/discovery-report
+
+          # The artifact holds serial numbers and MAC addresses, and with write_back a copy of the master file (its secrets are references, never values).
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish the discovery report'
+            condition: always()
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/discovery-report
+              artifact: discovery-report
+              publishLocation: pipeline

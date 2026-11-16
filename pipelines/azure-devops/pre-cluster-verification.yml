@@ -1,0 +1,278 @@
+# Azure Local pre-cluster verification (the gate before the ARM Validate), Azure DevOps.
+#
+# Create a pipeline from this file (Pipelines > New pipeline > Existing Azure Pipelines YAML file). It runs the command an operator runs by hand:
+#   scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1
+# and nothing else; the logic (the checks, the report, the verdict) is in the script, not here. Guide: docs/pre-cluster-verification.md.
+# PowerShell 7 only (AzurePowerShell@5 with pwsh: true).
+#
+# The run FAILS when the verdict is not Pass (exit code 1: a Failed or Skipped check blocks; 3: a partial run). The ARM run (arm-deployment.yml)
+# refuses to go on without a passing, current result of this gate for the same master file, so run this after the OS configuration and before the
+# ARM Validate.
+#
+# Stages (exactly one of them runs)
+#   Verify             Read only. Plan (what would be checked, offline) or Verify (every check, against Azure, Active Directory and the nodes).
+#   VerifyWithChanges  Runs instead of Verify when the parameter fix or install_environment_checker is set, as a deployment job in the environment of
+#                      the parameter approval_environment (add an Approvals check to it): fix registers the mandatory resource providers that are
+#                      not registered (Azure side only); install_environment_checker puts the Environment Checker on the nodes for this run and
+#                      removes it again at the end.
+#
+# Where the result goes. The script writes report.json, summary.md and the event feed where the ARM run reads them: the folder of
+# deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder of the master file.
+# This pipeline publishes a copy as the build artifact pre-cluster-verification. The ARM run reads the folder, not the artifact: run it on the same
+# agent (or set the report directory of the master file to a folder both runs reach).
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the
+# value of every run parameter to enter.
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the
+#                   nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389) and to the DNS servers of the file. A check the agent
+#                   cannot ask is Skipped with its reason, and a Skipped check blocks the verdict: give its id in accept_skipped to accept it (the
+#                   report records that you did), or run from an agent that can ask.
+#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#                   creates it), workload identity federation, with Reader for the checks (Owner or Contributor for fix) and Key Vault Secrets User on
+#                   the vaults of the local administrator and the LCM user.
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
+#   Environment     approval_environment (devops.pipelines.environments.arm_deployment): Approvals (required reviewers) and an Exclusive lock. Task 04
+#                   of the CI/CD setup creates it from devops.environments. A deployment job to an environment with no approval check runs without one.
+#   Why parameters  the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task inputs,
+#                   and that other keywords take template expressions or runtime parameters
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the environment names and the
+#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#
+# Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
+# The OS configuration report is the artifact os-configuration-report of an OS configuration pipeline run (os_configuration_pipeline_id and
+# os_configuration_run_id) or a repository path (os_configuration_report). The ZTP handoff file is optional (handoff_file).
+name: pre-cluster-verification-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# Runs queue one after the other, never in parallel: the result of a run replaces the one before.
+lockBehavior: sequential
+
+parameters:
+  - name: infrastructure_file
+    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
+    type: string
+  - name: mode
+    displayName: 'Plan: what would be checked (offline). Verify: run every check and write the result the ARM run reads'
+    type: string
+    default: Plan
+    values:
+      - Plan
+      - Verify
+  - name: os_configuration_pipeline_id
+    displayName: 'Optional: ID of the OS configuration pipeline whose artifact os-configuration-report holds the report (with os_configuration_run_id; none to skip)'
+    type: string
+    default: none
+  - name: os_configuration_run_id
+    displayName: 'Optional: run ID of that OS configuration pipeline (none to skip)'
+    type: string
+    default: none
+  - name: os_configuration_report
+    displayName: 'Repository path of an OS configuration report directory or report.json, used when no run is given (none to skip)'
+    type: string
+    default: none
+  - name: handoff_file
+    displayName: 'Repository path of the ZTP handoff file (none to skip)'
+    type: string
+    default: none
+  - name: accept_skipped
+    displayName: 'Ids of checks that may stay Skipped, comma separated (for example IDN-002,IDN-003). The report records that you accepted them (none to skip)'
+    type: string
+    default: none
+  - name: allow_revalidate
+    displayName: 'Accept that the Validate runs again on an instance whose deployment failed (give the same switch to the ARM run)'
+    type: boolean
+    default: false
+  - name: fix
+    displayName: 'Verify only: register the mandatory resource providers that are not registered (Azure side only; needs the approval of the environment)'
+    type: boolean
+    default: false
+  - name: install_environment_checker
+    displayName: 'Verify only: install the Environment Checker on the nodes for this run and remove it again (needs the approval of the environment)'
+    type: boolean
+    default: false
+  - name: agent_pool
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
+    type: string
+  - name: approval_environment
+    displayName: 'Environment of the approval of fix and install_environment_checker. Enter devops.pipelines.environments.arm_deployment'
+    type: string
+  - name: service_connection
+    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
+    type: string
+  - name: variable_group
+    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
+    type: string
+
+variables:
+  - group: ${{ parameters.variable_group }}
+  - name: preClusterScript
+    value: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1
+
+stages:
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if and(not(parameters.fix), not(parameters.install_environment_checker)) }}:
+      - stage: Verify
+        displayName: 'Verify (read only)'
+        jobs:
+          - job: Verify
+            displayName: 'Verify (read only)'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Read-only checks that make no long wait: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 30
+            steps:
+              - checkout: self
+
+              - ${{ if and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')) }}:
+                  - task: DownloadPipelineArtifact@2
+                    displayName: 'Fetch the OS configuration report'
+                    inputs:
+                      source: specific
+                      project: $(System.TeamProjectId)
+                      pipeline: ${{ parameters.os_configuration_pipeline_id }}
+                      runVersion: specific
+                      runId: ${{ parameters.os_configuration_run_id }}
+                      artifact: os-configuration-report
+                      path: $(Pipeline.Workspace)/os-configuration-report
+
+              - pwsh: |
+                  $ErrorActionPreference = 'Stop'
+                  $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                  foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+              - task: AzurePowerShell@5
+                displayName: 'Verify'
+                inputs:
+                  azureSubscription: ${{ parameters.service_connection }}
+                  azurePowerShellVersion: OtherVersion
+                  preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+                  pwsh: true
+                  ScriptType: InlineScript
+                  workingDirectory: $(Build.SourcesDirectory)
+                  Inline: |
+                    Set-StrictMode -Version Latest
+                    $ErrorActionPreference = 'Stop'
+                    $p = @{ InfrastructureFile = $env:GATE_INFRASTRUCTURE_FILE; Mode = $env:GATE_MODE; PassThru = $true }
+                    if ($env:GATE_OS_REPORT -and $env:GATE_OS_REPORT -ne 'none') { $p.OsConfigurationReport = $env:GATE_OS_REPORT }
+                    if ($env:GATE_HANDOFF_FILE -and $env:GATE_HANDOFF_FILE -ne 'none') { $p.HandoffFile = $env:GATE_HANDOFF_FILE }
+                    if ($env:GATE_ACCEPT_SKIPPED -and $env:GATE_ACCEPT_SKIPPED -ne 'none') { $p.AcceptSkipped = @($env:GATE_ACCEPT_SKIPPED -split '[,;\s]+' | Where-Object { $_ }) }
+                    if ($env:GATE_ALLOW_REVALIDATE -eq 'true') { $p.AllowRevalidate = $true }
+                    $result = @(& $env:GATE_SCRIPT @p) | Where-Object { $_ -and $_.PSObject.Properties['ReportDirectory'] } | Select-Object -Last 1
+                    $code = $LASTEXITCODE
+                    # a copy of what the script wrote, where it wrote it, for the artifact and the run summary
+                    New-Item -ItemType Directory -Path $env:GATE_ARTIFACT_DIRECTORY -Force | Out-Null
+                    if ($result -and (Test-Path -LiteralPath $result.ReportDirectory -PathType Container)) { Get-ChildItem -LiteralPath $result.ReportDirectory -File | Copy-Item -Destination $env:GATE_ARTIFACT_DIRECTORY -Force }
+                    $summary = Join-Path $env:GATE_ARTIFACT_DIRECTORY 'summary.md'
+                    if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+                    if ($code -ne 0) { throw "Invoke-AzureLocalPreClusterVerification.ps1 exited with code $code." }
+                env:
+                  GATE_SCRIPT: $(preClusterScript)
+                  GATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                  GATE_MODE: ${{ parameters.mode }}
+                  GATE_OS_REPORT: ${{ iif(and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.os_configuration_report) }}
+                  GATE_HANDOFF_FILE: ${{ parameters.handoff_file }}
+                  GATE_ACCEPT_SKIPPED: ${{ parameters.accept_skipped }}
+                  GATE_ALLOW_REVALIDATE: ${{ parameters.allow_revalidate }}
+                  GATE_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/pre-cluster-verification
+
+              - task: PublishPipelineArtifact@1
+                displayName: 'Publish the verification report and the event feed'
+                condition: always()
+                inputs:
+                  targetPath: $(Build.ArtifactStagingDirectory)/pre-cluster-verification
+                  artifact: pre-cluster-verification
+                  publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if or(parameters.fix, parameters.install_environment_checker) }}:
+      - stage: VerifyWithChanges
+        displayName: 'Verify with changes (needs approval)'
+        jobs:
+          - deployment: VerifyWithChanges
+            displayName: 'Verify with changes'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Required reviewers on this environment are the approval gate.
+            environment: ${{ parameters.approval_environment }}
+            # The checks, and a wait for the resource provider registration: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 60
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
+
+                    - ${{ if and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')) }}:
+                        - task: DownloadPipelineArtifact@2
+                          displayName: 'Fetch the OS configuration report'
+                          inputs:
+                            source: specific
+                            project: $(System.TeamProjectId)
+                            pipeline: ${{ parameters.os_configuration_pipeline_id }}
+                            runVersion: specific
+                            runId: ${{ parameters.os_configuration_run_id }}
+                            artifact: os-configuration-report
+                            path: $(Pipeline.Workspace)/os-configuration-report
+
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                        foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                      displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+                    - task: AzurePowerShell@5
+                      displayName: 'Verify with changes'
+                      inputs:
+                        azureSubscription: ${{ parameters.service_connection }}
+                        azurePowerShellVersion: OtherVersion
+                        preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+                        pwsh: true
+                        ScriptType: InlineScript
+                        workingDirectory: $(Build.SourcesDirectory)
+                        Inline: |
+                          Set-StrictMode -Version Latest
+                          $ErrorActionPreference = 'Stop'
+                          $p = @{ InfrastructureFile = $env:GATE_INFRASTRUCTURE_FILE; Mode = $env:GATE_MODE; PassThru = $true }
+                          if ($env:GATE_OS_REPORT -and $env:GATE_OS_REPORT -ne 'none') { $p.OsConfigurationReport = $env:GATE_OS_REPORT }
+                          if ($env:GATE_HANDOFF_FILE -and $env:GATE_HANDOFF_FILE -ne 'none') { $p.HandoffFile = $env:GATE_HANDOFF_FILE }
+                          if ($env:GATE_ACCEPT_SKIPPED -and $env:GATE_ACCEPT_SKIPPED -ne 'none') { $p.AcceptSkipped = @($env:GATE_ACCEPT_SKIPPED -split '[,;\s]+' | Where-Object { $_ }) }
+                          if ($env:GATE_ALLOW_REVALIDATE -eq 'true') { $p.AllowRevalidate = $true }
+                          # the two changes the reviewer approved: the resource providers (Azure side), and the Environment Checker on the nodes for this run
+                          if ($env:GATE_FIX -eq 'true') { $p.Fix = $true }
+                          if ($env:GATE_INSTALL_ENVIRONMENT_CHECKER -eq 'true') { $p.InstallEnvironmentChecker = $true }
+                          $result = @(& $env:GATE_SCRIPT @p) | Where-Object { $_ -and $_.PSObject.Properties['ReportDirectory'] } | Select-Object -Last 1
+                          $code = $LASTEXITCODE
+                          New-Item -ItemType Directory -Path $env:GATE_ARTIFACT_DIRECTORY -Force | Out-Null
+                          if ($result -and (Test-Path -LiteralPath $result.ReportDirectory -PathType Container)) { Get-ChildItem -LiteralPath $result.ReportDirectory -File | Copy-Item -Destination $env:GATE_ARTIFACT_DIRECTORY -Force }
+                          $summary = Join-Path $env:GATE_ARTIFACT_DIRECTORY 'summary.md'
+                          if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+                          if ($code -ne 0) { throw "Invoke-AzureLocalPreClusterVerification.ps1 exited with code $code." }
+                      env:
+                        GATE_SCRIPT: $(preClusterScript)
+                        GATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        GATE_MODE: ${{ parameters.mode }}
+                        GATE_OS_REPORT: ${{ iif(and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.os_configuration_report) }}
+                        GATE_HANDOFF_FILE: ${{ parameters.handoff_file }}
+                        GATE_ACCEPT_SKIPPED: ${{ parameters.accept_skipped }}
+                        GATE_ALLOW_REVALIDATE: ${{ parameters.allow_revalidate }}
+                        GATE_FIX: ${{ parameters.fix }}
+                        GATE_INSTALL_ENVIRONMENT_CHECKER: ${{ parameters.install_environment_checker }}
+                        GATE_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/pre-cluster-verification
+
+                    - task: PublishPipelineArtifact@1
+                      displayName: 'Publish the verification report and the event feed'
+                      condition: always()
+                      inputs:
+                        targetPath: $(Build.ArtifactStagingDirectory)/pre-cluster-verification
+                        artifact: pre-cluster-verification
+                        publishLocation: pipeline

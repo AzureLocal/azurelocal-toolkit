@@ -72,10 +72,14 @@ BeforeAll {
     # GitLab and Azure DevOps variables a file may define: the toolkit's own paths, built-in variables, artifact names and per-job constants.
     $script:FileVariable = @{
         OSCONFIG_SCRIPT = '^scripts/'; ARM_SCRIPT = '^scripts/'; armScript = '^scripts/'; TASK06 = '^scripts/'; CICD_TASK06 = '^scripts/'
+        DISCOVERY_SCRIPT = '^scripts/'; PRECLUSTER_SCRIPT = '^scripts/'; preClusterScript = '^scripts/'
         TF_ROOT = '^(\$\{CI_PROJECT_DIR\}/)?src/'; ANSIBLE_ROOT = '^(\$\{CI_PROJECT_DIR\}/)?src/'; CICD_TF_ROOT = '^\$\{CI_PROJECT_DIR\}/src/'
         CICD_WORK = '^\$\{CI_PROJECT_DIR\}/\.cicd-infra$'; WORK = '^\$\(Pipeline\.Workspace\)/'; IAC_DIRECTORY = '^\$\{CI_BUILDS_DIR\}/azl-iac-\$\{CI_JOB_ID\}$'
-        REPORT_DIRECTORY = '^(os-configuration-report|arm-deployment-report)$'; OS_CONFIGURATION_REPORT = '^os-configuration-report$'
+        REPORT_DIRECTORY = '^(os-configuration-report|arm-deployment-report|discovery-report|pre-cluster-report)$'; OS_CONFIGURATION_REPORT = '^os-configuration-report$'
         ANSIBLE_HOST_KEY_CHECKING = '^False$'; TF_IN_AUTOMATION = '^true$'; APPROVED_BOOTSTRAP = '^false$'; ARM_RESUME = '^false$'; ARM_ACKNOWLEDGE = '^$'
+        DISCOVERY_SCOPE = '^all$'; DISCOVERY_MANAGEMENT_PORT = '^$'; DISCOVERY_WRITE_BACK = '^false$'; DISCOVERY_INCLUDE_RBAC = '^false$'
+        PRECLUSTER_MODE = '^Plan$'; PRECLUSTER_ACCEPT_SKIPPED = '^$'; PRECLUSTER_ALLOW_REVALIDATE = '^false$'; PRECLUSTER_FIX = '^false$'
+        PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER = '^false$'; PRECLUSTER_CHANGES = '^(true|false)$'
         HANDOFF_FILE = '^$'; ARM_MODE = '^Plan$'; ARM_STEP_MODE = '^(Plan|Validate|Deploy)$'; ARM_STEP_DIRECTORY = '^(plan|validate|deploy)$'
     }
 }
@@ -289,7 +293,7 @@ Describe 'Task 05 sets every value a pipeline reads, from its key, with the regi
         foreach ($k in 'devops.terraform.tf_backend_storage_account', 'devops.terraform.tf_backend_container') {
             @($script:Registry | Where-Object Path -EQ $k)[0].Node['deprecated'] | Should -BeTrue
         }
-        foreach ($dir in 'scripts', 'pipelines', 'src', 'ansible', 'config/variables/scripts') {
+        foreach ($dir in 'scripts', 'pipelines', 'src', 'config/variables/scripts') {
             $hits = Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, $dir)) -Recurse -File | Select-String -Pattern 'tf_backend_storage_account|tf_backend_container' -CaseSensitive -List
             @($hits) | Should -BeNullOrEmpty -Because $dir
         }
