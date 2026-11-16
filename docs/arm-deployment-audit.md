@@ -2,12 +2,13 @@
 
 **Date:** 2026-11-07. **Scope:** what the toolkit has today for validating and deploying an Azure Local instance through
 the ARM deployment (Microsoft's quickstart templates, `Microsoft.AzureStackHCI/clusters` with `deploymentSettings`), what is
-real and what is a scaffold, what the documentation promises, and what is missing. **Baseline:** `origin/main` of
+real and what was then a scaffold, what the documentation promised, and what was missing. **Baseline:** `origin/main` of
 azurelocal-toolkit at `05eb0e0` (schema 5.4). The work that closes the gaps is described in
 [design/arm-validate-deploy.md](design/arm-validate-deploy.md).
 
-**How to read the tables.** *Real* means the code does what it says and has tests that run without Azure. *Scaffold* means
-the file exists, runs, and logs "this is a scaffold" instead of doing the task. *Legacy* means it reads the older
+**How to read the tables.** *Real* means the code does what it says and has tests that run without Azure. *Scaffold* meant,
+at the time of this audit, that the file existed, ran, and logged "this is a scaffold" instead of doing the task; today such a
+script is a *placeholder* that ends with exit code 3 (NOT IMPLEMENTED) and changes nothing (`docs/script-status.md` lists them). *Legacy* means it reads the older
 `variables.yml` layout and calls a generator that is not in the repository. Nothing here was run against Azure; the audit
 reads code, tests and documents.
 
@@ -43,7 +44,7 @@ reads code, tests and documents.
 | --- | --- | --- |
 | `monitoring/powershell/` (`Monitor-Validation.ps1`, `Monitor-Deployment.ps1`, `Invoke-MonitorDeployment-Orchestrated.ps1`) | Removed | Sonar (azurelocal-sonar) shows validation and deployment progress; the toolkit no longer carries progress dashboards |
 
-### 1.4 Scaffolds and legacy scripts (removed)
+### 1.4 Scaffolds and legacy scripts (since removed or now placeholders)
 
 Registry 5.0.57 removed the legacy scripts that this table listed. The scripts below are removed, and the replacing script is named on each line.
 
@@ -51,7 +52,7 @@ Registry 5.0.57 removed the legacy scripts that this table listed. The scripts b
 - `Get-HciResourceProviderObjectId.ps1` and its `-Standalone` copy (both identities): removed, replaced by the object id lookup of the ARM run.
 - `Deploy-CreateLocalAdmin.ps1`: removed, replaced by the LocalAdmin step of `Set-AzureLocalNodeConfiguration.ps1`.
 - The cluster health, domain status and local identity checks of the task "verify deployment completion": removed, replaced by checks 1 and 2 of `Invoke-VerifyPostDeployment.ps1`.
-- The scaffolds of these task folders are placeholders that end with exit code 3 and change nothing: `Invoke-VerifyADPrerequisites-Orchestrated.ps1`,
+- The scripts of these task folders that were scaffolds are now placeholders that end with exit code 3 and change nothing: `Invoke-VerifyADPrerequisites-Orchestrated.ps1`,
   `Invoke-DeployCluster-Orchestrated.ps1` and `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1`. The Azure CLI placeholders (`azurecli/az-deploy-cluster*.ps1`) are replaced by
   `Invoke-AzureLocalArmDeployment.azcli.ps1` (`az deployment group validate` and `create`, with the same parameter set).
 ### 1.5 Pipelines today
