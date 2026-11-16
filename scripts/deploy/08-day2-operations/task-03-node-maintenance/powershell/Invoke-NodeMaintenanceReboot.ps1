@@ -59,13 +59,13 @@
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,   # Path to infrastructure.yml
     [PSCredential]$Credential,                 # Override credential resolution
-    [Parameter(Mandatory)][string]$TargetNode, # Required — hostname or management IP of node to reboot
+    [Parameter(Mandatory)][string]$TargetNode, # Required ΓÇö hostname or management IP of node to reboot
     [string]$LogPath           = "",           # Override log file path
 
     # Behaviour overrides
     [switch]$SkipDrain,                        # Skip Suspend-ClusterNode; reboot without draining
     [switch]$SkipResume,                       # Leave node in maintenance after reboot; do not Resume-ClusterNode
-    [switch]$ResumeOnly,                       # Skip drain+reboot entirely — only resume a node already in maintenance
+    [switch]$ResumeOnly,                       # Skip drain+reboot entirely ΓÇö only resume a node already in maintenance
     [ValidateSet('Immediate','NoFailback','Policy')]
     [string]$FailbackMode      = 'Immediate',  # Workload failback behaviour on resume: Immediate (default), NoFailback, Policy
     [int]$TimeoutSeconds       = 500,          # Max seconds to wait for node to come back online
@@ -77,7 +77,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# ΓöÇΓöÇ Logging ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 $taskFolderName = "node-maintenance-reboot"
 if (-not $LogPath) {
     $logDir  = Join-Path (Get-Location).Path "logs\$taskFolderName"
@@ -105,7 +105,7 @@ Write-Log "FailbackMode   : $FailbackMode"
 Write-Log "TimeoutSeconds : $TimeoutSeconds"
 Write-Log "Log            : $logFile"
 
-# ── Config loading ────────────────────────────────────────────────────────────
+# ΓöÇΓöÇ Config loading ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 if (-not (Test-Path -LiteralPath $InfrastructureFile)) {
     Write-Log "Infrastructure file not found: $InfrastructureFile" 'ERROR'
     exit 2
@@ -118,7 +118,7 @@ catch {
 }
 $script:SecretInfrastructure = $cfg
 
-# ── Resolve node IP from config ───────────────────────────────────────────────
+# ΓöÇΓöÇ Resolve node IP from config ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 $nodeHostname = $TargetNode
 $nodeIp       = $TargetNode
 
@@ -134,10 +134,10 @@ if ($matchedNode.Count -gt 0) {
     if ($matchedNode[0].ManagementIp) { $nodeIp = $matchedNode[0].ManagementIp }
     Write-Log "Node resolved  : $nodeHostname ($nodeIp)"
 } else {
-    Write-Log "Node '$TargetNode' not found in config — using as-is (hostname/IP passthrough)" 'WARN'
+    Write-Log "Node '$TargetNode' not found in config ΓÇö using as-is (hostname/IP passthrough)" 'WARN'
 }
 
-# ── Credential resolution ─────────────────────────────────────────────────────
+# ΓöÇΓöÇ Credential resolution ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function Resolve-KeyVaultRef {
     # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
     # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
@@ -178,12 +178,12 @@ if (-not $Credential) {
             $lcmCred = New-Object PSCredential($lcmUserFull, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
             Write-Log "  LCM resolved: '$lcmUserFull'"
         } else {
-            Write-Log "  LCM secret unavailable — LCM fallback will not be available." 'WARN'
+            Write-Log "  LCM secret unavailable ΓÇö LCM fallback will not be available." 'WARN'
         }
     }
 
     if (-not $localAdminCred -and $lcmCred) {
-        Write-Log "  Local admin unavailable — the LCM account is used." 'WARN'
+        Write-Log "  Local admin unavailable ΓÇö the LCM account is used." 'WARN'
         $localAdminCred = $lcmCred
         $lcmCred        = $null
     }
@@ -197,7 +197,7 @@ if (-not $Credential) {
     Write-Log "Using supplied -Credential: '$($Credential.UserName)'"
 }
 
-# ── PSRemoting helper — local admin first, LCM fallback ──────────────────────
+# ΓöÇΓöÇ PSRemoting helper ΓÇö local admin first, LCM fallback ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function Invoke-NodeCommand {
     param(
         [string]$ComputerName,
@@ -214,7 +214,7 @@ function Invoke-NodeCommand {
     } catch {
         if ($_ -match 'Access is denied|LogonFailure|logon failure') {
             if ($LcmCred) {
-                Write-Log "  Local admin denied — retrying with LCM account ($($LcmCred.UserName))..." 'WARN'
+                Write-Log "  Local admin denied ΓÇö retrying with LCM account ($($LcmCred.UserName))..." 'WARN'
                 $params['Credential'] = $LcmCred
                 return Invoke-Command @params
             }
@@ -224,7 +224,7 @@ function Invoke-NodeCommand {
     }
 }
 
-# ── WhatIf guard ──────────────────────────────────────────────────────────────
+# ΓöÇΓöÇ WhatIf guard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 if ($WhatIfPreference) {
     if ($ResumeOnly) {
         Write-Log "[WhatIf] Would resume cluster node    : $nodeHostname ($nodeIp) (ResumeOnly)" 'WARN'
@@ -237,13 +237,13 @@ if ($WhatIfPreference) {
             Write-Log "[WhatIf] Would resume cluster node   : $nodeHostname ($nodeIp) (Failback: $FailbackMode)" 'WARN'
         }
     }
-    Write-Log "WhatIf complete — no changes made" 'WARN'
+    Write-Log "WhatIf complete ΓÇö no changes made" 'WARN'
     return
 }
 
-# ── ResumeOnly shortcut ───────────────────────────────────────────────────────
+# ΓöÇΓöÇ ResumeOnly shortcut ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 if ($ResumeOnly) {
-    Write-Log "ResumeOnly mode — skipping drain and reboot"
+    Write-Log "ResumeOnly mode ΓÇö skipping drain and reboot"
     Write-Log "Resuming cluster node '$nodeHostname' (Failback: $FailbackMode)..."
     Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
         param($NodeName, $FbMode)
@@ -262,7 +262,7 @@ if ($ResumeOnly) {
     return [PSCustomObject]@{ Node = $nodeHostname; NodeIp = $nodeIp; State = $finalState.State; DrainStatus = $finalState.DrainStatus; Duration = 0 }
 }
 
-# ── Step 1: Suspend (drain) cluster node ──────────────────────────────────────
+# ΓöÇΓöÇ Step 1: Suspend (drain) cluster node ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 if (-not $SkipDrain) {
     Write-Log "Suspending cluster node '$nodeHostname' (draining workloads)..."
     Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
@@ -271,19 +271,19 @@ if (-not $SkipDrain) {
     } -ArgumentList $nodeHostname
     Write-Log "Node '$nodeHostname' suspended and drained." 'SUCCESS'
 } else {
-    Write-Log "SkipDrain specified — skipping Suspend-ClusterNode" 'WARN'
+    Write-Log "SkipDrain specified ΓÇö skipping Suspend-ClusterNode" 'WARN'
 }
 
-# ── Step 2: Reboot ────────────────────────────────────────────────────────────
+# ΓöÇΓöÇ Step 2: Reboot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 Write-Log "Sending reboot to '$nodeHostname' ($nodeIp)..."
 try {
     Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
         Restart-Computer -Force
     }
 } catch {
-    # WinRM will drop the connection mid-reboot — this is expected
+    # WinRM will drop the connection mid-reboot ΓÇö this is expected
     if ($_ -match 'pipeline has been stopped|connection.*closed|network|The system is shutting down') {
-        Write-Log "  Connection dropped (expected — node is rebooting)."
+        Write-Log "  Connection dropped (expected ΓÇö node is rebooting)."
     } else {
         Write-Log "  Unexpected error during reboot: $_" 'WARN'
     }
@@ -291,7 +291,7 @@ try {
 $rebootTime = Get-Date
 Write-Log "Reboot command sent at $rebootTime."
 
-# ── Step 3: Wait for node to go offline ───────────────────────────────────────
+# ΓöÇΓöÇ Step 3: Wait for node to go offline ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 Write-Log "Waiting for node to go offline..."
 $offlineDeadline = $rebootTime.AddSeconds(120)
 while ((Get-Date) -lt $offlineDeadline) {
@@ -302,7 +302,7 @@ while ((Get-Date) -lt $offlineDeadline) {
     Start-Sleep -Seconds 5
 }
 
-# ── Step 4: Wait for node to come back online ─────────────────────────────────
+# ΓöÇΓöÇ Step 4: Wait for node to come back online ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 Write-Log "Waiting for node to come back online (timeout: $TimeoutSeconds seconds)..."
 $onlineDeadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $isOnline        = $false
@@ -310,7 +310,7 @@ $isOnline        = $false
 while ((Get-Date) -lt $onlineDeadline) {
     $elapsed = [int]((Get-Date) - $rebootTime).TotalSeconds
     if (Test-Connection -ComputerName $nodeIp -Count 1 -Quiet -ErrorAction SilentlyContinue) {
-        Write-Log "  Node responded to ping after ${elapsed}s — verifying WinRM..."
+        Write-Log "  Node responded to ping after ${elapsed}s ΓÇö verifying WinRM..."
         # Give WinRM a few extra seconds to start
         Start-Sleep -Seconds 15
         try {
@@ -321,7 +321,7 @@ while ((Get-Date) -lt $onlineDeadline) {
             $isOnline = $true
             break
         } catch {
-            Write-Log "  Ping OK but WinRM not yet ready — retrying in $($PingIntervalSeconds)s..." 'WARN'
+            Write-Log "  Ping OK but WinRM not yet ready ΓÇö retrying in $($PingIntervalSeconds)s..." 'WARN'
         }
     } else {
         Write-Log "  Still offline... (${elapsed}s elapsed)"
@@ -334,7 +334,7 @@ if (-not $isOnline) {
     throw "Timeout waiting for '$nodeHostname' to return online."
 }
 
-# ── Step 5: Resume cluster node ───────────────────────────────────────────────
+# ΓöÇΓöÇ Step 5: Resume cluster node ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 if (-not $SkipResume) {
     Write-Log "Resuming cluster node '$nodeHostname' (Failback: $FailbackMode)..."
     Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
@@ -343,10 +343,10 @@ if (-not $SkipResume) {
     } -ArgumentList $nodeHostname, $FailbackMode
     Write-Log "Node '$nodeHostname' resumed (Failback: $FailbackMode)." 'SUCCESS'
 } else {
-    Write-Log "SkipResume specified — node remains in maintenance mode. Run with -ResumeOnly when ready." 'WARN'
+    Write-Log "SkipResume specified ΓÇö node remains in maintenance mode. Run with -ResumeOnly when ready." 'WARN'
 }
 
-# ── Step 6: Final validation ──────────────────────────────────────────────────
+# ΓöÇΓöÇ Step 6: Final validation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 Write-Log "Validating final cluster node state..."
 $finalState = Invoke-NodeCommand -ComputerName $nodeIp -LocalAdminCred $localAdminCred -LcmCred $lcmCred -ScriptBlock {
     $node = Get-ClusterNode -Name $env:COMPUTERNAME -ErrorAction SilentlyContinue
@@ -364,7 +364,7 @@ Write-Log "  DrainStatus  : $($finalState.DrainStatus)"
 if ($finalState.State -eq 'Up' -or [int]$finalState.State -eq 0) {
     Write-Log "Node '$nodeHostname' is Up and healthy." 'SUCCESS'
 } else {
-    Write-Log "Node '$nodeHostname' state is '$($finalState.State)' — expected 'Up'." 'WARN'
+    Write-Log "Node '$nodeHostname' state is '$($finalState.State)' ΓÇö expected 'Up'." 'WARN'
 }
 
 Write-Log "Invoke-NodeMaintenanceReboot complete"
