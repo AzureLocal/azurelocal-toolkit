@@ -65,6 +65,7 @@ $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecretAzureCli.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'ResourceNotFound|NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -92,23 +93,11 @@ function Invoke-Az {
     (@($out | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n").Trim()
 }
 
-# The secret a reference points to, as text, for a call that has to carry it. A keyvault:// reference is read with the Azure CLI ("az keyvault secret
-# show", no Az module needed); env://, file:// and command:// go through the toolkit's resolver. The value is never written or logged, and no message
-# of this function holds it. The vault must be listed under key_vaults, as the toolkit's resolver requires.
+# The secret a reference points to, as text, for a call that has to carry it. A keyvault:// reference is read with the Azure CLI by the secrets module of the
+# toolkit (AzlSecretAzureCli.psm1, next to the resolver); env://, file:// and command:// go through the resolver. The value is never written or logged, and no
+# message holds it. The script block starts az for the module.
 function Get-SecretText([string]$Reference) {
-    if ((Get-AzlSecretProvider -Reference $Reference) -ne 'keyvault') { return (Get-AzlSecretPlainText -Reference $Reference -Infrastructure $infra) }
-    if ($Reference -notmatch '^keyvault://(?<vault>[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9])/(?<secret>[A-Za-z0-9-]{1,127})(/(?<version>[0-9a-fA-F]{32}))?$') { throw 'The secret reference is not a valid keyvault:// reference.' }
-    $vault = $Matches['vault']; $secretName = $Matches['secret']; $version = $Matches['version']
-    $listed = @(Get-AzlInfrastructureValue -Infrastructure $infra -Path 'key_vaults' | ForEach-Object { $_ } | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('name') } | ForEach-Object { [string]$_['name'] })
-    if ($vault -notin $listed) { throw "$Reference names vault $vault, which is not listed under key_vaults in the infrastructure file. Add the vault there first." }
-    $showArgs = @('keyvault', 'secret', 'show', '--vault-name', $vault, '--name', $secretName)
-    if ($version) { $showArgs += '--version'; $showArgs += $version }
-    $showArgs += @('--query', 'value', '--output', 'tsv')
-    $out = @(& az @showArgs 2>$null)
-    if ($LASTEXITCODE -ne 0) { throw "The secret of $Reference could not be read with az (exit code $LASTEXITCODE). Check the secret name, the role Key Vault Secrets User on the vault and the sign-in." }
-    $text = (($out | ForEach-Object { "$_" }) -join "`n").TrimEnd("`r", "`n")
-    if (-not $text) { throw "$Reference is empty." }
-    $text
+    Get-AzlSecretPlainTextAzureCli -Reference $Reference -Infrastructure $infra -Az { param([string[]]$AzArguments) & az @AzArguments 2>$null }
 }
 
 # ---- the values, from infrastructure.yml only
