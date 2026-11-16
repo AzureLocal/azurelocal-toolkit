@@ -17,9 +17,9 @@ Registry version 5.0.62. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 755 | 506 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4793 | 4585 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4797 | 4589 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6921 | 5093 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6925 | 5097 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -96,7 +96,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1101 |
 | sonar | Sonar | 19 | 0 | 266 |
-| cicd-infra | Outside the flow | 91 | 0 | 887 |
+| cicd-infra | Outside the flow | 91 | 0 | 891 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 231 | 0 | 0 |
@@ -1881,7 +1881,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
 | cicd_infra | env_vars | 156 | 156 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 317 | 317 | 0 |
+| cicd_infra | pipeline_inputs | 321 | 321 | 0 |
 | cicd_infra | pipeline_variables | 204 | 204 | 0 |
 | cicd_infra | secret_names | 31 | 31 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |

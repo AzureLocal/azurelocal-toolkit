@@ -7,12 +7,19 @@
 # Use-AzlGitLabTool.ps1 makes the Python, ansible-core and module versions of devops.pipelines.tool_versions the ones the job uses.
 # Order: playbook 05 builds the domain controllers first; the AD preparation (01) runs on the first of them.
 
+# No approval environment, no change: the plays change machines, so each job runs in the approval environment of terraform:apply (the same
+# environment GitHub uses for these plays), and its rule needs the variable. While AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT is empty no job of this stage is
+# created, and configure-onprem-approval-environment-not-set (at the end of this file) fails and says why.
 .configure-onprem:
   stage: configure-onprem
+  environment:
+    name: ${AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT} # a project CI/CD variable set by task 05 (devops.pipelines.environments.terraform_deployment)
+  # One change at a time, with terraform:apply and the other plays.
+  resource_group: azure-local-deploy
   when: manual
   allow_failure: false
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT != null && $AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT != ""'
 
 management:vms:
   extends: .configure-onprem
@@ -109,3 +116,15 @@ arc:registration:
       '
   needs:
     - os:configuration
+
+# The approval environment is not set: the jobs above are not created (their rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+configure-onprem-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: configure-onprem
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && ($AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT == null || $AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT (devops.pipelines.environments.terraform_deployment) is empty, and the on-premises plays change machines, so they do not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'
