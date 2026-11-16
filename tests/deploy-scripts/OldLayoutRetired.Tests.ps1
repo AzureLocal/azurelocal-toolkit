@@ -70,11 +70,9 @@ BeforeDiscovery {
         "$p3/task-13-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1"
         "$p4/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1"
         "$p4/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1"
-        "$p4/task-02-register-cluster-nodes-with-azure-arc/azurecli/Register-AzureLocalArc.ps1"
         "$p4/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1"
         "$p5/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1"
         "$p5/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1"
-        "$p5/local-identity/task-01-initiate-deployment-via-arm-template/azurecli/az-deploy-cluster.ps1"
         "$p5/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1"
         "$p5/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1"
         'phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1'
