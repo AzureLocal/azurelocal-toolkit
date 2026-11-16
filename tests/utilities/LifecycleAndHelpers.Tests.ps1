@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # The day-2 and helper scripts that read the infrastructure file and never ask:
-#   scripts/lifecycle/operations/powershell/Invoke-ClusterOperations.ps1   cluster.name from the file; changes are behind -WhatIf; exit 0, 1, 2
+#   (Invoke-ClusterOperations.ps1 moved to stage 08, task 04; its tests are in tests/day2/ClusterOperations.Tests.ps1)
 #   scripts/common/utilities/helpers/Connect-AzureSession.ps1 and Connect-AzureCliSession.ps1   the tenant and subscription come from the file; they ask nothing
 #   scripts/tools/authoring/New-ScriptFromTemplate.ps1                     writes a schema 5 script (-InfrastructureFile, registered keys, no prompt)
 # Every cluster, Az and az call is a stub or a mock; nothing is contacted. Scripts run as copies in TestDrive where they need the Az modules (#Requires)
@@ -15,7 +15,7 @@ param()
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Operations = [IO.Path]::Combine($repo, 'scripts', 'lifecycle', 'operations', 'powershell', 'Invoke-ClusterOperations.ps1')
+
     $script:AzSession = [IO.Path]::Combine($repo, 'scripts', 'common', 'utilities', 'helpers', 'Connect-AzureSession.ps1')
     $script:CliSession = [IO.Path]::Combine($repo, 'scripts', 'common', 'utilities', 'helpers', 'Connect-AzureCliSession.ps1')
     $script:Template = [IO.Path]::Combine($repo, 'scripts', 'tools', 'authoring', 'New-ScriptFromTemplate.ps1')
@@ -42,88 +42,6 @@ BeforeAll {
         $file
     }
 
-    # Stubs of the cluster cmdlets of Invoke-ClusterOperations.ps1
-    function Get-ClusterNode { param($Cluster, $Name) @([pscustomobject]@{ Name = 'iic-01-n01'; State = 'Up' }, [pscustomobject]@{ Name = 'iic-01-n02'; State = 'Up' }) }
-    function Suspend-ClusterNode { param($Name, $Cluster, [switch]$Drain, [switch]$Wait) $null }
-    function Resume-ClusterNode { param($Name, $Cluster, $Failback) $null }
-    function Invoke-Command { param($ComputerName, $ScriptBlock, $ErrorAction) $null }
-    function Get-VM { param($ComputerName) @([pscustomobject]@{ Name = 'vm-iic-01' }) }
-    function Move-VM { param($Name, $ComputerName, $DestinationHost) $null }
-    function Get-ClusterSharedVolume { param($Cluster) @() }
-    function Move-ClusterSharedVolume { param($Name, $Node) $null }
-    function Invoke-Operations([string]$File, [hashtable]$Extra = @{}) {
-        $copy = New-ScriptCopy $script:Operations
-        $global:LASTEXITCODE = $null
-        $text = (& $copy -InfrastructureFile $File @Extra 6>&1 3>&1 2>&1 | Out-String)
-        [pscustomobject]@{ ExitCode = $LASTEXITCODE; Text = $text }
-    }
-}
-
-Describe 'Invoke-ClusterOperations.ps1' {
-    BeforeEach {
-        Mock Suspend-ClusterNode { }
-        Mock Resume-ClusterNode { }
-        Mock Move-VM { }
-        Mock Move-ClusterSharedVolume { }
-    }
-
-    It 'ends with exit code 2 when cluster.name is missing, and does nothing' {
-        $r = Invoke-Operations (New-InfraFile -NoCluster) @{ Action = 'HealthCheck' }
-        $r.ExitCode | Should -Be 2
-        $r.Text | Should -Match 'cluster.name is missing'
-    }
-
-    It 'ends with exit code 2 when MaintenanceMode or LiveMigrate has no -NodeName' {
-        foreach ($action in 'MaintenanceMode', 'LiveMigrate') {
-            $r = Invoke-Operations (New-InfraFile) @{ Action = $action }
-            $r.ExitCode | Should -Be 2 -Because $r.Text
-            $r.Text | Should -Match 'needs -NodeName'
-        }
-        Should -Invoke Suspend-ClusterNode -Times 0 -Exactly
-    }
-
-    It 'drains the node of the cluster named by the file when entering maintenance mode' {
-        $r = Invoke-Operations (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-01-n01'; Enable = $true }
-        $r.ExitCode | Should -Be 0 -Because $r.Text
-        Should -Invoke Suspend-ClusterNode -Times 1 -Exactly -ParameterFilter { $Name -eq 'iic-01-n01' -and $Cluster -eq 'iic-azl-01' }
-    }
-
-    It 'changes nothing under -WhatIf: no drain, no resume, no VM move, no CSV move' {
-        $file = New-InfraFile
-        $null = Invoke-Operations $file @{ Action = 'MaintenanceMode'; NodeName = 'iic-01-n01'; Enable = $true; WhatIf = $true }
-        $null = Invoke-Operations $file @{ Action = 'MaintenanceMode'; NodeName = 'iic-01-n01'; WhatIf = $true }
-        $null = Invoke-Operations $file @{ Action = 'LiveMigrate'; NodeName = 'iic-01-n01'; WhatIf = $true }
-        Should -Invoke Suspend-ClusterNode -Times 0 -Exactly
-        Should -Invoke Resume-ClusterNode -Times 0 -Exactly
-        Should -Invoke Move-VM -Times 0 -Exactly
-        Should -Invoke Move-ClusterSharedVolume -Times 0 -Exactly
-    }
-
-    It 'ends with exit code 1 when the drain fails' {
-        Mock Suspend-ClusterNode { throw 'The node cannot be drained.' }
-        $r = Invoke-Operations (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-01-n01'; Enable = $true }
-        $r.ExitCode | Should -Be 1
-        $r.Text | Should -Match 'cannot be drained'
-    }
-
-    Context 'the script text' {
-        BeforeAll {
-            $script:Text = Get-Content -LiteralPath $script:Operations -Raw
-            $script:Ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Operations, [ref]$null, [ref]$null)
-        }
-        It 'takes -InfrastructureFile (mandatory) and no -ClusterName' {
-            $names = @($script:Ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
-            $names | Should -Contain 'InfrastructureFile'
-            $names | Should -Not -Contain 'ClusterName'
-        }
-        It 'has the standard header and never prompts' {
-            $script:Text | Should -Match '(?m)^#Requires -Version 7\.0'
-            $script:Text | Should -Match 'Set-StrictMode -Version Latest'
-            $script:Text | Should -Match "\`$ErrorActionPreference = 'Stop'"
-            $script:Text | Should -Match 'SupportsShouldProcess'
-            $script:Text | Should -Not -Match 'Read-Host|Get-Credential'
-        }
-    }
 }
 
 Describe 'Connect-AzureSession.ps1 and Connect-AzureCliSession.ps1' {

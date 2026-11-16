@@ -346,10 +346,13 @@ Design guidance (which pattern to pick, sizing, best practices) stays in Trailwr
 `operations.updates.install_after_deployment` (default `false`) and `operations.updates.target_version` (`latest`, the default, or a solution version such as `12.2610.1004.50`) ask for a solution update after the deployment. One script reads them:
 
 ```powershell
-./scripts/lifecycle/updates/powershell/Start-SolutionUpdateAfterDeployment.ps1 -InfrastructureFile ./infrastructure.yml [-ComputerName <node>] [-Credential <deployment user>] [-WhatIf]
+./scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1 -InfrastructureFile ./infrastructure.yml [-Mode AfterDeployment|OnDemand] [-PrepareOnly] [-ComputerName <node>] [-Credential <deployment user>] [-WhatIf]
 ```
 
 The script connects to the cluster, reads the update environment and the discovered updates, checks that the health is not `Failure`, `Error` or `Warning`, and starts the update with `Start-SolutionUpdate`. It returns without waiting. It starts nothing, and exits 0, when the switch is off, when the instance runs the target version, or when an update is already running (`Downloading`, `Preparing`, `HealthChecking` or `Installing`). An update in a failed state, one that needs vendor content (`AdditionalContentRequired`) or one that needs another update first is reported and left alone: exit code 1. A value in the file that is not usable is exit code 2 and nothing is sent. Follow the run with `Get-SolutionUpdate` on a node, or in Update Manager in the Azure portal; Sonar watches the progress.
+
+The monthly update uses the same script with `-Mode OnDemand`: the switch is not read, because the operator who runs it is the decision, and `target_version` still applies. `-PrepareOnly` downloads the update and runs the readiness checks first. What the update service has found, and what Azure shows for the cluster, is read by `Get-AvailableSolutionUpdate.ps1` and `Get-AvailableSolutionUpdate.azcli.ps1` (stage 08, task 01, read only; run them after the deployment and on a schedule, because a new cluster does not show its first update on its own until later). The page "Day 2 operations" of the implementation guide lists the order: check, import the SBE files when an update says `AdditionalContentRequired`, start, follow.
+
 ## Terraform and Ansible variable files (schema 5.6.17)
 
 The Terraform code (`src/terraform`) and the Ansible roles (`src/ansible`) are an alternative route to tasks the PowerShell scripts do. They need the same facts: names, addresses, subscriptions. Those facts are keys of this file, so the code has no values of its own for them. One script writes the variable files the code reads:

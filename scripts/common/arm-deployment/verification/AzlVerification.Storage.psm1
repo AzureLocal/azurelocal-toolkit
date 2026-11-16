@@ -7,7 +7,7 @@
 .DESCRIPTION
     Harvested, not written from scratch: azl-toolkit 04-cluster-deployment phase-03-os-configuration task-11 Clear-StorageConfiguration.ps1 (removed)
     and task-13 Task11_Storage (S2D readiness: pools, virtual disks, RAW disks), tasks 12-14 (MPIO and SAN LUN), the node payload of the
-    OS configuration (the san read), the toolkit's scripts/validation/storage-tests, config/san/msdsm-vendors.json, and Microsoft Learn
+    OS configuration (the san read), the toolkit's stage 07 task 04 (scripts/deploy/07-validation-handover), config/san/msdsm-vendors.json, and Microsoft Learn
     (azloc-2610) enable-external-storage, deployment-install-os-disaggregated and system-requirements-23h2.
 
     Real failure of the lab that is a check here (ST-004, ST-006, ST-007): Azure's Test-Cluster failed with 'Two disks have been found

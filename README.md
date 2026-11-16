@@ -30,7 +30,7 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 | 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | the toolkit, watched by the Sonar Verification monitor | [see the gate note](#the-pre-cluster-verification-gate) |
 | 5 | ARM Validate | `Invoke-AzureLocalArmDeployment.ps1 -Mode Validate` | [docs/arm-deployment-guide.md](docs/arm-deployment-guide.md) |
 | 6 | ARM Deploy | the same script, `-Mode Deploy` | same |
-| 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/lifecycle` | the Azure Local docs |
+| 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/deploy/07-validation-handover`, `scripts/deploy/08-day2-operations` | the Azure Local docs |
 
 [Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 2 to 6 read only.
 
@@ -96,8 +96,8 @@ The script layout follows the Azure Local deployment lifecycle:
 | 04 | Cluster Deployment | Host preparation, OS configuration, Arc registration, cluster creation |
 | 05 | Operational Foundations | Monitoring, backup, and operational services |
 | 06 | Testing & Validation | Post-deployment checks and validation workflows |
-| 07 | Validation & Handover | Handover and transition artifacts |
-| 08 | Lifecycle Operations | Update, maintenance, and day-2 operations |
+| 07 | Validation & Handover | Cluster, Arc, network and storage validation, the deployment documentation, the customer transfer |
+| 08 | Day 2 Operations | Check for updates, start an update, node maintenance, cluster operations |
 
 ### Task folders
 
@@ -139,7 +139,7 @@ Where supported, automation should consume variables from the shared variable mo
 | Terraform | `src/terraform/` | Backend bootstrap, reusable modules, and the Azure Local environment root module |
 | Pipeline samples | `pipelines/` | CI/CD examples for multiple platforms |
 | PowerShell deployment scripts | `scripts/deploy/` | Stage-based implementation scripts and orchestration |
-| Validation scripts | `scripts/validation/` | Health checks and test tooling |
+| Validation, handover and day 2 scripts | `scripts/deploy/07-validation-handover/`, `scripts/deploy/08-day2-operations/` | Health checks, handover, updates, node maintenance |
 
 ## Start Here
 

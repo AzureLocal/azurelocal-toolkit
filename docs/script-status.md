@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 110.
+Task folders: 120.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 58 | 52 | 0 |
-| Azure CLI | 45 | 0 | 65 |
+| PowerShell | 68 | 52 | 0 |
+| Azure CLI | 47 | 0 | 73 |
 
-Azure CLI applies to 45 tasks, does not apply to 65, and is not decided for 0.
+Azure CLI applies to 47 tasks, does not apply to 73, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -163,3 +163,23 @@ Azure CLI applies to 45 tasks, does not apply to 65, and is not decided for 0.
 | `task-03-network-rdma-validation` | built | not applicable | no |
 | `task-04-high-availability-testing` | built | not applicable | no |
 | `task-05-security-compliance-validation` | built | built | yes |
+
+## 07-validation-handover
+
+| Task | PowerShell | Azure CLI | Azure CLI applies |
+|---|---|---|---|
+| `task-01-cluster-health-validation` | built | not applicable | no |
+| `task-02-arc-connectivity-validation` | built | not applicable | no |
+| `task-03-network-configuration-validation` | built | not applicable | no |
+| `task-04-storage-performance-validation` | built | not applicable | no |
+| `task-05-deployment-documentation` | built | not applicable | no |
+| `task-06-customer-transfer` | built | built | yes |
+
+## 08-day2-operations
+
+| Task | PowerShell | Azure CLI | Azure CLI applies |
+|---|---|---|---|
+| `task-01-check-for-updates` | built | built | yes |
+| `task-02-start-solution-update` | built | not applicable | no |
+| `task-03-node-maintenance` | built | not applicable | no |
+| `task-04-cluster-operations` | built | not applicable | no |

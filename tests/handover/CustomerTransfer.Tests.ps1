@@ -12,7 +12,7 @@ param()
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'handover', 'customer-transfer', 'powershell', 'Set-CustomerTransfer.ps1')
+    $script:Script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '07-validation-handover', 'task-06-customer-transfer', 'powershell', 'Set-CustomerTransfer.ps1')
     Import-Module powershell-yaml
 
     function Get-AzContext { [CmdletBinding()] param() }

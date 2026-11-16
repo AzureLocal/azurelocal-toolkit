@@ -1861,7 +1861,7 @@
       "additionalProperties": false,
       "properties": {
         "updates": {
-          "description": "Schema 5.6.20. Updates after the deployment. Start-SolutionUpdateAfterDeployment.ps1 (scripts/lifecycle/updates/powershell) reads both keys. Learn: Update Azure Local by using PowerShell.",
+          "description": "Schema 5.6.20. Updates after the deployment and the monthly update. Start-AzureLocalSolutionUpdate.ps1 (scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell) reads both keys; with -Mode OnDemand (the monthly update) it does not read install_after_deployment. Get-AvailableSolutionUpdate.ps1 (task 01, the check for updates) reads target_version. Learn: Update Azure Local by using PowerShell.",
           "type": "object",
           "additionalProperties": false,
           "properties": {

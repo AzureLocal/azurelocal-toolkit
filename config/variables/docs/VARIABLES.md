@@ -660,7 +660,7 @@ Day-2 choices: updates, backup, disaster recovery, notifications, licensing and 
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `operations` | Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring. | object | no / no |  |  |  | ARM deployment, Trailwright |
 | `operations.update_method` | How updates are applied: portal or powershell. | one of `portal`, `powershell` | no / no |  | `portal` | Your operations design. | Trailwright |
-| `operations.updates` | Updates after the deployment. (since 5.6.20) | object | no / no |  |  | Your operations design. | ARM deployment, Trailwright |
+| `operations.updates` | Updates after the deployment and the monthly update. (since 5.6.20) | object | no / no |  |  | Your operations design. | ARM deployment, Trailwright |
 | `operations.updates.install_after_deployment` | true: after the deployment, start the solution update (Start-SolutionUpdate) and return. | boolean | no / no | `false` |  | Your operations design. | ARM deployment, Trailwright |
 | `operations.updates.target_version` | The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.2610.1004.50... | string | no / no | `latest` |  | Your operations design. | ARM deployment, Trailwright |
 | `operations.backup` | Backup of the instance and its workloads. | object | no / no |  |  | Your operations design. | Trailwright |

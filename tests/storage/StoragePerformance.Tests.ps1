@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1. The file had a syntax error ("$healthStatus:" in a string), so no one
+# scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1 (stage 07, task 04). The file had a syntax error ("$healthStatus:" in a string), so no one
 # could run it. These tests check that it parses, that no script of the toolkit has a parse error (the parked and the paid-security scripts
 # are named below), that it holds no limit a deployment chooses and never prompts, and that its checks work against fake cluster objects.
 # The script runs in a child process with stub cmdlets; nothing reaches a cluster, a node or Azure.
@@ -11,7 +11,7 @@ param()
 
 BeforeAll {
     $script:Repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:Script = [IO.Path]::Combine($script:Repo, 'scripts', 'validation', 'storage-tests', 'powershell', 'Test-StoragePerformance.ps1')
+    $script:Script = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '07-validation-handover', 'task-04-storage-performance-validation', 'powershell', 'Test-StoragePerformance.ps1')
     $script:Pwsh = (Get-Process -Id $PID).Path
     Import-Module powershell-yaml
 
@@ -22,11 +22,13 @@ BeforeAll {
     }
 
     # A wrapper that defines stub cmdlets with fake objects, then runs the script. -Pool and -Csv name what the fakes look like.
-    function Invoke-WithFakes {
+    function Invoke-WithFake {
         param([string]$PoolHealth = 'Healthy', [double]$CsvUsedPercent = 40, [string[]]$Argument = @())
         $size = 10TB
         $free = [int64]($size * (100 - $CsvUsedPercent) / 100)
         $wrapper = Join-Path $TestDrive "wrap-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"
+        $infraFile = Join-Path $TestDrive 'infra-storage.yml'
+        Set-Content -LiteralPath $infraFile -Value (ConvertTo-Yaml ([ordered]@{ cluster = [ordered]@{ name = 'iic-azl-01' } }))
         $text = @"
 `$ErrorActionPreference = 'Stop'
 function Get-StoragePool { [CmdletBinding()] param([string]`$CimSession) [pscustomobject]@{ IsPrimordial = `$false; FriendlyName = 'iic-pool'; HealthStatus = '$PoolHealth'; OperationalStatus = 'OK'; Size = 20TB; AllocatedSize = 5TB } }
@@ -34,7 +36,7 @@ function Get-VirtualDisk { [CmdletBinding()] param([string]`$CimSession) [pscust
 function Get-PhysicalDisk { [CmdletBinding()] param([string]`$CimSession) [pscustomobject]@{ FriendlyName = 'iic-pd'; Usage = 'Auto-Select'; CanPool = `$false; MediaType = 'SSD'; HealthStatus = 'Healthy'; OperationalStatus = 'OK' } }
 function Get-ClusterNode { [CmdletBinding()] param([string]`$Cluster) [pscustomobject]@{ Name = 'iic-n01'; State = 'Up' }; [pscustomobject]@{ Name = 'iic-n02'; State = 'Up' } }
 function Get-ClusterSharedVolume { [CmdletBinding()] param([string]`$Cluster) [pscustomobject]@{ Name = 'iic-csv'; State = 'Online'; OwnerNode = [pscustomobject]@{ Name = 'iic-n01' }; SharedVolumeInfo = @([pscustomobject]@{ FriendlyVolumeName = 'C:\ClusterStorage\iic-csv'; Partition = [pscustomobject]@{ Size = [int64]$size; FreeSpace = [int64]$free } }) } }
-& '$($script:Script.Replace("'", "''"))' -ClusterName 'iic-azl-01' $($Argument -join ' ')
+& '$($script:Script.Replace("'", "''"))' -InfrastructureFile '$($infraFile.Replace("'", "''"))' $($Argument -join ' ')
 exit `$LASTEXITCODE
 "@
         Set-Content -LiteralPath $wrapper -Value $text
@@ -104,8 +106,8 @@ Describe 'Test-StoragePerformance.ps1 holds no value a deployment chooses and ne
     }
 
     It 'has every parameter in the master registry (tools.arm_deployment.parameters)' {
-        $names = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.scripts_validation_storage_tests_powershell_Test_StoragePerformance_ps1[^.]*\.[^.]+$' } | ForEach-Object { $_.Node['name'] })
-        foreach ($p in 'ClusterName', 'VolumeNames', 'RunPerformanceTest', 'DurationSeconds', 'CsvUsageWarningPercent', 'MaxAvgWriteLatencyMs', 'MaxAvgReadLatencyMs', 'OutputPath') {
+        $names = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.scripts_deploy_07_validation_handover_task_04_storage_performance_validation_powershell_Test_StoragePerformance_ps1[^.]*\.[^.]+$' } | ForEach-Object { $_.Node['name'] })
+        foreach ($p in 'InfrastructureFile', 'VolumeNames', 'RunPerformanceTest', 'DurationSeconds', 'CsvUsageWarningPercent', 'MaxAvgWriteLatencyMs', 'MaxAvgReadLatencyMs', 'OutputPath') {
             $names | Should -Contain $p -Because $p
         }
     }
@@ -113,36 +115,36 @@ Describe 'Test-StoragePerformance.ps1 holds no value a deployment chooses and ne
 
 Describe 'Test-StoragePerformance.ps1 against fake cluster objects' {
     It 'exits 0 and logs no error when pool, disks and volume are healthy' {
-        $r = Invoke-WithFakes
+        $r = Invoke-WithFake
         $r.ExitCode | Should -Be 0 -Because $r.Text
         $r.Text | Should -Match 'Pool: iic-pool - Healthy'
         $r.Text | Should -Match 'Storage validation complete'
     }
 
     It 'logs an unhealthy pool with its status and a colon, and exits 1' {
-        $r = Invoke-WithFakes -PoolHealth 'Unhealthy'
+        $r = Invoke-WithFake -PoolHealth 'Unhealthy'
         $r.ExitCode | Should -Be 1 -Because $r.Text
         $r.Text | Should -Match 'Pool: iic-pool - Unhealthy: OK'
     }
 
     It 'warns about a volume above the limit (default 85 percent) and not below it' {
-        (Invoke-WithFakes -CsvUsedPercent 90).Text | Should -Match 'WARNING: 90% used, limit 85%'
-        (Invoke-WithFakes -CsvUsedPercent 80).Text | Should -Not -Match 'WARNING: 80% used'
+        (Invoke-WithFake -CsvUsedPercent 90).Text | Should -Match 'WARNING: 90% used, limit 85%'
+        (Invoke-WithFake -CsvUsedPercent 80).Text | Should -Not -Match 'WARNING: 80% used'
     }
 
     It 'takes the volume limit from -CsvUsageWarningPercent' {
-        (Invoke-WithFakes -CsvUsedPercent 60 -Argument '-CsvUsageWarningPercent', '50').Text | Should -Match 'WARNING: 60% used, limit 50%'
-        (Invoke-WithFakes -CsvUsedPercent 90 -Argument '-CsvUsageWarningPercent', '95').Text | Should -Not -Match 'WARNING: 90% used'
+        (Invoke-WithFake -CsvUsedPercent 60 -Argument '-CsvUsageWarningPercent', '50').Text | Should -Match 'WARNING: 60% used, limit 50%'
+        (Invoke-WithFake -CsvUsedPercent 90 -Argument '-CsvUsageWarningPercent', '95').Text | Should -Not -Match 'WARNING: 90% used'
     }
 
     It 'refuses a duration below 2 seconds and a percent above 100' {
-        (Invoke-WithFakes -Argument '-DurationSeconds', '1').ExitCode | Should -Not -Be 0
-        (Invoke-WithFakes -Argument '-CsvUsageWarningPercent', '101').ExitCode | Should -Not -Be 0
+        (Invoke-WithFake -Argument '-DurationSeconds', '1').ExitCode | Should -Not -Be 0
+        (Invoke-WithFake -Argument '-CsvUsageWarningPercent', '101').ExitCode | Should -Not -Be 0
     }
 
     It 'saves the results to -OutputPath and creates the folder' {
         $out = Join-Path $TestDrive 'results-new'
-        $r = Invoke-WithFakes -Argument '-OutputPath', "'$out'"
+        $r = Invoke-WithFake -Argument '-OutputPath', "'$out'"
         $r.ExitCode | Should -Be 0 -Because $r.Text
         @(Get-ChildItem -LiteralPath $out -Filter 'storage-test-*.json').Count | Should -Be 1
     }

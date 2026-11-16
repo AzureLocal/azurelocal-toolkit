@@ -7,8 +7,8 @@
 .DESCRIPTION
     Harvested, not written from scratch: azl-toolkit 03-onprem-readiness phase-03-network-infrastructure task-04 Test-NetworkReadiness.ps1
     and task-03 firewall endpoint verification (outbound endpoints), 04-cluster-deployment phase-03-os-configuration task-03/04/05/06/09
-    (static IP, DHCP, DNS, unused adapters) and task-13 verification, the toolkit's scripts/validation/network-tests
-    Test-NetworkConfiguration.ps1, and Microsoft Learn (azloc-2610) host-network-requirements and cloud-deployment-network-considerations.
+    (static IP, DHCP, DNS, unused adapters) and task-13 verification, the toolkit's stage 07 task 03
+    (scripts/deploy/07-validation-handover) Test-NetworkConfiguration.ps1, and Microsoft Learn (azloc-2610) host-network-requirements and cloud-deployment-network-considerations.
 
     Real failure of the lab that is a check here: the RDMA operational check failed on a MANAGEMENT intent (NW-002): RDMA / Network
     Direct is only for the storage intent; asking for it on an intent whose adapters are not RDMA capable (or not operational) fails
