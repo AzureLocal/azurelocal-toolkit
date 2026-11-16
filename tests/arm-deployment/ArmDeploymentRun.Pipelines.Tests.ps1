@@ -47,7 +47,7 @@ Describe 'All three pipelines' {
         $script:Text[$Name] | Should -Match '-Mode Deploy|Mode = .Deploy.|ARM_STEP_MODE: Deploy'
         $script:Text[$Name] | Should -Match 'summary\.md'
     }
-    It '<Name> takes the approval environment from devops.pipelines.environments.arm_deployment, and names none itself' -ForEach @(@{ Name = 'github'; Pattern = 'vars\.AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'gitlab'; Pattern = '\$AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'ado'; Pattern = 'parameters\.approvalEnvironment' }) {
+    It '<Name> takes the approval environment from devops.pipelines.environments.arm_deployment, and names none itself' -ForEach @(@{ Name = 'github'; Pattern = 'vars\.AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'gitlab'; Pattern = '\$AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'ado'; Pattern = 'variables\.AZL_ENVIRONMENT_ARM_DEPLOYMENT' }) {
         $script:Text[$Name] | Should -Match $Pattern
         $script:Text[$Name] | Should -Not -Match '(?m)^\s+(environment|name): azure-local-deploy'
     }
@@ -146,11 +146,17 @@ Describe 'Azure DevOps' {
         $script:Text['ado'] | Should -Match 'stage: Validate'
         $script:Text['ado'] | Should -Match 'stage: Deploy'
         $script:Text['ado'] | Should -Match "if or\(eq\(parameters.mode, 'Validate'\), eq\(parameters.mode, 'ValidateAndDeploy'\)\)"
-        $script:Text['ado'] | Should -Match "if or\(eq\(parameters.mode, 'ValidateAndDeploy'\), eq\(parameters.mode, 'Deploy'\)\)"
+        $script:Text['ado'] | Should -Match "if and\(or\(eq\(parameters.mode, 'ValidateAndDeploy'\), eq\(parameters.mode, 'Deploy'\)\), ne\(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, ''\)\)"
+        $script:Text['ado'] | Should -Match "if and\(or\(eq\(parameters.mode, 'ValidateAndDeploy'\), eq\(parameters.mode, 'Deploy'\)\), eq\(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, ''\)\)"
+        $script:Text['ado'] | Should -Match 'stage: ApprovalEnvironmentNotSet'
     }
     It 'Deploy is a deployment job in the approval environment' {
         $script:Text['ado'] | Should -Match '(?m)^\s+- deployment: Deploy'
-        $script:Text['ado'] | Should -Match '(?m)^\s+environment: \$\{\{ parameters\.approvalEnvironment \}\}'
+        # the environment is a variable of a YAML file of the repository (bound at compile time), never a run parameter the queuer could point at an environment with no approval
+        $script:Text['ado'] | Should -Match '(?m)^\s+environment: \$\{\{ variables\.AZL_ENVIRONMENT_ARM_DEPLOYMENT \}\}\r?$'
+        $script:Text['ado'] | Should -Not -MatchExactly 'approvalEnvironment'
+        @($script:A.parameters | Where-Object name -eq 'approvalEnvironment').Count | Should -Be 0
+        $script:Text['ado'] | Should -Match '(?m)^\s+- template: variables/approval-environments\.yml\r?$'
     }
     It 'signs in through a workload identity service connection and the AzurePowerShell task, not with a secret' {
         $script:Text['ado'] | Should -Match 'AzurePowerShell@5'

@@ -9,10 +9,12 @@
 #   Preconditions   Read only. Parameters and every precondition. Always runs.
 #   Validate        Mode Validate. Runs for mode Validate and ValidateAndDeploy. A Validate that already passed with the same
 #                   parameters is not submitted again.
-#   Deploy          Mode Deploy (2.5 to 3 hours). A deployment job in the environment of the parameter `approvalEnvironment`: add an Approvals
+#   Deploy          Mode Deploy (2.5 to 3 hours). A deployment job in the approval environment (the variable AZL_ENVIRONMENT_ARM_DEPLOYMENT of
+#                   variables/approval-environments.yml, bound when the pipeline is compiled, never a run parameter): add an Approvals
 #                   check to that environment (Pipelines > Environments > <that environment> > Approvals and checks), and an Exclusive lock
 #                   so two runs never deploy at once (lockBehavior below). The approver reads the Validate stage's summary. The stage checks
-#                   every precondition and that these parameters validated. `resume` resubmits a failed Deploy.
+#                   every precondition and that these parameters validated. `resume` resubmits a failed Deploy. While the variable is empty,
+#                   the stage ApprovalEnvironmentNotSet fails instead and nothing is changed.
 #
 # Setup (names only, no value is in this file; task 05 of the CI/CD setup lists the value of every run parameter to enter)
 #   Service connection  an Azure Resource Manager service connection, named in the parameter `azureServiceConnection`
@@ -23,15 +25,18 @@
 #                       (devops.pipelines.tool_versions.*). The local administrator and LCM passwords are read from the Key Vaults named by
 #                       the keyvault:// references in the master file; the identity needs Get on those secrets and the rights in the design (section 12).
 #   Agent pool          a self-hosted pool with pwsh 7, parameter `agentPool`: devops.runners[].pool of the general runner.
-#   Environment         parameter `approvalEnvironment`: devops.pipelines.environments.arm_deployment. Task 04 of the CI/CD setup creates it
-#                       from devops.environments.
+#   Environment         the name in variables/approval-environments.yml (AZL_ENVIRONMENT_ARM_DEPLOYMENT: devops.pipelines.environments.arm_deployment;
+#                       task 05 lists the value to write there, once, in a pull request). Task 04 of the CI/CD setup creates the environment from
+#                       devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name
+#                       is not a run parameter (Learn: a template expression sees only the variables of the YAML files).
 #   Infrastructure file parameter `infrastructureFile`: devops.pipelines.infrastructure_file.
-#   Why parameters     the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+#   Why parameters     the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
 #                       inputs, and that other keywords take template expressions or runtime parameters
 #                       (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                       ${{ variables.name }} does not see variables stored on the pipeline or in a library
-#                       (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So they are runtime parameters
-#                       (${{ parameters.name }}) with no default: the run form asks for them.
+#                       ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+#                       (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
+#                       file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval
+#                       environment is not one of them: a value the queuer must not choose is read from a YAML file of the repository.
 #                       The Active Directory check needs a domain-joined agent; elsewhere it is Skipped, not failed.
 # Where the files come from: the OS configuration report is the artifact os-configuration-report of an OS configuration pipeline run
 # (osConfigurationPipelineId and osConfigurationRunId), as GitHub fetches it, or a repository path (osConfigurationReport).
@@ -83,12 +88,11 @@ parameters:
   - name: agentPool
     displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
     type: string
-  - name: approvalEnvironment
-    displayName: Environment of the Deploy approval. Enter devops.pipelines.environments.arm_deployment
-    type: string
 
 variables:
   - group: ${{ parameters.variableGroup }}
+  # AZL_ENVIRONMENT_ARM_DEPLOYMENT: the approval environment of the Deploy stage, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
   - name: armScript
     value: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
 
@@ -199,7 +203,30 @@ stages:
                 displayName: Publish the validate report and the event feed
                 condition: always()
 
-  - ${{ if or(eq(parameters.mode, 'ValidateAndDeploy'), eq(parameters.mode, 'Deploy')) }}:
+  # A Deploy was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is deployed, and the run says why.
+  - ${{ if and(or(eq(parameters.mode, 'ValidateAndDeploy'), eq(parameters.mode, 'Deploy')), eq(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: Deploy (no approval environment is set)
+        dependsOn:
+          - Preconditions
+          - ${{ if eq(parameters.mode, 'ValidateAndDeploy') }}:
+              - Validate
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agentPool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The Deploy stage changes a system, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_ARM_DEPLOYMENT (devops.pipelines.environments.arm_deployment) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
+  - ${{ if and(or(eq(parameters.mode, 'ValidateAndDeploy'), eq(parameters.mode, 'Deploy')), ne(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, '')) }}:
       - stage: Deploy
         displayName: Deploy (needs approval)
         dependsOn:
@@ -209,7 +236,8 @@ stages:
         jobs:
           # A deployment job: the environment's Approvals check is the gate.
           - deployment: Deploy
-            environment: ${{ parameters.approvalEnvironment }}
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
             pool:
               name: ${{ parameters.agentPool }}
             # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).

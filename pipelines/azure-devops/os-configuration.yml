@@ -9,9 +9,14 @@
 # os_configuration.clear_storage is true) as the build artifact os-configuration-plan, and attaches summary.md to the run summary. It also
 # reads os_configuration.clear_storage from the master file, for the next stage.
 # Stage ConfirmStorageWipe exists only when mode is Apply AND os_configuration.clear_storage is true in the master file: a second, separate
-# approval (the environment of the parameter clear_storage_approval_environment) that the reviewer gives after reading the wipe list.
-# Otherwise it is skipped.
-# Stage Apply runs only for mode Apply, and only after a reviewer of the environment of the parameter approval_environment approved it.
+# approval (the environment AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE of variables/approval-environments.yml) that the reviewer gives after
+# reading the wipe list. Otherwise it is skipped.
+# Stage Apply runs only for mode Apply, and only after a reviewer of the environment AZL_ENVIRONMENT_OS_CONFIGURATION of
+# variables/approval-environments.yml approved it. Both names are variables of a YAML file of the repository, bound when the pipeline is compiled:
+# they are not run parameters, because a deployment job to an environment with no approval check runs without one and whoever queues the run
+# must not choose it. While AZL_ENVIRONMENT_OS_CONFIGURATION is empty, mode Apply fails in the stage ApprovalEnvironmentNotSet and nothing is
+# changed; while AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE is empty and the plan would wipe storage, the stage ConfirmStorageWipe fails
+# and Apply does not run.
 #
 # Transport and storage wipe. The script reads both from the master file (os_configuration.remoting.transport, os_configuration.clear_storage);
 # this pipeline overrides neither. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986
@@ -30,18 +35,20 @@
 #   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*). It
 #                   holds nothing this file needs as a secret: the nodes' local administrator password is read from the Key Vault by the script.
-#   Environments    approval_environment                      (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
+#   Environments    AZL_ENVIRONMENT_OS_CONFIGURATION          (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
 #                                                              reviewers), and an Exclusive lock so two runs never work on the cluster at once.
-#                   clear_storage_approval_environment        (devops.pipelines.environments.os_configuration_clear_storage) Approvals: the people allowed to
-#                                                              approve a storage wipe. Use different people than the first environment where you can.
-#                   Task 04 of the CI/CD setup creates both from devops.environments. A deployment job to an environment
+#                   AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE  (devops.pipelines.environments.os_configuration_clear_storage) Approvals: the people
+#                                                              allowed to approve a storage wipe. Use different people than the first environment where you can.
+#                   Both are variables of variables/approval-environments.yml (task 05 lists the value to write there, once, in a pull request).
+#                   Task 04 of the CI/CD setup creates both environments from devops.environments. A deployment job to an environment
 #                   with no approval check runs without one, so add the checks before use.
-#   Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+#   Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
 #                   inputs, and that other keywords take template expressions or runtime parameters
 #                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the environment names and the
-#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
+#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval
+#                   environments are not: a value the queuer must not choose is read from a YAML file of the repository.
 #
 # Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
 # The handoff files (<node>.ztp-handoff.json) are a repository path (handoff_path: devops.pipelines.handoff_path, none for an ISO-installed
@@ -95,12 +102,6 @@ parameters:
   - name: agent_pool
     displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
     type: string
-  - name: approval_environment
-    displayName: 'Environment of the Apply approval. Enter devops.pipelines.environments.os_configuration'
-    type: string
-  - name: clear_storage_approval_environment
-    displayName: 'Environment of the storage wipe approval. Enter devops.pipelines.environments.os_configuration_clear_storage'
-    type: string
   - name: service_connection
     displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
     type: string
@@ -110,6 +111,8 @@ parameters:
 
 variables:
   - group: ${{ parameters.variable_group }}
+  # AZL_ENVIRONMENT_OS_CONFIGURATION and AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE: the approval environments, bound at compile time (not run parameters).
+  - template: variables/approval-environments.yml
   - name: OSCONFIG_SCRIPT
     value: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
 
@@ -218,144 +221,189 @@ stages:
               publishLocation: pipeline
 
   # ---------------------------------------------------------------------------------------------------------------------------
+  # Mode Apply was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is changed, and the run says why.
+  - ${{ if and(eq(parameters.mode, 'Apply'), eq(variables.AZL_ENVIRONMENT_OS_CONFIGURATION, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Apply (no approval environment is set)'
+        dependsOn: Plan
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'Apply changes the nodes, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_OS_CONFIGURATION (devops.pipelines.environments.os_configuration) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
   # Second, explicit approval for a storage wipe. Runs only for mode Apply with os_configuration.clear_storage true in the master file;
-  # otherwise it is skipped.
-  - stage: ConfirmStorageWipe
-    displayName: 'Confirm storage wipe (second approval)'
-    dependsOn: Plan
-    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq(dependencies.Plan.outputs['Plan.storage.clearStorage'], 'true'))
-    jobs:
-      - deployment: ConfirmStorageWipe
-        displayName: 'Confirm storage wipe'
-        pool:
-          name: ${{ parameters.agent_pool }}
-          demands:
-            - pwsh
-        # Required reviewers on this environment are the second approval gate.
-        environment: ${{ parameters.clear_storage_approval_environment }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - download: current
-                  artifact: os-configuration-plan
-                - pwsh: |
-                    $ErrorActionPreference = 'Stop'
-                    $list = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.txt'
-                    Write-Output '##[warning]Approving this stage lets the Apply stage WIPE the local storage listed below.'
-                    if (Test-Path -LiteralPath $list -PathType Leaf) { Get-Content -LiteralPath $list | ForEach-Object { Write-Output $_ } }
-                    else { throw 'The plan artifact has no wipe-list.txt, so there is nothing to approve. Reject this stage.' }
-                  displayName: 'Show the wipe list'
-                  env:
-                    OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
+  # otherwise it is skipped. It exists only when the approval environment of the Apply stage is set; when the environment of the wipe
+  # approval is not, the same stage fails (and Apply does not run) in the run that would wipe, and nothing is changed.
+  - ${{ if and(ne(variables.AZL_ENVIRONMENT_OS_CONFIGURATION, ''), ne(variables.AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE, '')) }}:
+      - stage: ConfirmStorageWipe
+        displayName: 'Confirm storage wipe (second approval)'
+        dependsOn: Plan
+        condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq(dependencies.Plan.outputs['Plan.storage.clearStorage'], 'true'))
+        jobs:
+          - deployment: ConfirmStorageWipe
+            displayName: 'Confirm storage wipe'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Required reviewers on this environment are the second approval gate.
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - download: current
+                      artifact: os-configuration-plan
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $list = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.txt'
+                        Write-Output '##[warning]Approving this stage lets the Apply stage WIPE the local storage listed below.'
+                        if (Test-Path -LiteralPath $list -PathType Leaf) { Get-Content -LiteralPath $list | ForEach-Object { Write-Output $_ } }
+                        else { throw 'The plan artifact has no wipe-list.txt, so there is nothing to approve. Reject this stage.' }
+                      displayName: 'Show the wipe list'
+                      env:
+                        OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
+
+  - ${{ if and(ne(variables.AZL_ENVIRONMENT_OS_CONFIGURATION, ''), eq(variables.AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE, '')) }}:
+      - stage: ConfirmStorageWipe
+        displayName: 'Confirm storage wipe (no approval environment is set)'
+        dependsOn: Plan
+        condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq(dependencies.Plan.outputs['Plan.storage.clearStorage'], 'true'))
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment of the storage wipe is set'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The plan would wipe local storage, which needs the second approval. Set AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE (devops.pipelines.environments.os_configuration_clear_storage) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment of the storage wipe is set: nothing is changed'
 
   # ---------------------------------------------------------------------------------------------------------------------------
-  - stage: Apply
-    displayName: 'Apply (needs approval)'
-    dependsOn:
-      - Plan
-      - ConfirmStorageWipe
-    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), in(dependencies.ConfirmStorageWipe.result, 'Succeeded', 'Skipped'))
-    jobs:
-      - deployment: Apply
-        displayName: 'Apply'
-        pool:
-          name: ${{ parameters.agent_pool }}
-          demands:
-            - pwsh
-        # Required reviewers on this environment are the approval gate.
-        environment: ${{ parameters.approval_environment }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+  - ${{ if ne(variables.AZL_ENVIRONMENT_OS_CONFIGURATION, '') }}:
+      - stage: Apply
+        displayName: 'Apply (needs approval)'
+        dependsOn:
+          - Plan
+          - ConfirmStorageWipe
+        condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), in(dependencies.ConfirmStorageWipe.result, 'Succeeded', 'Skipped'))
+        jobs:
+          - deployment: Apply
+            displayName: 'Apply'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Required reviewers on this environment are the approval gate.
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_OS_CONFIGURATION }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
 
-                # The Plan stage's artifact: its wipe-list.json is the approval of the storage wipe, bound to what the reviewer saw.
-                - download: current
-                  artifact: os-configuration-plan
+                    # The Plan stage's artifact: its wipe-list.json is the approval of the storage wipe, bound to what the reviewer saw.
+                    - download: current
+                      artifact: os-configuration-plan
 
-                - ${{ if and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')) }}:
-                    - task: DownloadPipelineArtifact@2
-                      displayName: 'Fetch the ZTP handoff artifact'
+                    - ${{ if and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')) }}:
+                        - task: DownloadPipelineArtifact@2
+                          displayName: 'Fetch the ZTP handoff artifact'
+                          inputs:
+                            source: specific
+                            project: $(System.TeamProjectId)
+                            pipeline: ${{ parameters.handoff_pipeline_id }}
+                            runVersion: specific
+                            runId: ${{ parameters.handoff_run_id }}
+                            artifact: ztp-handoff
+                            path: $(Pipeline.Workspace)/ztp-handoff
+
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                        foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                      displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+                    - task: AzurePowerShell@5
+                      displayName: 'Apply'
                       inputs:
-                        source: specific
-                        project: $(System.TeamProjectId)
-                        pipeline: ${{ parameters.handoff_pipeline_id }}
-                        runVersion: specific
-                        runId: ${{ parameters.handoff_run_id }}
-                        artifact: ztp-handoff
-                        path: $(Pipeline.Workspace)/ztp-handoff
+                        azureSubscription: ${{ parameters.service_connection }}
+                        azurePowerShellVersion: OtherVersion
+                        preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+                        pwsh: true
+                        ScriptType: InlineScript
+                        workingDirectory: $(Build.SourcesDirectory)
+                        Inline: |
+                          Set-StrictMode -Version Latest
+                          $ErrorActionPreference = 'Stop'
+                          $p = @{
+                            InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
+                            Mode               = 'Apply'
+                            ReportDirectory    = $env:OSC_REPORT_DIRECTORY
+                            EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
+                          }
+                          if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
+                          foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
+                            $list = @(([string][Environment]::GetEnvironmentVariable($pair[0])) -split '[,;\s]+' | Where-Object { $_ -and $_ -ne 'all' })
+                            foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
+                            if ($list.Count) { $p[$pair[1]] = $list }
+                          }
+                          if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.ApprovedBootstrap = $true }
+                          # The approval of the wipe is the Plan's own wipe-list.json (an Apply whose own wipe list is not empty is refused without it, and refuses a disk that is not on it).
+                          $wipeList = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.json'
+                          if (Test-Path -LiteralPath $wipeList -PathType Leaf) { $p.ApprovedWipeList = $wipeList }
+                          if ($env:OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER -eq 'true') { $p.ConfirmWipeDeployedCluster = $true }
+                          & $env:OSCONFIG_SCRIPT @p
+                          if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
+                      env:
+                        OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
+                        OSC_NODES: ${{ parameters.nodes }}
+                        OSC_STEPS: ${{ parameters.steps }}
+                        OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}
+                        OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER: ${{ parameters.confirm_wipe_deployed_cluster }}
+                        OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
+                        OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
 
-                - pwsh: |
-                    $ErrorActionPreference = 'Stop'
-                    $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
-                    foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
-                  displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $src = $env:OSC_REPORT_DIRECTORY
+                        $dst = $env:OSC_ARTIFACT_DIRECTORY
+                        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+                        foreach ($name in 'report.json', 'summary.md', 'os-configuration-events.jsonl') {
+                          $file = Join-Path $src $name
+                          if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination $dst }
+                          else { Write-Output "##vso[task.logissue type=warning]$name was not written by this run." }
+                        }
+                        $summary = Join-Path $dst 'summary.md'
+                        if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+                      displayName: 'Collect the report'
+                      condition: always()
+                      env:
+                        OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
+                        OSC_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/os-configuration-report
 
-                - task: AzurePowerShell@5
-                  displayName: 'Apply'
-                  inputs:
-                    azureSubscription: ${{ parameters.service_connection }}
-                    azurePowerShellVersion: OtherVersion
-                    preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
-                    pwsh: true
-                    ScriptType: InlineScript
-                    workingDirectory: $(Build.SourcesDirectory)
-                    Inline: |
-                      Set-StrictMode -Version Latest
-                      $ErrorActionPreference = 'Stop'
-                      $p = @{
-                        InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
-                        Mode               = 'Apply'
-                        ReportDirectory    = $env:OSC_REPORT_DIRECTORY
-                        EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
-                      }
-                      if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
-                      foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
-                        $list = @(([string][Environment]::GetEnvironmentVariable($pair[0])) -split '[,;\s]+' | Where-Object { $_ -and $_ -ne 'all' })
-                        foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
-                        if ($list.Count) { $p[$pair[1]] = $list }
-                      }
-                      if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.ApprovedBootstrap = $true }
-                      # The approval of the wipe is the Plan's own wipe-list.json (an Apply whose own wipe list is not empty is refused without it, and refuses a disk that is not on it).
-                      $wipeList = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.json'
-                      if (Test-Path -LiteralPath $wipeList -PathType Leaf) { $p.ApprovedWipeList = $wipeList }
-                      if ($env:OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER -eq 'true') { $p.ConfirmWipeDeployedCluster = $true }
-                      & $env:OSCONFIG_SCRIPT @p
-                      if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
-                  env:
-                    OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
-                    OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
-                    OSC_NODES: ${{ parameters.nodes }}
-                    OSC_STEPS: ${{ parameters.steps }}
-                    OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}
-                    OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER: ${{ parameters.confirm_wipe_deployed_cluster }}
-                    OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
-                    OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
-
-                - pwsh: |
-                    $ErrorActionPreference = 'Stop'
-                    $src = $env:OSC_REPORT_DIRECTORY
-                    $dst = $env:OSC_ARTIFACT_DIRECTORY
-                    New-Item -ItemType Directory -Path $dst -Force | Out-Null
-                    foreach ($name in 'report.json', 'summary.md', 'os-configuration-events.jsonl') {
-                      $file = Join-Path $src $name
-                      if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination $dst }
-                      else { Write-Output "##vso[task.logissue type=warning]$name was not written by this run." }
-                    }
-                    $summary = Join-Path $dst 'summary.md'
-                    if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
-                  displayName: 'Collect the report'
-                  condition: always()
-                  env:
-                    OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
-                    OSC_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/os-configuration-report
-
-                - task: PublishPipelineArtifact@1
-                  displayName: 'Publish the report'
-                  condition: always()
-                  inputs:
-                    targetPath: $(Build.ArtifactStagingDirectory)/os-configuration-report
-                    artifact: os-configuration-report
-                    publishLocation: pipeline
+                    - task: PublishPipelineArtifact@1
+                      displayName: 'Publish the report'
+                      condition: always()
+                      inputs:
+                        targetPath: $(Build.ArtifactStagingDirectory)/os-configuration-report
+                        artifact: os-configuration-report
+                        publishLocation: pipeline

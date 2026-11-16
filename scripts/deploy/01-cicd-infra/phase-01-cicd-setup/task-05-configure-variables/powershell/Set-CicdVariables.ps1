@@ -19,9 +19,11 @@
     AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION (devops.pipelines.tool_versions.*), AZL_VALIDATE_JOB_TIMEOUT_MINUTES and
     AZL_DEPLOY_JOB_TIMEOUT_MINUTES (deployment.validate_timeout_minutes and deploy_timeout_minutes plus 60 minutes, GitHub) and
     AZL_RUNNER_SSH_PUBLIC_KEY (devops.runners[].admin_ssh_public_key of the Linux runner; a reference is read through the secret resolver).
-    A key that is not set takes its registry default. Azure DevOps reads the agent pool, the environment of a job, the service connection, the
+    A key that is not set takes its registry default. Azure DevOps reads the agent pool, the service connection, the
     variable group and the file paths before any variable exists, so there they are run parameters with no default: the task lists the value
-    to enter for each, and writes AZL_AUTH_METHOD, AZL_DEFAULT_BRANCH (devops.repository.default_branch), the tool versions and the runner
+    to enter for each. The approval environments (AZL_ENVIRONMENT_*) are not run parameters, because whoever queues a run could then choose an
+    environment with no approval: the pipelines bind them when they are compiled, from the variables of the same names in
+    pipelines/azure-devops/variables/approval-environments.yml, and the task lists the value to write there, once, in a pull request. It writes AZL_AUTH_METHOD, AZL_DEFAULT_BRANCH (devops.repository.default_branch), the tool versions and the runner
     public key to the variable group. A label that the general runner does not have, or an environment that devops.environments[] does not
     list with approval_required true, stops the task.
 

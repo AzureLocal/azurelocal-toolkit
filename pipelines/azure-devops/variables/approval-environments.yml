@@ -6,12 +6,32 @@
 # variables of the YAML files and the predefined variables, not those stored on the pipeline, in a library or given when you start a run). So a
 # value the queuer must not choose is a variable defined in a YAML file of the repository, and a pipeline reads it as ${{ variables.NAME }}.
 #
-# What to do. Task 05 of the CI/CD setup lists the value to enter. Write the name of the environment here, once per repository, in a pull request:
-#   AZL_ENVIRONMENT_ARM_DEPLOYMENT   devops.pipelines.environments.arm_deployment (an entry of devops.environments[] with approval_required true)
-# The toolkit ships it empty, because no value of a deployment is written in the toolkit. While it is empty, a pipeline that needs it refuses to
-# run the stage that changes something (the stage fails with a message that names this file); the read-only stages run as before.
+# What to do. Task 05 of the CI/CD setup lists the value to enter. Write the name of each environment you use here, once per repository, in a
+# pull request. The names are the ones the GitHub repository variables and the GitLab project variables of the same purpose have, so the three
+# platforms share them:
+#   AZL_ENVIRONMENT_OS_CONFIGURATION                devops.pipelines.environments.os_configuration (an entry of devops.environments[] with approval_required true)
+#   AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE  devops.pipelines.environments.os_configuration_clear_storage (the second approval in front of a storage wipe)
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT                  devops.pipelines.environments.arm_deployment
+#   AZL_ENVIRONMENT_CICD_INFRA                      devops.pipelines.environments.cicd_infra
+#   AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT            devops.pipelines.environments.terraform_deployment
+# The toolkit ships them empty, because no value of a deployment is written in the toolkit. While one is empty, a pipeline that needs it refuses to
+# run the stage that changes something (the stage ApprovalEnvironmentNotSet, or ConfirmStorageWipe for the wipe approval, fails with a message that
+# names this file and changes nothing); the read-only stages run as before. A pipeline reads only the names it needs; the others stay unused.
 #
-# Used by: pre-cluster-verification.yml (the stage that runs -Fix and -InstallEnvironmentChecker).
+# Used by:
+#   AZL_ENVIRONMENT_OS_CONFIGURATION, _OS_CONFIGURATION_CLEAR_STORAGE   os-configuration.yml (the stage Apply and the stage ConfirmStorageWipe)
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT                                      arm-deployment.yml (the stage Deploy), pre-cluster-verification.yml (the stage
+#                                                                       that runs -Fix and -InstallEnvironmentChecker)
+#   AZL_ENVIRONMENT_CICD_INFRA                                          cicd-infra.yml (the stage Apply)
+#   AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT                                azure-local-deploy.yml (the stages DeployFoundation, ConfigureOnPrem and ConfigureOperations)
 variables:
+  - name: AZL_ENVIRONMENT_OS_CONFIGURATION
+    value: ''
+  - name: AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE
+    value: ''
   - name: AZL_ENVIRONMENT_ARM_DEPLOYMENT
+    value: ''
+  - name: AZL_ENVIRONMENT_CICD_INFRA
+    value: ''
+  - name: AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT
     value: ''

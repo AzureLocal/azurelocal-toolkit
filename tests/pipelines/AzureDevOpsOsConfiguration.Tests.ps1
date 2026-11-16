@@ -12,6 +12,20 @@ BeforeAll {
     $script:Text = Get-Content -LiteralPath $script:AdoFile -Raw
     $script:Ado = ConvertFrom-Yaml $script:Text
 
+    # The stages sit under compile-time conditions (${{ if ... }}: keys): flatten them. Stages holds the stages that do the work, GuardStages
+    # the ones that only refuse (a job named Refuse) while an approval environment variable is empty.
+    function Get-FlatStage($Node) {
+        foreach ($item in @($Node)) {
+            if ($item -isnot [System.Collections.IDictionary]) { continue }
+            if ($item.Contains('stage')) { $item }
+            else { foreach ($k in $item.Keys) { if ([string]$k -like '${{ if*') { Get-FlatStage $item[$k] } } }
+        }
+    }
+    function Test-GuardStage($Stage) { $Stage['jobs'][0].Contains('job') -and [string]$Stage['jobs'][0]['job'] -eq 'Refuse' }
+    $allStages = @(Get-FlatStage $script:Ado['stages'])
+    $script:GuardStages = @($allStages | Where-Object { Test-GuardStage $_ })
+    $script:Stages = @($allStages | Where-Object { -not (Test-GuardStage $_) })
+
     $tokens = $null; $errors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:EntryScript, [ref]$tokens, [ref]$errors)
     $script:EntryParameters = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
@@ -35,7 +49,7 @@ BeforeAll {
         }
     }
     function Get-AzureStep([string]$StageName) {
-        Get-StageStep ($script:Ado['stages'] | Where-Object { $_['stage'] -eq $StageName }) | Where-Object { $_['task'] -eq 'AzurePowerShell@5' }
+        Get-StageStep ($script:Stages | Where-Object { $_['stage'] -eq $StageName }) | Where-Object { $_['task'] -eq 'AzurePowerShell@5' }
     }
     # Parameters of the entry point an inline script sets: the keys of its hashtable, $p.Name = ..., and the names in @('ENV', 'Name') pairs.
     function Get-UsedEntryParameter([string]$Inline) {
@@ -64,7 +78,7 @@ Describe 'Azure DevOps OS configuration pipeline: shape' {
         Test-Path -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', $var[0]['value'])) | Should -BeTrue
     }
     It 'has the stages Plan, ConfirmStorageWipe, Apply in that order, and runs queue one after the other' {
-        @($script:Ado['stages'] | ForEach-Object { $_['stage'] }) | Should -Be @('Plan', 'ConfirmStorageWipe', 'Apply')
+        @($script:Stages | ForEach-Object { $_['stage'] }) | Should -Be @('Plan', 'ConfirmStorageWipe', 'Apply')
         $script:Ado['lockBehavior'] | Should -Be 'sequential'
     }
     It 'asks for the parameters of the task, with safe defaults' {
@@ -96,28 +110,50 @@ Describe 'Azure DevOps OS configuration pipeline: shape' {
 }
 
 Describe 'Azure DevOps OS configuration pipeline: approval gates' {
+    It 'neither approval environment is a run parameter: the queuer cannot choose one with no approval' {
+        $names = @($script:Ado['parameters'] | ForEach-Object { [string]$_['name'] })
+        $names | Should -Not -Contain 'approval_environment'
+        $names | Should -Not -Contain 'clear_storage_approval_environment'
+        @($names | Where-Object { $_ -match '(?i)environment' }) | Should -BeNullOrEmpty
+        $script:Text | Should -Not -Match 'parameters\.\w*approval_environment'
+        $script:Text | Should -Match '(?m)^\s+- template: variables/approval-environments\.yml\r?$'
+        $script:Text | Should -Match '(?m)^\s+environment: \$\{\{ variables\.AZL_ENVIRONMENT_OS_CONFIGURATION \}\}\r?$'
+        $script:Text | Should -Match '(?m)^\s+environment: \$\{\{ variables\.AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE \}\}\r?$'
+    }
+    It 'while an approval environment variable is empty, a guard stage refuses and changes nothing' {
+        $script:GuardStages.Count | Should -Be 2
+        foreach ($g in $script:GuardStages) {
+            $g['jobs'][0].Contains('environment') | Should -BeFalse
+            $g['jobs'][0].Contains('deployment') | Should -BeFalse
+            $step = @($g['jobs'][0]['steps'])[0]
+            [string]$step['pwsh'] | Should -Match 'approval-environments\.yml'
+            [string]$step['pwsh'] | Should -Match 'Nothing was changed\.'
+            [string]$step['pwsh'] | Should -Match '(?m)^\s*exit 1\r?$'
+        }
+        @($script:GuardStages | ForEach-Object { $_['stage'] } | Sort-Object) | Should -Be @('ApprovalEnvironmentNotSet', 'ConfirmStorageWipe')
+    }
     It 'Plan is a plain job with no environment, so it is read only and unattended' {
-        $plan = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Plan' }
+        $plan = $script:Stages | Where-Object { $_['stage'] -eq 'Plan' }
         $plan['jobs'][0].Contains('job') | Should -BeTrue
         $plan['jobs'][0].Contains('deployment') | Should -BeFalse
         $plan['jobs'][0].Contains('environment') | Should -BeFalse
     }
-    It 'Apply is a deployment job in the environment of the parameter approval_environment, so its approval checks gate it' {
-        $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
+    It 'Apply is a deployment job in the environment of the variable AZL_ENVIRONMENT_OS_CONFIGURATION (bound at compile time, not a parameter), so its approval checks gate it' {
+        $apply = $script:Stages | Where-Object { $_['stage'] -eq 'Apply' }
         $apply['jobs'][0].Contains('deployment') | Should -BeTrue
-        $apply['jobs'][0]['environment'] | Should -Be '${{ parameters.approval_environment }}'
+        $apply['jobs'][0]['environment'] | Should -Be '${{ variables.AZL_ENVIRONMENT_OS_CONFIGURATION }}'
         @($apply['dependsOn']) | Should -Contain 'Plan'
         $apply['condition'] | Should -Match "parameters\.mode.*'Apply'"
     }
     It 'a storage wipe has its own second environment, only for Apply with os_configuration.clear_storage true in the file' {
-        $confirm = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
-        $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
+        $confirm = $script:Stages | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
+        $apply = $script:Stages | Where-Object { $_['stage'] -eq 'Apply' }
         $confirm['jobs'][0].Contains('deployment') | Should -BeTrue
-        $confirm['jobs'][0]['environment'] | Should -Be '${{ parameters.clear_storage_approval_environment }}'
+        $confirm['jobs'][0]['environment'] | Should -Be '${{ variables.AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE }}'
         $confirm['jobs'][0]['environment'] | Should -Not -Be $apply['jobs'][0]['environment']
         $confirm['condition'] | Should -Match "parameters\.mode.*'Apply'"
         $confirm['condition'] | Should -Match "dependencies\.Plan\.outputs\['Plan\.storage\.clearStorage'\], 'true'"
-        $plan = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Plan' }
+        $plan = $script:Stages | Where-Object { $_['stage'] -eq 'Plan' }
         $read = @(Get-StageStep $plan | Where-Object { $_['name'] -eq 'storage' })
         $read.Count | Should -Be 1
         $read[0]['pwsh'] | Should -Match "os_configuration'\]\['clear_storage'\]"
@@ -125,13 +161,13 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
         @($confirm['dependsOn']) | Should -Contain 'Plan'
     }
     It 'Apply waits for the wipe confirmation (a rejection stops it), and only a skipped confirmation lets it pass' {
-        $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
+        $apply = $script:Stages | Where-Object { $_['stage'] -eq 'Apply' }
         @($apply['dependsOn']) | Should -Contain 'ConfirmStorageWipe'
         $apply['condition'] | Should -Match "dependencies\.ConfirmStorageWipe\.result, 'Succeeded', 'Skipped'"
         $apply['condition'] | Should -Not -Match 'always\(\)|failed\('
     }
     It 'the confirmation stage shows the wipe list from the plan artifact and refuses without one' {
-        $confirm = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
+        $confirm = $script:Stages | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
         $steps = @(Get-StageStep $confirm)
         @($steps | Where-Object { $_['download'] -eq 'current' -and $_['artifact'] -eq 'os-configuration-plan' }).Count | Should -Be 1
         (($steps | ForEach-Object { $_['pwsh'] }) -join "`n") | Should -Match 'wipe-list\.txt'
@@ -151,7 +187,7 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
 
 Describe 'Azure DevOps OS configuration pipeline: the approval of the storage wipe' {
     It 'the Apply stage downloads the Plan artifact and passes its wipe-list.json as -ApprovedWipeList; -ConfirmWipeDeployedCluster is its own parameter' {
-        $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
+        $apply = $script:Stages | Where-Object { $_['stage'] -eq 'Apply' }
         @(Get-StageStep $apply | Where-Object { $_['download'] -eq 'current' -and $_['artifact'] -eq 'os-configuration-plan' }).Count | Should -Be 1
         $inline = (Get-AzureStep 'Apply')['inputs']['Inline']
         $inline | Should -Match 'wipe-list\.json'
@@ -180,7 +216,7 @@ Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell
         $inline | Should -Match '\$ErrorActionPreference = .Stop.'
     }
     It 'uses PowerShell 7 only: pwsh steps, AzurePowerShell with pwsh true, no script, bash, powershell or cmd step' {
-        foreach ($stage in $script:Ado['stages']) {
+        foreach ($stage in @(@($script:Stages) + @($script:GuardStages))) {
             foreach ($s in (Get-StageStep $stage)) {
                 foreach ($bad in 'script', 'bash', 'powershell', 'cmd') { $s.Contains($bad) | Should -BeFalse -Because "step '$($s['displayName'])' uses $bad" }
                 if ($s['task'] -like 'AzurePowerShell@*') { $s['inputs']['pwsh'] | Should -BeTrue }
@@ -190,7 +226,7 @@ Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell
         $script:Text | Should -Not -Match '(?m)^\s*-\s*(powershell|bash|script|cmd):'
     }
     It 'runs on a self-hosted pool chosen by a parameter, with pwsh as a demand' {
-        foreach ($stage in $script:Ado['stages']) {
+        foreach ($stage in @(@($script:Stages) + @($script:GuardStages))) {
             $pool = $stage['jobs'][0]['pool']
             $pool['name'] | Should -Be '${{ parameters.agent_pool }}'
             @($pool['demands']) | Should -Contain 'pwsh'
@@ -206,8 +242,8 @@ Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell
 
 Describe 'Azure DevOps OS configuration pipeline: artifacts' {
     It 'publishes the plan artifact and the report artifact even after a failure, with the files the run writes' {
-        $plan = @(Get-StageStep ($script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Plan' }))
-        $apply = @(Get-StageStep ($script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }))
+        $plan = @(Get-StageStep ($script:Stages | Where-Object { $_['stage'] -eq 'Plan' }))
+        $apply = @(Get-StageStep ($script:Stages | Where-Object { $_['stage'] -eq 'Apply' }))
         foreach ($case in @(@{ Steps = $plan; Artifact = 'os-configuration-plan' }, @{ Steps = $apply; Artifact = 'os-configuration-report' })) {
             $pub = @($case.Steps | Where-Object { $_['task'] -like 'PublishPipelineArtifact@*' })
             $pub.Count | Should -Be 1
