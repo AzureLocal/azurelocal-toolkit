@@ -93,7 +93,7 @@ param(
 )
 
 #region CONFIGURATION
-$environment_name = 'ProjectIIC'
+$environment_name = ''
 $project_name = 'Azure Local Toolkit'
 $subscription_id = ''
 $resource_group_name = ''

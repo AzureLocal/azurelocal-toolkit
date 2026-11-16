@@ -858,7 +858,7 @@ tags:
     required: true
     allowedValues:
     - azurelocalcloud
-    - ProjectIIC
+    - example
     - iic-reference
     - iic-poc
     - iic-labs
@@ -870,7 +870,7 @@ tags:
     required: true
     allowedValues:
     - "Azure Local Cloud Management"
-    - "Project Phoenix"
+    - "Example Project"
     - "Azure Local Cloud Demos"
     - "IIC POC"
     - "IIC Labs"
@@ -1024,25 +1024,25 @@ azure_platform:
       pattern: "^[a-z]{2,5}[0-9]?$"
       example: "eus"
 
-    # Tenant: Project Phoenix
-    aztenant_ProjectIIC_id:
+    # Tenant: Example (a sample tenant name)
+    aztenant_example_id:
       type: string
-      description: "Project Phoenix Tenant ID"
+      description: "Example tenant ID"
       required: false
       format: uuid
       example: "33333333-3333-3333-3333-333333333333"
 
-    aztenant_ProjectIIC_domain:
+    aztenant_example_domain:
       type: string
-      description: "Project Phoenix tenant domain"
+      description: "Example tenant domain"
       required: false
-      example: "ProjectIIC.onmicrosoft.com"
+      example: "example.onmicrosoft.com"
 
-    aztenant_ProjectIIC_primary_domain:
+    aztenant_example_primary_domain:
       type: string
-      description: "Project Phoenix primary domain"
+      description: "Example primary domain"
       required: false
-      example: "ProjectIIC.cloud"
+      example: "example.com"
 
     # Tenant: Azure Local Cloud Demos
     aztenant_iic-reference_id:
