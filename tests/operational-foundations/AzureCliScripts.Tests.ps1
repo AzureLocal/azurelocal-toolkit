@@ -621,6 +621,19 @@ Describe 'the monitoring scripts' {
             @($u[0].Options['--add-action']) | Should -Be @('email', 'email-alerts-improbability-cloud', 'alerts@improbability.cloud')
             Get-K6Call 'monitor action-group create' | Should -BeNullOrEmpty
         }
+        It 'gives two addresses that make the same receiver name two different names' {
+            $r = Invoke-K6 $script:Alerting (New-K6Infra @{ 'operations.notifications.emails' = @('a.b@improbability.cloud', 'a-b@improbability.cloud'); 'operations.monitoring.alert_email' = $null })
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('a-b@improbability.cloud'))).Substring(0, 8).ToLowerInvariant()
+            @((Get-K6Call 'monitor action-group create')[0].Options['--action']) | Should -Be @('email', 'email-a-b-improbability-cloud', 'a.b@improbability.cloud', 'email', "email-a-b-improbability-cloud-$hash", 'a-b@improbability.cloud')
+        }
+        It 'does not give an added receiver a name that a receiver of another kind already has' {
+            $global:K6Handlers['monitor action-group show'] = { param($o, $a) '{"name":"ag-example-01","emailReceivers":[{"name":"team","emailAddress":"team@improbability.cloud"}],"smsReceivers":[{"name":"email-alerts-improbability-cloud","phoneNumber":"5550100"}]}' }
+            $r = Invoke-K6 $script:Alerting (New-K6Infra)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('alerts@improbability.cloud'))).Substring(0, 8).ToLowerInvariant()
+            @((Get-K6Call 'monitor action-group update')[0].Options['--add-action']) | Should -Be @('email', "email-alerts-improbability-cloud-$hash", 'alerts@improbability.cloud')
+        }
         It 'changes nothing when the group has every address' {
             $global:K6Handlers['monitor action-group show'] = { param($o, $a) '{"name":"ag-example-01","emailReceivers":[{"emailAddress":"team@improbability.cloud"},{"emailAddress":"alerts@improbability.cloud"}]}' }
             $r = Invoke-K6 $script:Alerting (New-K6Infra)
