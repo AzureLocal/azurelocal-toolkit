@@ -11,20 +11,24 @@
 #     (devops.repository.default_branch) and the tool versions AZL_TERRAFORM_VERSION, AZL_PYTHON_VERSION, AZL_ANSIBLE_CORE_VERSION,
 #     AZL_ANSIBLE_LINT_VERSION, AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION and AZL_AZ_KEYVAULT_VERSION (devops.pipelines.tool_versions.*),
 #     and AZL_AUTH_METHOD (devops.authentication.method).
-#   - Environment: the parameter approvalEnvironment (devops.pipelines.environments.terraform_deployment; with approval checks)
+#   - Environment: the name in variables/approval-environments.yml (AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT: devops.pipelines.environments.terraform_deployment;
+#     with approval checks; task 05 lists the value to write there, once, in a pull request). It is bound when the pipeline is compiled and is not
+#     a run parameter: a deployment job to an environment with no approval check runs without one, so the person who queues the run must not
+#     choose it. While it is empty, the stage ApprovalEnvironmentNotSet fails after the plan and nothing is changed.
 #   - Infrastructure file: the parameter infrastructureFile (devops.pipelines.infrastructure_file). Each Terraform and Ansible job writes the
 #     Terraform variables (into the job's temporary directory) and the Ansible inventory, group_vars and host_vars (into src/ansible/inventory,
 #     git-ignored there) from it (config/variables/scripts/New-IacVariableFiles.ps1): they hold subscription IDs and names, so they are never
 #     committed or published.
 #   - The Terraform extension from the marketplace (TerraformInstaller@1, TerraformTaskV4@4).
 #
-# Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+# Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
 # inputs, and that other keywords take template expressions or runtime parameters
 # (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-# ${{ variables.name }} does not see variables stored on the pipeline or in a library
-# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters, and so are the names of the
-# service connection and the variable group that task 05 creates from the file (${{ parameters.name }}, no default). A run that nobody started
-# cannot supply them: this pipeline is started by hand.
+# ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool is a runtime parameter, and so are the names of the
+# service connection and the variable group that task 05 creates from the file (${{ parameters.name }}, no default). The approval environment is
+# not one of them: a value the queuer must not choose is read from a YAML file of the repository. A run that nobody started
+# cannot supply the parameters: this pipeline is started by hand.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. Only the
 # jobs that validate and plan use it; the apply and the on-premises jobs run in the self-hosted pool.
@@ -36,9 +40,6 @@ pr: none
 parameters:
   - name: agentPool
     displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
-    type: string
-  - name: approvalEnvironment
-    displayName: Environment of the approvals. Enter devops.pipelines.environments.terraform_deployment
     type: string
   - name: serviceConnection
     displayName: Azure Resource Manager service connection. Enter devops.pipelines.service_connection
@@ -52,6 +53,8 @@ parameters:
 
 variables:
   - group: ${{ parameters.variableGroup }}
+  # AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT: the approval environment of the three deployment stages, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
   - name: TF_ROOT
     value: 'src/terraform/environments/azure-local'
   - name: ANSIBLE_ROOT
@@ -156,150 +159,178 @@ stages:
             displayName: 'Publish Plan Artifact'
 
   # =========================================================================
-  # Stage: Deploy Foundation (self-hosted agent, after approval)
+  # Stage: no approval environment is set. The plan above is read only; the stages that change something need the environment.
   # =========================================================================
-  - stage: DeployFoundation
-    displayName: 'Deploy Azure Foundation'
-    dependsOn: Plan
-    jobs:
-      - deployment: TerraformApply
-        displayName: 'Terraform Apply'
-        pool:
-          name: ${{ parameters.agentPool }}
-        environment: ${{ parameters.approvalEnvironment }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+  # The run would deploy, but no approval environment is set in variables/approval-environments.yml: nothing is changed, and the run says why.
+  - ${{ if eq(variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT, '') }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Deploy (no approval environment is set)'
+        dependsOn: Plan
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agentPool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The deployment stages change a system, so they run only behind the approval environment. Set AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT (devops.pipelines.environments.terraform_deployment) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
 
-                - task: TerraformInstaller@1
-                  displayName: 'Install Terraform (devops.pipelines.tool_versions.terraform)'
-                  inputs:
-                    terraformVersion: $(AZL_TERRAFORM_VERSION)
+  # The stages that change something exist only when the approval environment is set (a variable of a YAML file, bound when the pipeline is compiled).
+  - ${{ if ne(variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT, '') }}:
+      # =========================================================================
+      # Stage: Deploy Foundation (self-hosted agent, after approval)
+      # =========================================================================
+      - stage: DeployFoundation
+        displayName: 'Deploy Azure Foundation'
+        dependsOn: Plan
+        jobs:
+          - deployment: TerraformApply
+            displayName: 'Terraform Apply'
+            pool:
+              name: ${{ parameters.agentPool }}
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
 
-                - download: current
-                  artifact: tfplan
+                    - task: TerraformInstaller@1
+                      displayName: 'Install Terraform (devops.pipelines.tool_versions.terraform)'
+                      inputs:
+                        terraformVersion: $(AZL_TERRAFORM_VERSION)
 
-                - task: TerraformTaskV4@4
-                  displayName: 'Terraform Init'
-                  inputs:
-                    provider: 'azurerm'
-                    command: 'init'
-                    workingDirectory: '$(TF_ROOT)'
-                    backendServiceArm: ${{ parameters.serviceConnection }}
-                    backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
-                    backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
-                    backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
-                    backendAzureRmKey: '$(TF_BACKEND_KEY)'
+                    - download: current
+                      artifact: tfplan
 
-                - task: TerraformTaskV4@4
-                  displayName: 'Terraform Apply'
-                  inputs:
-                    provider: 'azurerm'
-                    command: 'apply'
-                    workingDirectory: '$(TF_ROOT)'
-                    commandOptions: '-auto-approve -input=false $(Pipeline.Workspace)/tfplan/tfplan'
-                    environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+                    - task: TerraformTaskV4@4
+                      displayName: 'Terraform Init'
+                      inputs:
+                        provider: 'azurerm'
+                        command: 'init'
+                        workingDirectory: '$(TF_ROOT)'
+                        backendServiceArm: ${{ parameters.serviceConnection }}
+                        backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
+                        backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
+                        backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
+                        backendAzureRmKey: '$(TF_BACKEND_KEY)'
 
-  # =========================================================================
-  # Stage: Configure On-Prem (self-hosted agent)
-  # =========================================================================
-  # Playbook 05 builds the domain controllers first: the AD preparation (01) runs on the first of them. Playbook 02 runs the OS
-  # configuration (Invoke-AzureLocalOsConfiguration.ps1) on this agent, so it needs PowerShell 7 with powershell-yaml and Az, and an Azure
-  # sign-in; the roles read the LCM and DSRM passwords from Key Vault on the controller (azure.azcollection, through the Azure CLI). The
-  # AzureCLI task signs the Azure CLI in through the service connection; the script signs Az PowerShell in by AZL_AUTH_METHOD.
-  - stage: ConfigureOnPrem
-    displayName: 'Configure On-Premises'
-    dependsOn: DeployFoundation
-    jobs:
-      - deployment: OnPremConfig
-        displayName: 'Ansible Configuration'
-        pool:
-          name: ${{ parameters.agentPool }}
-        environment: ${{ parameters.approvalEnvironment }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+                    - task: TerraformTaskV4@4
+                      displayName: 'Terraform Apply'
+                      inputs:
+                        provider: 'azurerm'
+                        command: 'apply'
+                        workingDirectory: '$(TF_ROOT)'
+                        commandOptions: '-auto-approve -input=false $(Pipeline.Workspace)/tfplan/tfplan'
+                        environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
 
-                - task: UsePythonVersion@0
-                  displayName: 'Use Python (devops.pipelines.tool_versions.python)'
-                  inputs:
-                    versionSpec: $(AZL_PYTHON_VERSION)
+      # =========================================================================
+      # Stage: Configure On-Prem (self-hosted agent)
+      # =========================================================================
+      # Playbook 05 builds the domain controllers first: the AD preparation (01) runs on the first of them. Playbook 02 runs the OS
+      # configuration (Invoke-AzureLocalOsConfiguration.ps1) on this agent, so it needs PowerShell 7 with powershell-yaml and Az, and an Azure
+      # sign-in; the roles read the LCM and DSRM passwords from Key Vault on the controller (azure.azcollection, through the Azure CLI). The
+      # AzureCLI task signs the Azure CLI in through the service connection; the script signs Az PowerShell in by AZL_AUTH_METHOD.
+      - stage: ConfigureOnPrem
+        displayName: 'Configure On-Premises'
+        dependsOn: DeployFoundation
+        jobs:
+          - deployment: OnPremConfig
+            displayName: 'Ansible Configuration'
+            pool:
+              name: ${{ parameters.agentPool }}
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
 
-                - task: AzureCLI@2
-                  displayName: 'Run Ansible Playbooks (05, 01, 02, 03)'
-                  inputs:
-                    azureSubscription: ${{ parameters.serviceConnection }}
-                    scriptType: pscore
-                    scriptLocation: inlineScript
-                    addSpnToEnvironment: true
-                    inlineScript: |
-                      $PSNativeCommandUseErrorActionPreference = $true
-                      $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
-                      foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
-                      # Az PowerShell for playbook 02, by the sign-in method of devops.authentication.method (AZL_AUTH_METHOD from the variable group).
-                      Enable-AzContextAutosave -Scope CurrentUser | Out-Null
-                      $connect = @{ ServicePrincipal = $true; Tenant = $env:tenantId; Subscription = $env:ARM_SUBSCRIPTION_ID }
-                      if ($env:AZL_AUTH_METHOD -eq 'client_secret') { Connect-AzAccount -Credential ([pscredential]::new($env:servicePrincipalId, (ConvertTo-SecureString -String $env:servicePrincipalKey -AsPlainText -Force))) @connect | Out-Null }
-                      else { Connect-AzAccount -ApplicationId $env:servicePrincipalId -FederatedToken $env:idToken @connect | Out-Null }
-                      $env:ANSIBLE_AZURE_AUTH_SOURCE = 'cli'
-                      pip install "ansible-core==$env:AZL_ANSIBLE_CORE_VERSION"
-                      ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:IAC_INFRASTRUCTURE_FILE -OutputDirectory '$(Agent.TempDirectory)/iac' -Target Ansible
-                      Copy-Item -Path '$(Agent.TempDirectory)/iac/ansible/inventory/*' -Destination '$(ANSIBLE_ROOT)/inventory' -Recurse -Force
-                      Set-Location $(ANSIBLE_ROOT)
-                      ansible-galaxy collection install -r collections/requirements.yml
-                      $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
-                      pip install -r (Get-ChildItem -LiteralPath (Join-Path $root 'azure/azcollection') -Filter 'requirements*.txt' | Select-Object -First 1).FullName
-                      ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
-                      ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
-                      ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml -e "azurelocal_os_configuration_infrastructure_file=$(Build.SourcesDirectory)/$env:IAC_INFRASTRUCTURE_FILE"
-                      ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
-                  env:
-                    IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                    - task: UsePythonVersion@0
+                      displayName: 'Use Python (devops.pipelines.tool_versions.python)'
+                      inputs:
+                        versionSpec: $(AZL_PYTHON_VERSION)
 
-  # =========================================================================
-  # Stage: Configure Operations
-  # =========================================================================
-  - stage: ConfigureOperations
-    displayName: 'Configure Operations'
-    dependsOn: ConfigureOnPrem
-    jobs:
-      - deployment: Operations
-        displayName: 'Monitoring'
-        pool:
-          name: ${{ parameters.agentPool }}
-        environment: ${{ parameters.approvalEnvironment }}
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+                    - task: AzureCLI@2
+                      displayName: 'Run Ansible Playbooks (05, 01, 02, 03)'
+                      inputs:
+                        azureSubscription: ${{ parameters.serviceConnection }}
+                        scriptType: pscore
+                        scriptLocation: inlineScript
+                        addSpnToEnvironment: true
+                        inlineScript: |
+                          $PSNativeCommandUseErrorActionPreference = $true
+                          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                          # Az PowerShell for playbook 02, by the sign-in method of devops.authentication.method (AZL_AUTH_METHOD from the variable group).
+                          Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+                          $connect = @{ ServicePrincipal = $true; Tenant = $env:tenantId; Subscription = $env:ARM_SUBSCRIPTION_ID }
+                          if ($env:AZL_AUTH_METHOD -eq 'client_secret') { Connect-AzAccount -Credential ([pscredential]::new($env:servicePrincipalId, (ConvertTo-SecureString -String $env:servicePrincipalKey -AsPlainText -Force))) @connect | Out-Null }
+                          else { Connect-AzAccount -ApplicationId $env:servicePrincipalId -FederatedToken $env:idToken @connect | Out-Null }
+                          $env:ANSIBLE_AZURE_AUTH_SOURCE = 'cli'
+                          pip install "ansible-core==$env:AZL_ANSIBLE_CORE_VERSION"
+                          ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:IAC_INFRASTRUCTURE_FILE -OutputDirectory '$(Agent.TempDirectory)/iac' -Target Ansible
+                          Copy-Item -Path '$(Agent.TempDirectory)/iac/ansible/inventory/*' -Destination '$(ANSIBLE_ROOT)/inventory' -Recurse -Force
+                          Set-Location $(ANSIBLE_ROOT)
+                          ansible-galaxy collection install -r collections/requirements.yml
+                          $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
+                          pip install -r (Get-ChildItem -LiteralPath (Join-Path $root 'azure/azcollection') -Filter 'requirements*.txt' | Select-Object -First 1).FullName
+                          ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
+                          ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
+                          ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml -e "azurelocal_os_configuration_infrastructure_file=$(Build.SourcesDirectory)/$env:IAC_INFRASTRUCTURE_FILE"
+                          ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+                      env:
+                        IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
 
-                - task: UsePythonVersion@0
-                  displayName: 'Use Python (devops.pipelines.tool_versions.python)'
-                  inputs:
-                    versionSpec: $(AZL_PYTHON_VERSION)
+      # =========================================================================
+      # Stage: Configure Operations
+      # =========================================================================
+      - stage: ConfigureOperations
+        displayName: 'Configure Operations'
+        dependsOn: ConfigureOnPrem
+        jobs:
+          - deployment: Operations
+            displayName: 'Monitoring'
+            pool:
+              name: ${{ parameters.agentPool }}
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
 
-                - task: AzureCLI@2
-                  displayName: 'Run Operations Playbooks (04)'
-                  inputs:
-                    azureSubscription: ${{ parameters.serviceConnection }}
-                    scriptType: pscore
-                    scriptLocation: inlineScript
-                    inlineScript: |
-                      $PSNativeCommandUseErrorActionPreference = $true
-                      $env:ANSIBLE_AZURE_AUTH_SOURCE = 'cli'
-                      pip install "ansible-core==$env:AZL_ANSIBLE_CORE_VERSION"
-                      Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
-                      ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:IAC_INFRASTRUCTURE_FILE -OutputDirectory '$(Agent.TempDirectory)/iac' -Target Ansible
-                      Copy-Item -Path '$(Agent.TempDirectory)/iac/ansible/inventory/*' -Destination '$(ANSIBLE_ROOT)/inventory' -Recurse -Force
-                      Set-Location $(ANSIBLE_ROOT)
-                      ansible-galaxy collection install -r collections/requirements.yml
-                      $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
-                      pip install -r (Get-ChildItem -LiteralPath (Join-Path $root 'azure/azcollection') -Filter 'requirements*.txt' | Select-Object -First 1).FullName
-                      ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
-                  env:
-                    IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                    - task: UsePythonVersion@0
+                      displayName: 'Use Python (devops.pipelines.tool_versions.python)'
+                      inputs:
+                        versionSpec: $(AZL_PYTHON_VERSION)
+
+                    - task: AzureCLI@2
+                      displayName: 'Run Operations Playbooks (04)'
+                      inputs:
+                        azureSubscription: ${{ parameters.serviceConnection }}
+                        scriptType: pscore
+                        scriptLocation: inlineScript
+                        inlineScript: |
+                          $PSNativeCommandUseErrorActionPreference = $true
+                          $env:ANSIBLE_AZURE_AUTH_SOURCE = 'cli'
+                          pip install "ansible-core==$env:AZL_ANSIBLE_CORE_VERSION"
+                          Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
+                          ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:IAC_INFRASTRUCTURE_FILE -OutputDirectory '$(Agent.TempDirectory)/iac' -Target Ansible
+                          Copy-Item -Path '$(Agent.TempDirectory)/iac/ansible/inventory/*' -Destination '$(ANSIBLE_ROOT)/inventory' -Recurse -Force
+                          Set-Location $(ANSIBLE_ROOT)
+                          ansible-galaxy collection install -r collections/requirements.yml
+                          $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
+                          pip install -r (Get-ChildItem -LiteralPath (Join-Path $root 'azure/azcollection') -Filter 'requirements*.txt' | Select-Object -First 1).FullName
+                          ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+                      env:
+                        IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}

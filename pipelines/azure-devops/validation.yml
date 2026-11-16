@@ -156,7 +156,7 @@ stages:
             timeoutInMinutes: 5
             steps:
               - pwsh: |
-                  Write-Error 'The storage performance test puts load on the cluster, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was run.'
+                  Write-Error 'The storage performance test puts load on the cluster, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
                   exit 1
                 displayName: 'No approval environment is set: nothing is run'
 

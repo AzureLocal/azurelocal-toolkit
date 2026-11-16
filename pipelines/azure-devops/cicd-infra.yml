@@ -8,7 +8,10 @@
 # identity federation when devops.authentication.method is oidc). The scripts follow AZL_AUTH_METHOD (devops.authentication.method) from the
 # variable group: oidc takes the federated token of the service connection, client_secret its secret. The identity needs Storage Blob Data
 # Contributor on the state account, and the roles in docs/cicd-infra-deployment.md.
-# Environment:    the parameter approvalEnvironment (devops.pipelines.environments.cicd_infra), with an Approvals check (the manual approval)
+# Environment:    the name in variables/approval-environments.yml (AZL_ENVIRONMENT_CICD_INFRA: devops.pipelines.environments.cicd_infra; task 05 lists the
+#                 value to write there, once, in a pull request), with an Approvals check (the manual approval). It is bound when the pipeline is
+#                 compiled and is not a run parameter: a deployment job to an environment with no approval check runs without one, so the person who
+#                 queues the run must not choose it. While it is empty and apply is on, the stage ApprovalEnvironmentNotSet fails and nothing is changed.
 # Variable group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment>). Task 05 writes to it AZL_AUTH_METHOD,
 #                 AZL_RUNNER_SSH_PUBLIC_KEY (devops.runners[].admin_ssh_public_key of the Linux runner, a public key), AZL_TERRAFORM_VERSION
 #                 and AZL_POWERSHELL_YAML_VERSION (devops.pipelines.tool_versions.*).
@@ -17,11 +20,13 @@
 #
 # Where it runs: the first time on Microsoft-hosted agents (there are no agents yet);
 # set the agentPool parameter to the pool of the agents (devops.runners[].pool of the general runner) after the agents exist.
-# Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+# Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
 # inputs, and that other keywords take template expressions or runtime parameters
 # (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-# ${{ variables.name }} does not see variables stored on the pipeline or in a library
-# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters (${{ parameters.name }}).
+# ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the file path are
+# runtime parameters (${{ parameters.name }}). The approval environment is not one of them: a value the queuer must not choose is read from a YAML
+# file of the repository.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. The
 # Validate stage only validates; Plan and Apply use it only for the first run (agentPool hosted), before the self-hosted agents exist.
@@ -41,10 +46,6 @@ parameters:
     displayName: Agent pool. hosted for the first run (Microsoft-hosted ubuntu-latest), then devops.runners[].pool of the general runner
     type: string
     default: hosted
-  - name: approvalEnvironment
-    displayName: Environment of the Apply approval (only when apply is on). Enter devops.pipelines.environments.cicd_infra
-    type: string
-    default: ''
   - name: serviceConnection
     displayName: Azure service connection. Enter devops.pipelines.service_connection
     type: string
@@ -58,6 +59,8 @@ parameters:
 
 variables:
   - group: ${{ parameters.variableGroup }}
+  # AZL_ENVIRONMENT_CICD_INFRA: the approval environment of the Apply stage, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
   - name: TF_ROOT
     value: src/terraform/environments/cicd-infra
   - name: TASK06
@@ -147,7 +150,32 @@ stages:
             artifact: cicd-infra-plan
             displayName: Keep the reviewed plan
 
-  - ${{ if eq(parameters.apply, true) }}:
+  # apply is on, but no approval environment is set in variables/approval-environments.yml: nothing is applied, and the run says why.
+  - ${{ if and(eq(parameters.apply, true), eq(variables.AZL_ENVIRONMENT_CICD_INFRA, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: Apply (no approval environment is set)
+        dependsOn: Plan
+        # The same pool choice as the Plan stage: the first run has no self-hosted agent yet.
+        ${{ if eq(parameters.agentPool, 'hosted') }}:
+          pool:
+            vmImage: ubuntu-latest
+        ${{ else }}:
+          pool:
+            name: ${{ parameters.agentPool }}
+            demands:
+              - terraform
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The Apply stage changes a system, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_CICD_INFRA (devops.pipelines.environments.cicd_infra) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
+  - ${{ if and(eq(parameters.apply, true), ne(variables.AZL_ENVIRONMENT_CICD_INFRA, '')) }}:
       - stage: Apply
         displayName: Apply (needs approval)
         dependsOn: Plan
@@ -164,7 +192,8 @@ stages:
           - deployment: apply
             # terraform apply of the runner VMs, their network and role assignments: the toolkit's limit, not a figure from Microsoft.
             timeoutInMinutes: 120
-            environment: ${{ parameters.approvalEnvironment }} # the Approvals check holds the job until a reviewer approves
+            # The Approvals check holds the job until a reviewer approves. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_CICD_INFRA }}
             strategy:
               runOnce:
                 deploy:

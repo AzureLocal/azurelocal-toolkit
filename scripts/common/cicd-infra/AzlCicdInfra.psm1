@@ -1065,21 +1065,23 @@ function Get-AzlCicdVariablePlan {
 # The variables the toolkit's pipelines read (pipelines/github-actions, pipelines/gitlab, pipelines/azure-devops) and the infrastructure key
 # each one is set from. Name is the repository variable (GitHub), the project CI/CD variable (GitLab) or the variable of the variable group
 # (Azure DevOps); Role names the run parameter of the Azure DevOps pipelines. AzureDevOps says how Azure DevOps takes it: Parameter (a run
-# parameter with no default, because the pool, the environment, the service connection, the variable group and the file paths are read
-# before any variable exists; task 05 lists the value to enter) or Group (task 05 writes it to the variable group, and a task input or a
-# script reads it as $(name)). These names are the contract with the pipeline files; tests/pipelines/PipelineSettings.Tests.ps1 and
+# parameter with no default, because the pool, the service connection, the variable group and the file paths are read before any variable
+# exists; task 05 lists the value to enter), Template (an approval environment: a variable of pipelines/azure-devops/variables/approval-environments.yml,
+# bound when the pipeline is compiled so that whoever queues a run cannot choose it; task 05 lists the value to write there, once, in a pull request)
+# or Group (task 05 writes it to the variable group, and a task input or a script reads it as $(name)). These names are the contract with the
+# pipeline files; tests/pipelines/PipelineSettings.Tests.ps1 and
 # tests/variables/PipelineValues.Tests.ps1 check both sides.
 $script:AzlPipelineVariable = @(
     [pscustomobject]@{ Name = 'AZL_RUNNER_LABEL'; Role = 'runner label'; Key = 'devops.pipelines.runner_label'; Platforms = @('github', 'gitlab'); AzureDevOps = '' }
     # Schema 5.6.28: GitHub selects a self-hosted runner by its OS label too (runs-on: [self-hosted, <os>, <label>]).
     [pscustomobject]@{ Name = 'AZL_RUNNER_OS'; Role = 'runner OS label'; Key = 'devops.runners[].os_type'; Platforms = @('github'); AzureDevOps = '' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION'; Role = 'OS configuration approval environment'; Key = 'devops.pipelines.environments.os_configuration'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION'; Role = 'OS configuration approval environment'; Key = 'devops.pipelines.environments.os_configuration'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('azure_devops'); AzureDevOps = 'Template' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     # Schema 5.6.28: the one environment of every day 2 job that changes the cluster (update, node maintenance, changing operations, storage performance test).
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OPERATIONS'; Role = 'day 2 operations approval environment'; Key = 'devops.pipelines.environments.operations'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'CompileTime' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OPERATIONS'; Role = 'day 2 operations approval environment'; Key = 'devops.pipelines.environments.operations'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     # Azure DevOps only (schema 5.6.27): the names of the service connection and the variable group that task 05 creates. GitHub and GitLab sign in
     # with the repository's or project's own variables and have neither.
     [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
@@ -1129,7 +1131,7 @@ function Get-AzlCicdPipelineInput {
         (devops.runners[]: os_type, pool, admin_ssh_public_key), and checks them against what the other tasks create: runner_label must be one
         of the labels of the general (Linux) runner, and every environment must be an entry of devops.environments[] with approval_required
         true. A key with a registry default gives its default. Returns nothing for a key that is not set and has no default.
-        GitHub and GitLab take the values as variables (Name); Azure DevOps takes them as run parameters (Role) or from the variable group.
+        GitHub and GitLab take the values as variables (Name); Azure DevOps takes them as run parameters (Role), as the variable of the same name in pipelines/azure-devops/variables/approval-environments.yml (the approval environments) or from the variable group.
         A value that is a secret reference (keyvault://, env://, file://, command://; only devops.runners[].admin_ssh_public_key may be one)
         is returned as it is, with Reference true: Set-AzlCicdVariable resolves it when it sets the variable.
     #>
@@ -1315,14 +1317,12 @@ function Set-AzlCicdVariable {
                     else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' $detail)) }
                 }
                 'azure_devops' {
-                    # Azure DevOps expands a variable only at run time and reads the pool, the environment, the service connection and a
-                    # parameter path at compile time, so these are run parameters with no default. The task cannot set a parameter; it lists
-                    # the value to enter.
-                    # The pre-cluster verification pipeline binds the approval environment of the ARM deployment at compile time: a run parameter would let whoever queues the run choose an environment with no approval.
-                    $templateHint = if ($pipelineInput.Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT') { " The pre-cluster verification pipeline does not take it as a parameter: write it as the value of AZL_ENVIRONMENT_ARM_DEPLOYMENT in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request." } else { '' }
-                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.$templateHint")) }
-                    # The day 2 pipelines take no parameter for the approval environment: it is bound when the pipeline is compiled.
-                    if ($pipelineInput.AzureDevOps -eq 'CompileTime') { $results.Add((Format-AzlResult $task 'Pipeline compile-time value' $pipelineInput.Key 'Skipped' "Write '$($pipelineInput.Value)' as the value of $($pipelineInput.Name) in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request. The day 2 pipelines bind the $($pipelineInput.Role) when they are compiled and take no run parameter for it.")) }
+                    # Azure DevOps expands a variable only at run time and reads the pool, the service connection and a parameter path at
+                    # compile time, so these are run parameters with no default. The task cannot set a parameter; it lists the value to enter.
+                    # An approval environment is not a run parameter: a run parameter would let whoever queues the run choose an environment with no approval.
+                    # The pipelines bind it at compile time from a variable of a YAML file of the repository, which the task cannot write; it lists the value too.
+                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.")) }
+                    elseif ($pipelineInput.AzureDevOps -eq 'Template') { $results.Add((Format-AzlResult $task 'Pipeline variable template' $pipelineInput.Key 'Skipped' "Write '$($pipelineInput.Value)' as the value of $($pipelineInput.Name) in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request. The pipelines bind the approval environment when they are compiled; it is not a run parameter, so whoever queues a run cannot choose it.")) }
                 }
             }
         }

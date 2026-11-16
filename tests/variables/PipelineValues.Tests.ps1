@@ -64,7 +64,8 @@ BeforeAll {
         'pipelines/github-actions/azure-local-deploy.yml' = @('terraform-validate', 'ansible-lint', 'terraform-plan')
         'pipelines/github-actions/cicd-infra.yml'         = @('validate', 'plan', 'apply')
         'pipelines/azure-devops/azure-local-deploy.yml'   = @('TerraformValidate', 'AnsibleLint', 'TerraformPlan')
-        'pipelines/azure-devops/cicd-infra.yml'           = @('Validate', 'Plan', 'Apply')
+        # ApprovalEnvironmentNotSet only prints one error and exits 1 (no approval environment is set): it changes nothing, and on the first run it has no agent either
+        'pipelines/azure-devops/cicd-infra.yml'           = @('Validate', 'Plan', 'Apply', 'ApprovalEnvironmentNotSet')
     }
     $script:HostedImage = 'ubuntu-latest'
     # The defaults a per-run choice may have: the safe choice, never a value of a deployment.
@@ -84,7 +85,6 @@ BeforeAll {
         PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER = '^false$'; PRECLUSTER_CHANGES = '^(true|false)$'
         HANDOFF_FILE = '^$'; ARM_MODE = '^Plan$'; ARM_STEP_MODE = '^(Plan|Validate|Deploy)$'; ARM_STEP_DIRECTORY = '^(plan|validate|deploy)$'
         # the approval environment an Azure DevOps pipeline binds at compile time (a template expression sees only the variables of YAML files): the toolkit ships it empty
-        AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'; AZL_ENVIRONMENT_OPERATIONS = '^$'
         # the day 2 pipelines (stage 07 validation and stage 08): the toolkit's own script paths, report folders and the safe first choice of each run variable
         UPDATECHECK_AZURE_SCRIPT = '^scripts/'; UPDATECHECK_CLUSTER_SCRIPT = '^scripts/'; UPDATECHECK_SOURCE = '^azure$'; UPDATECHECK_REPORT_DIRECTORY = '^day2-update-check$'
         DAY2UPDATE_SCRIPT = '^scripts/'; DAY2UPDATE_ACTION = '^Plan$'; DAY2UPDATE_MODE = '^AfterDeployment$'; DAY2UPDATE_LOG_DIRECTORY = '^day2-update$'
@@ -94,6 +94,8 @@ BeforeAll {
         VALIDATION_RUN_PERFORMANCE_TEST = '^false$'; VALIDATION_REPORT_DIRECTORY = '^validation-reports$'
         checkAzureScript = '^scripts/'; checkClusterScript = '^scripts/'; updateScript = '^scripts/'; maintenanceScript = '^scripts/'; operationsScript = '^scripts/'
         healthScript = '^scripts/'; arcScript = '^scripts/'; networkScript = '^scripts/'; storageScript = '^scripts/'
+        AZL_ENVIRONMENT_OS_CONFIGURATION = '^$'; AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE = '^$'; AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'
+        AZL_ENVIRONMENT_CICD_INFRA = '^$'; AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT = '^$'; AZL_ENVIRONMENT_OPERATIONS = '^$'
     }
 }
 

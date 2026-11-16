@@ -285,7 +285,7 @@ Describe 'The approval binding of the jobs that change the cluster' {
         $variable.Count | Should -Be 1
         $variable[0].Key | Should -Be 'devops.pipelines.environments.operations'
         @($variable[0].Platforms) | Should -Be @('github', 'gitlab', 'azure_devops')
-        $variable[0].AzureDevOps | Should -Be 'CompileTime'
+        $variable[0].AzureDevOps | Should -Be 'Template'
         (Get-Text 'scripts/common/cicd-infra/AzlCicdInfra.psm1') | Should -Match "(?m)^\s+operations\s+= \[string\]\(Get-AzlValue \`$pipelineEnvironments 'operations'\)"
     }
     It 'task 05 sets the environment from the key, and refuses one that has no approval' {

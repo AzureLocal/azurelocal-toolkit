@@ -74,11 +74,11 @@ platform's approval, publishing `report.json`, `summary.md` and the event feed o
 | --- | --- | --- | --- |
 | GitHub Actions | `pipelines/github-actions/arm-deployment.yml` | The environment of `devops.pipelines.environments.arm_deployment` (repository variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT`) with required reviewers | `azure/login@v2`: OIDC, or the client secret `ARM_CLIENT_SECRET`, by `AZL_AUTH_METHOD` (`devops.authentication.method`) |
 | GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` | Manual job in the protected environment of the project variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `AZL_AUTH_METHOD` (`devops.authentication.method`): `id_tokens` and `Connect-AzAccount -FederatedToken` (OIDC), or the masked `ARM_CLIENT_SECRET` |
-| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Approvals check on the environment you enter as the parameter `approvalEnvironment` | A service connection with workload identity federation |
+| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Approvals check on the environment named by the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `pipelines/azure-devops/variables/approval-environments.yml` (`devops.pipelines.environments.arm_deployment`; empty in the toolkit: write the name once, in a pull request; it is not a run parameter, so whoever queues a run cannot choose it, and while it is empty a Deploy fails and changes nothing) | A service connection with workload identity federation |
 
 No client secret is in a file: with `devops.authentication.method` client_secret it is a masked variable or secret that task 05 reads
  from Key Vault. The files hold no value: task 05 of the CI/CD setup sets every variable they read from `infrastructure.yml` (see
- [pipelines/README.md](../pipelines/README.md#where-every-value-comes-from)); on Azure DevOps it lists the run parameters to enter. Use a
+ [pipelines/README.md](../pipelines/README.md#where-every-value-comes-from)); on Azure DevOps it lists the run parameters to enter and the environment name to write in `approval-environments.yml`. Use a
 self-hosted runner that reaches Azure over HTTPS. The Active Directory check also needs a domain-joined runner with the
 ActiveDirectory module; elsewhere it is reported as Skipped, never as passed.
 

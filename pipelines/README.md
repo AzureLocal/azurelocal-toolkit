@@ -90,7 +90,7 @@ The one-run entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-confi
 
 - GitHub Actions: `github-actions/os-configuration.yml` (the environment of `AZL_ENVIRONMENT_OS_CONFIGURATION`, with required reviewers).
 - GitLab CI: `gitlab/os-configuration.gitlab-ci.yml` (manual apply job, `resource_group`).
-- Azure DevOps: `azure-devops/os-configuration.yml` (the environment of the parameter `approval_environment`; a second approval for a storage wipe when `os_configuration.clear_storage` is true).
+- Azure DevOps: `azure-devops/os-configuration.yml` (the environment named by the variable `AZL_ENVIRONMENT_OS_CONFIGURATION` of `azure-devops/variables/approval-environments.yml`, a variable of a YAML file bound when the pipeline is compiled, so whoever queues the run cannot choose an environment with no approval; a second approval, the environment of `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE`, for a storage wipe when `os_configuration.clear_storage` is true). While the first variable is empty, mode Apply fails in the stage `ApprovalEnvironmentNotSet` and nothing is changed; while the second is empty and the plan would wipe, the stage `ConfirmStorageWipe` fails and Apply does not run.
 
 Where the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 
@@ -142,7 +142,7 @@ Deploy. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
 
 - **GitHub Actions**: `github-actions/arm-deployment.yml` (the environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`)
 - **GitLab CI**: `gitlab/stages/arm-deployment.yml` (declares its own stages; include it from a pipeline of its own)
-- **Azure DevOps**: `azure-devops/arm-deployment.yml` (the environment of the parameter `approvalEnvironment`, with an Approvals check)
+- **Azure DevOps**: `azure-devops/arm-deployment.yml` (the environment named by the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, with an Approvals check; while it is empty, a Deploy fails in the stage `ApprovalEnvironmentNotSet` and nothing is changed)
 
 ## Validation and day 2 (stages 07 and 08)
 
@@ -238,8 +238,7 @@ group `devops.pipelines.variable_group` (one per environment, `<name>-<environme
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) | variable | variable | (the pool, a run parameter) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | (run parameters) |
-| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` (the approval environment of every day 2 and validation job that changes the cluster or puts load on it) | variable | variable | (a variable of `azure-devops/variables/approval-environments.yml`, bound when the pipeline is compiled) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `azure-devops/variables/approval-environments.yml` (written once in the repository; see below) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
@@ -251,9 +250,9 @@ Each name is registered as a `pipeline_inputs` or `pipeline_variables` entry of 
 the key as `source_key`. The table of names and keys is `$script:AzlPipelineVariable` in `scripts/common/cicd-infra/AzlCicdInfra.psm1`;
 `tests/pipelines/PipelineSettings.Tests.ps1` checks the files, the entries and the setup against each other.
 
-### Azure DevOps run parameters
+### Azure DevOps run parameters and the approval environments
 
-Azure DevOps reads the pool, the environment of a job, the service connection, the variable group and a parameter path before any
+Azure DevOps reads the pool, the service connection, the variable group and a parameter path before any
 variable exists (a macro variable is expanded only in task inputs, and `${{ variables.name }}` does not see pipeline or library variables:
 [Define variables](https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax),
 [Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). These are run parameters
@@ -266,9 +265,19 @@ variable exists (a macro variable is expanded only in task inputs, and `${{ vari
 | `variableGroup`, `variable_group` | all | `devops.pipelines.variable_group`, with environments `<name>-<environment>` |
 | `infrastructureFile`, `infrastructure_file` | all | `devops.pipelines.infrastructure_file` |
 | `handoff_path` | `os-configuration.yml` | `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster) |
-| `approvalEnvironment`, `approval_environment` | each, except `pre-cluster-verification.yml` (its approval environment is the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, written once in the repository: a run parameter would let whoever queues the run choose an environment with no approval) and the day 2 and validation pipelines (their approval environment is the variable `AZL_ENVIRONMENT_OPERATIONS` of the same file) | `devops.pipelines.environments.terraform_deployment`, `.arm_deployment`, `.cicd_infra` or `.os_configuration` |
-| `clear_storage_approval_environment` | `os-configuration.yml` | `devops.pipelines.environments.os_configuration_clear_storage` |
 
+**The approval environments are not run parameters.** A deployment job that changes a system sits behind an environment with an Approvals check, and a deployment job to an environment with no check runs without one. If the environment were a run parameter, whoever queues the run could type the name of an environment with no check. So the Azure DevOps pipelines bind it when they are compiled: each environment is a variable of a YAML file of the repository, `azure-devops/variables/approval-environments.yml`, which every pipeline includes with `- template: variables/approval-environments.yml` (a template expression sees only the variables of YAML files, not those stored on the pipeline, in a library or given when you start a run: [Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). The variables have the names of the GitHub repository variables and the GitLab project variables of the same purpose, so the three platforms share them. The toolkit ships them empty, because no value of a deployment is written in the toolkit: write the names once, in a pull request, where task 05 lists them. Copy the file with the pipeline when you copy a pipeline to your own repository.
+
+| Variable of `approval-environments.yml` | Enter | Pipeline and stage |
+| --- | --- | --- |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION` | `devops.pipelines.environments.os_configuration` | `os-configuration.yml`, stage `Apply` |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE` | `devops.pipelines.environments.os_configuration_clear_storage` | `os-configuration.yml`, stage `ConfirmStorageWipe` |
+| `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
+| `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` (when `apply` is on) |
+| `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
+
+While a variable is empty and the run would change something, a guard stage (`ApprovalEnvironmentNotSet`; `ConfirmStorageWipe` for the wipe approval) fails with a message that names the file and changes nothing. The stages that only read (`Plan`, `Validate`, `Preconditions`, `Verify`) run as before and have no environment.
 The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`,
 `all`, `false`, `none`). Because these parameters have no default, a run started by a push or a pull request could not supply them: the
 Azure DevOps pipelines are started by hand.

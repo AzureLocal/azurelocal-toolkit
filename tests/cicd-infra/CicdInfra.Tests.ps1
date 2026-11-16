@@ -566,7 +566,7 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         }
         finally { $env:GITLAB_TOKEN = $null }
     }
-    It 'Azure DevOps: sets no variable; it lists the pool and each environment to enter as run parameters' {
+    It 'Azure DevOps: sets no variable; it lists the pool to enter as a run parameter and each environment to write in the variables template, never as a run parameter' {
         Start-Recording {
             param($f, $a)
             if ($f -eq 'az') { return New-Out 'x' }
@@ -577,8 +577,14 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         (Get-Calls 'AZL_').Count | Should -Be 0
         $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
         ($rows | Where-Object Target -eq 'devops.runners[].pool').Detail | Should -Match "Enter 'pool-lnx' as the agent pool parameter"
-        ($rows | Where-Object Target -eq 'devops.pipelines.environments.os_configuration_clear_storage').Detail | Should -Match "Enter 'azr-prod-us'"
         $rows | ForEach-Object { $_.Status | Should -Be 'Skipped' }
+        # the approval environments are not run parameters: whoever queues a run could choose an environment with no approval. The task lists them for the YAML file of the repository
+        @($rows | Where-Object Target -like 'devops.pipelines.environments.*').Count | Should -Be 0
+        $templateRows = @($r | Where-Object Action -eq 'Pipeline variable template')
+        $templateRows | ForEach-Object { $_.Status | Should -Be 'Skipped' }
+        @($templateRows | ForEach-Object Target | Sort-Object) | Should -Be @('devops.pipelines.environments.arm_deployment', 'devops.pipelines.environments.cicd_infra', 'devops.pipelines.environments.os_configuration', 'devops.pipelines.environments.os_configuration_clear_storage', 'devops.pipelines.environments.terraform_deployment')
+        ($templateRows | Where-Object Target -eq 'devops.pipelines.environments.os_configuration_clear_storage').Detail | Should -Match "Write 'azr-prod-us' as the value of AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE in pipelines/azure-devops/variables/approval-environments\.yml"
+        foreach ($t in $templateRows) { $t.Detail | Should -Match 'not a run parameter' }
     }
     It 'Azure DevOps: there is no default pool, so a general runner without one is refused' {
         { Get-AzlCicdPipelineInput -Settings (Get-Settings 'azure_devops') } | Should -Throw '*devops.runners[[]].pool is not set*'
