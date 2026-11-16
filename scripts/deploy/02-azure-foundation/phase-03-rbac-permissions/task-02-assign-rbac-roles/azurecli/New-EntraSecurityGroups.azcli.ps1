@@ -10,7 +10,8 @@
 
     Idempotent. A group whose display name already exists is reported as AlreadyExists and left alone, so a second run with the same file creates
     nothing. If more than one group already has the display name, the entry is reported as Conflict and nothing is created for it, because the role
-    assignment script could not tell which group is meant. -WhatIf changes nothing.
+    assignment script could not tell which group is meant. The same holds for one group of that name that is not a security group (a Microsoft 365
+    group or a distribution list): it cannot take the role assignments. -WhatIf changes nothing.
 
     The script reads Microsoft Entra ID with "az ad group list" and writes only with "az ad group create", behind -WhatIf. It does not sign in: run
     "az login --tenant <azure.tenant_id>" first, as an account that may create groups (Groups Administrator, or the tenant setting that lets users
@@ -135,14 +136,21 @@ $results = foreach ($item in $plan) {
     $row = [ordered]@{ Name = $item.Name; Action = ''; Id = ''; Detail = '' }
     try {
         $filter = "displayName eq '$($item.Name.Replace("'", "''"))'"
-        $found = @(Invoke-Az -AzArgument @('ad', 'group', 'list', '--filter', $filter, '--query', '[].id', '--output', 'json') | ConvertFrom-Json)
+        $found = @(Invoke-Az -AzArgument @('ad', 'group', 'list', '--filter', $filter, '--query', '[].{id:id,securityEnabled:securityEnabled}', '--output', 'json') | ConvertFrom-Json)
         if ($found.Count -gt 1) {
             $row.Action = 'Conflict'
             $row.Detail = "$($found.Count) groups already have this display name; nothing was created. Remove or rename the extra groups, then run again."
             Write-Warning "$($item.Name): $($row.Detail)"
         }
+        elseif ($found.Count -eq 1 -and $found[0].PSObject.Properties['securityEnabled'] -and $found[0].securityEnabled -eq $false) {
+            # A group of this name that is not a security group (a Microsoft 365 group or a distribution list) cannot take the Azure role
+            # assignments of this task, and a second group of the same name would make the role assignment script unable to tell them apart.
+            $row.Action = 'Conflict'; $row.Id = [string]$found[0].id
+            $row.Detail = 'A group with this display name already exists, but it is not a security group; nothing was created. Rename that group or choose another name, then run again.'
+            Write-Warning "$($item.Name): $($row.Detail)"
+        }
         elseif ($found.Count -eq 1) {
-            $row.Action = 'AlreadyExists'; $row.Id = [string]$found[0]
+            $row.Action = 'AlreadyExists'; $row.Id = [string]$found[0].id
             Write-Line "[exists]  $($item.Name): already there, nothing changed."
         }
         elseif ($PSCmdlet.ShouldProcess("group '$($item.Name)'", 'Create Microsoft Entra security group')) {

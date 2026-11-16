@@ -84,6 +84,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $rawGroups = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.management_groups'
+if ($null -ne $rawGroups -and @(@($rawGroups) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.management_groups is not a map (names with their settings).' }
 $entries = @(@($rawGroups) | Where-Object { $_ -is [System.Collections.IDictionary] })
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }

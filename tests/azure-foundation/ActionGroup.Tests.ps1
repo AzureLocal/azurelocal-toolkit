@@ -89,6 +89,14 @@ Describe 'Deploy-ActionGroup.ps1' {
             Should -Invoke New-AzActionGroupEmailReceiverObject -Times 1 -Exactly -ParameterFilter { $EmailAddress -eq 'alerts@example.test' }
         }
 
+        It 'gives two addresses that make the same receiver name two different names' {
+            $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('a-b@example.test'))).Substring(0, 8).ToLowerInvariant()
+            $r = Invoke-Group (New-InfraFile -Emails @('a.b@example.test', 'a-b@example.test'))
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke New-AzActionGroupEmailReceiverObject -Times 1 -Exactly -ParameterFilter { $EmailAddress -eq 'a.b@example.test' -and $Name -eq 'email-a-b-example-test' }
+            Should -Invoke New-AzActionGroupEmailReceiverObject -Times 1 -Exactly -ParameterFilter { $EmailAddress -eq 'a-b@example.test' -and $Name -eq "email-a-b-example-test-$hash" }
+        }
+
         It 'works with alert_email alone' {
             $r = Invoke-Group (New-InfraFile -Monitoring (New-Monitoring @{ alert_email = 'alerts@example.test' }) -Emails $null)
             $r.ExitCode | Should -Be 0
@@ -145,6 +153,14 @@ Describe 'Deploy-ActionGroup.ps1' {
             Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; EmailReceiver = @((New-Receiver 'old@example.test')) } }
             $null = Invoke-Group (New-InfraFile)
             Should -Invoke Update-AzActionGroup -Times 1 -Exactly -ParameterFilter { @($EmailReceiver | Where-Object EmailAddress -EQ 'old@example.test').Count -eq 1 -and @($EmailReceiver).Count -eq 3 }
+        }
+
+        It 'does not give an added receiver a name that a receiver of another kind already has' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; EmailReceiver = @((New-Receiver 'noc@example.test')); SmsReceiver = @([pscustomobject]@{ Name = 'email-ops-example-test'; PhoneNumber = '5550100' }) } }
+            $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('ops@example.test'))).Substring(0, 8).ToLowerInvariant()
+            $r = Invoke-Group (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke New-AzActionGroupEmailReceiverObject -Times 1 -Exactly -ParameterFilter { $EmailAddress -eq 'ops@example.test' -and $Name -eq "email-ops-example-test-$hash" }
         }
 
         It 'handles a group with no email receiver at all' {

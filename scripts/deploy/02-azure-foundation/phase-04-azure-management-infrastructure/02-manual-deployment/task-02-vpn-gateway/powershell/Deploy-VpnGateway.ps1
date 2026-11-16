@@ -109,8 +109,10 @@ $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'az
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $gateway = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.vpn_gateway'
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
+if ($null -ne $rawNetworks -and @(@($rawNetworks) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' }
 $networks = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
+if ($null -ne $rawSubscriptions -and @(@($rawSubscriptions) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' }
 $subscriptions = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}

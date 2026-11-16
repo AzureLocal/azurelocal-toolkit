@@ -142,6 +142,23 @@ Describe 'New-EntraSecurityGroups.ps1' {
             $r.Text | Should -Match 'already have this display name'
             Should -Invoke New-MgGroup -Times 0 -Exactly
         }
+
+        It 'reports one group of the name that is not a security group (a Microsoft 365 group) as a conflict and exits 1' {
+            Mock Get-MgGroup { [pscustomobject]@{ Id = $global:AzlGroupTestExisting; DisplayName = 'grp-azl-operators'; SecurityEnabled = $false; MailEnabled = $true } }
+            $r = Invoke-GroupRun (New-InfraFile @(, (New-Group 'grp-azl-operators' '')))
+            $r.ExitCode | Should -Be 1
+            $r.Result.Conflict | Should -Be 1
+            $r.Result.AlreadyExists | Should -Be 0
+            $r.Text | Should -Match 'not a security group'
+            Should -Invoke New-MgGroup -Times 0 -Exactly
+        }
+
+        It 'takes one security group of the name as the group, also when it is mail enabled' {
+            Mock Get-MgGroup { [pscustomobject]@{ Id = $global:AzlGroupTestExisting; DisplayName = 'grp-azl-operators'; SecurityEnabled = $true; MailEnabled = $true } }
+            $r = Invoke-GroupRun (New-InfraFile @(, (New-Group 'grp-azl-operators' '')))
+            $r.ExitCode | Should -Be 0
+            $r.Result.AlreadyExists | Should -Be 1
+        }
     }
 
     Context '-WhatIf' {
@@ -175,6 +192,14 @@ Describe 'New-EntraSecurityGroups.ps1' {
             $r = Invoke-GroupRun (New-InfraFile @(, (New-Group 'grp-azl-operators' '')) -TenantId $null)
             $r.ExitCode | Should -Be 2
             $r.Text | Should -Match 'azure.tenant_id'
+        }
+
+        It 'refuses an entry that is not a map, instead of skipping it' {
+            $r = Invoke-GroupRun (New-InfraFile @((New-Group 'grp-azl-operators' ''), 'grp-azl-readers'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'is not a map'
+            Should -Invoke New-MgGroup -Times 0 -Exactly
+            Should -Invoke Get-MgContext -Times 0 -Exactly
         }
 
         It 'refuses a group with no name' {

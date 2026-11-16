@@ -298,6 +298,16 @@ Describe 'Deploy-VpnGateway.ps1' {
             $r.Text | Should -Match 'No region'
         }
 
+        It 'refuses a network or subscription entry that is not a map, instead of skipping it' {
+            $r = Invoke-Gateway (New-InfraFile -Network @((New-Network), 'vnet-other'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'landing_zone.networks is not a map'
+            $r = Invoke-Gateway (New-InfraFile -Subscriptions @([ordered]@{ name = 'sub-connectivity'; id = $global:AzlVpnTestSub }, 'sub-other'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'landing_zone.subscriptions is not a map'
+            Should -Invoke Get-AzContext -Times 0 -Exactly
+        }
+
         It 'refuses a file that does not exist' {
             $r = Invoke-Gateway (Join-Path $TestDrive 'nowhere.yml')
             $r.ExitCode | Should -Be 2

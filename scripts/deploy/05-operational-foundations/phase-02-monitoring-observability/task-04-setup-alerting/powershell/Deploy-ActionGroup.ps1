@@ -16,7 +16,9 @@
     nothing.
 
     The short name of an action group (at most 12 characters, shown in SMS and email subjects) is made from the group name: its letters and
-    digits, cut to 12.
+    digits, cut to 12. An email receiver is named 'email-' and its address with each character that is not a letter or a digit made a hyphen;
+    when that name is already taken (by another receiver of the group, or by another address that gives the same name), the first 8 hex digits
+    of the SHA-256 of the address are added, because Azure requires every receiver name of a group to be unique.
 
     The script reads Azure (read only) and writes only with New-AzActionGroup and Update-AzActionGroup, behind -WhatIf. It does not sign in: run
     Connect-AzAccount to the tenant in azure.tenant_id first. You need Monitoring Contributor (or Contributor) on the resource group. The tags
@@ -133,8 +135,21 @@ $context = Get-AzContext
 if (-not $context) { Exit-Failed 'Not signed in to Azure. Run Connect-AzAccount -Tenant <azure.tenant_id>.' }
 if ([string]$context.Tenant.Id -ne $tenantId) { Exit-Failed "Signed in to tenant $($context.Tenant.Id), but azure.tenant_id is $tenantId. Sign in to the right tenant." }
 
+# The receiver names already in use: Azure requires a name to be unique across every receiver of an action group, of any kind.
+$takenNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
+# The name of the email receiver of an address: 'email-' and the address with each character that is not a letter or a digit made a hyphen.
+# Two addresses can give the same name (a.b@x.test and a-b@x.test), and a receiver of the group may already have it: such a name takes the
+# first 8 hex digits of the SHA-256 of the address as a suffix, so every receiver keeps a unique, repeatable name.
+function Get-ReceiverName([string]$Address) {
+    $name = 'email-' + ($Address -replace '[^A-Za-z0-9]', '-')
+    if ($takenNames.Contains($name)) { $name += '-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Address.ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant() }
+    $null = $takenNames.Add($name)
+    $name
+}
+
 function Get-EmailReceiverObject([string]$Address) {
-    New-AzActionGroupEmailReceiverObject -Name ('email-' + ($Address -replace '[^A-Za-z0-9]', '-')) -EmailAddress $Address
+    New-AzActionGroupEmailReceiverObject -Name (Get-ReceiverName $Address) -EmailAddress $Address
 }
 
 Write-Line "Action group '$groupName' in '$resourceGroup', $($addresses.Count) email address(es)"
@@ -171,6 +186,9 @@ try {
             Write-Line "[exists]  '$groupName' is already there with every listed address, nothing changed."
         }
         elseif ($PSCmdlet.ShouldProcess("action group '$groupName'", "Add the email receiver(s) $($missing -join ', ') (the receivers it has are kept)")) {
+            foreach ($property in @($existing.PSObject.Properties | Where-Object Name -Like '*Receiver')) {
+                foreach ($receiver in @($property.Value)) { if ($receiver -and $receiver.PSObject.Properties['Name'] -and $receiver.Name) { $null = $takenNames.Add([string]$receiver.Name) } }
+            }
             $all = @($haveReceivers) + @($missing | ForEach-Object { Get-EmailReceiverObject $_ })
             $null = Update-AzActionGroup -Name $groupName -ResourceGroupName $resourceGroup -SubscriptionId $subscriptionId -EmailReceiver $all -ErrorAction Stop
             $row.Action = 'Updated'; $row.Added = @($missing)
