@@ -81,6 +81,11 @@ BeforeAll {
             DhcpOptions = [pscustomobject]@{ DnsServers = $Dns }; Subnets = @($Subnets)
         }
     }
+    # The peering a network of the default file has to the other one, as Get-AzVirtualNetworkPeering lists it.
+    function New-ExistingPeering([string]$Network, [string]$State, [string]$Name) {
+        $remote = if ($Network -eq 'vnet-hub-01') { 'vnet-mgmt-01' } else { 'vnet-hub-01' }
+        [pscustomobject]@{ Name = $(if ($Name) { $Name } else { "peer-$Network-to-$remote" }); RemoteVirtualNetwork = [pscustomobject]@{ Id = "/vnets/$remote" }; PeeringState = $State }
+    }
     function New-ExistingSubnet([string]$Name, [string]$Prefix, [string]$NsgId, [string]$RouteTableId) {
         [pscustomobject]@{
             Name = $Name; AddressPrefix = @($Prefix)
@@ -215,7 +220,20 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             $long = 'v' * 50
             $file = New-InfraFile @((New-Hub @{ name = $long; peer_with = $null }), (New-Spoke @{ name = ($long + 'x'); peer_with = @($long) }))
             $null = Invoke-Vnet $file
-            Should -Invoke Add-AzVirtualNetworkPeering -Times 2 -Exactly -ParameterFilter { $Name.Length -le 80 }
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 2 -Exactly -ParameterFilter { $Name.Length -le 80 -and $Name -match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9_]$' }
+        }
+
+        It 'cuts a long peering name so that it still ends with a letter or digit, and keeps two long names that start alike apart' {
+            # Cut at 80 characters, the two peerings of the hub would both be "peer-hhh...-to-aaaaaaaaaa-": a name Azure refuses (it ends with a hyphen), and the same name twice.
+            $hub = 'h' * 60; $a = ('a' * 10) + '-x'; $b = ('a' * 10) + '-y'
+            $file = New-InfraFile @((New-Hub @{ name = $hub; peer_with = $null }), (New-Spoke @{ name = $a; peer_with = @($hub) }), (New-Spoke @{ name = $b; resource_group = 'rg-mgmt-02'; address_space = @('192.0.2.0/24'); subnets = $null; peer_with = @($hub) }))
+            $r = Invoke-Vnet $file
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $names = @($r.Result.Peerings.Peering)
+            $names.Count | Should -Be 4
+            @($names | Select-Object -Unique).Count | Should -Be 4
+            foreach ($n in $names) { $n.Length | Should -BeLessOrEqual 80; $n | Should -Match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9_]$' }
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 4 -Exactly
         }
     }
 
@@ -225,7 +243,7 @@ Describe 'Deploy-VirtualNetworks.ps1' {
                 if ($Name -eq 'vnet-hub-01') { New-Existing 'vnet-hub-01' @('198.51.100.0/24') @((New-ExistingSubnet 'GatewaySubnet' '198.51.100.0/27'), (New-ExistingSubnet 'snet-shared' '198.51.100.32/27')) @('192.0.2.4', '192.0.2.5') }
                 else { New-Existing 'vnet-mgmt-01' @('203.0.113.0/24') @(, (New-ExistingSubnet 'snet-mgmt' '203.0.113.0/26' '/nsgs/nsg-mgmt')) }
             }
-            Mock Get-AzVirtualNetworkPeering { [pscustomobject]@{ Name = $Name; PeeringState = 'Connected' } }
+            Mock Get-AzVirtualNetworkPeering { New-ExistingPeering $VirtualNetworkName 'Connected' }
         }
 
         It 'creates and changes nothing and says so' {
@@ -261,8 +279,8 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             }
             $r = Invoke-Vnet (New-InfraFile)
             $r.Result.NetworksUpdated | Should -Be 1
-            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 1 -Exactly -ParameterFilter { $Name -eq 'snet-mgmt' -and $NetworkSecurityGroup.Id -eq '/nsgs/nsg-mgmt' -and $AddressPrefix -eq '203.0.113.0/26' }
-            Should -Invoke Set-AzVirtualNetwork -Times 1 -Exactly
+            Should -Invoke Set-AzVirtualNetwork -Times 1 -Exactly -ParameterFilter { $s = @($VirtualNetwork.Subnets | Where-Object Name -EQ 'snet-mgmt')[0]; $VirtualNetwork.Name -eq 'vnet-mgmt-01' -and $s.NetworkSecurityGroup.Id -eq '/nsgs/nsg-mgmt' -and ($s.AddressPrefix -join ',') -eq '203.0.113.0/26' }
+            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 0 -Exactly
         }
 
         It 'keeps the route table of a subnet when it attaches the group' {
@@ -271,7 +289,27 @@ Describe 'Deploy-VirtualNetworks.ps1' {
                 else { New-Existing 'vnet-mgmt-01' @('203.0.113.0/24') @(, (New-ExistingSubnet 'snet-mgmt' '203.0.113.0/26' $null '/routetables/rt-old')) }
             }
             $null = Invoke-Vnet (New-InfraFile)
-            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 1 -Exactly -ParameterFilter { $NetworkSecurityGroup.Id -eq '/nsgs/nsg-mgmt' -and $RouteTable.Id -eq '/routetables/rt-old' }
+            Should -Invoke Set-AzVirtualNetwork -Times 1 -Exactly -ParameterFilter { $s = @($VirtualNetwork.Subnets | Where-Object Name -EQ 'snet-mgmt')[0]; $s.NetworkSecurityGroup.Id -eq '/nsgs/nsg-mgmt' -and $s.RouteTable.Id -eq '/routetables/rt-old' }
+        }
+
+        It 'keeps the service endpoints, delegations and other address prefixes of a subnet when it attaches the group' {
+            Mock Get-AzVirtualNetwork {
+                if ($Name -eq 'vnet-hub-01') { New-Existing 'vnet-hub-01' @('198.51.100.0/24') @((New-ExistingSubnet 'GatewaySubnet' '198.51.100.0/27'), (New-ExistingSubnet 'snet-shared' '198.51.100.32/27')) @('192.0.2.4', '192.0.2.5') }
+                else {
+                    $s = New-ExistingSubnet 'snet-mgmt' '203.0.113.0/26'
+                    $s.AddressPrefix = @('203.0.113.0/26', '203.0.113.64/26')
+                    $s | Add-Member -NotePropertyName ServiceEndpoints -NotePropertyValue @([pscustomobject]@{ Service = 'Microsoft.Storage' })
+                    $s | Add-Member -NotePropertyName Delegations -NotePropertyValue @([pscustomobject]@{ ServiceName = 'Microsoft.Web/serverFarms' })
+                    New-Existing 'vnet-mgmt-01' @('203.0.113.0/24') @(, $s)
+                }
+            }
+            $r = Invoke-Vnet (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke Set-AzVirtualNetwork -Times 1 -Exactly -ParameterFilter {
+                $s = @($VirtualNetwork.Subnets | Where-Object Name -EQ 'snet-mgmt')[0]
+                $s.NetworkSecurityGroup.Id -eq '/nsgs/nsg-mgmt' -and ($s.AddressPrefix -join ',') -eq '203.0.113.0/26,203.0.113.64/26' -and $s.ServiceEndpoints[0].Service -eq 'Microsoft.Storage' -and $s.Delegations[0].ServiceName -eq 'Microsoft.Web/serverFarms'
+            }
+            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 0 -Exactly
         }
 
         It 'does not attach a group that still does not exist, and says so' {
@@ -282,7 +320,7 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             }
             $r = Invoke-Vnet (New-InfraFile)
             $r.ExitCode | Should -Be 0
-            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 0 -Exactly
+            Should -Invoke Set-AzVirtualNetwork -Times 0 -Exactly
             $r.Text | Should -Match 'Not attached yet'
         }
 
@@ -316,15 +354,31 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             }
             $r = Invoke-Vnet (New-InfraFile)
             ($r.Result.Networks | Where-Object Network -EQ 'vnet-mgmt-01').Differences | Should -Match 'another NetworkSecurityGroup attached'
-            Should -Invoke Set-AzVirtualNetworkSubnetConfig -Times 0 -Exactly
+            Should -Invoke Set-AzVirtualNetwork -Times 0 -Exactly
         }
 
         It 'creates the peering that is missing and leaves the one that exists' {
-            Mock Get-AzVirtualNetworkPeering { if ($VirtualNetworkName -eq 'vnet-hub-01') { [pscustomobject]@{ Name = $Name; PeeringState = 'Initiated' } } else { throw 'Peering not found (404 NotFound).' } }
+            Mock Get-AzVirtualNetworkPeering { if ($VirtualNetworkName -eq 'vnet-hub-01') { New-ExistingPeering 'vnet-hub-01' 'Initiated' } }
             $r = Invoke-Vnet (New-InfraFile)
             $r.Result.PeeringsCreated | Should -Be 1
             $r.Result.PeeringsExisting | Should -Be 1
             Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-mgmt-01-to-vnet-hub-01' }
+        }
+
+        It 'leaves a peering to the remote network that has another name, and makes no second one' {
+            # Asked by name, Azure finds no peering of that name; listed, the network has the hand-made one.
+            Mock Get-AzVirtualNetworkPeering { if ($Name -and $Name -ne "made-by-hand-$VirtualNetworkName") { throw 'Peering not found (404 NotFound).' }; New-ExistingPeering $VirtualNetworkName 'Connected' "made-by-hand-$VirtualNetworkName" }
+            $r = Invoke-Vnet (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Result.PeeringsExisting | Should -Be 2
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 0 -Exactly
+            ($r.Result.Peerings | Where-Object Peering -EQ 'peer-vnet-hub-01-to-vnet-mgmt-01').Detail | Should -Match "exists as 'made-by-hand-vnet-hub-01'"
+        }
+
+        It 'does not take a peering to a third network for the one it needs' {
+            Mock Get-AzVirtualNetworkPeering { [pscustomobject]@{ Name = 'peer-to-elsewhere'; RemoteVirtualNetwork = [pscustomobject]@{ Id = '/vnets/vnet-other' }; PeeringState = 'Connected' } }
+            $r = Invoke-Vnet (New-InfraFile)
+            $r.Result.PeeringsCreated | Should -Be 2
         }
 
         It 'never removes anything' {
@@ -368,6 +422,19 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             $r = Invoke-Vnet (New-InfraFile -Networks $null)
             $r.ExitCode | Should -Be 2
             $r.Text | Should -Match 'landing_zone.networks is empty'
+            Should -Invoke Get-AzContext -Times 0 -Exactly
+        }
+
+        It 'refuses a network, subnet or subscription entry that is not a map, instead of skipping it' {
+            $r = Invoke-Vnet (New-InfraFile @((New-Hub), 'vnet-mgmt-01'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'landing_zone.networks is not a map'
+            $r = Invoke-Vnet (New-InfraFile @((New-Hub @{ subnets = @((New-Subnet 'GatewaySubnet' '198.51.100.0/27'), 'snet-shared') }), (New-Spoke)))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'subnets is not a map'
+            $r = Invoke-Vnet (New-InfraFile -Subscriptions @([ordered]@{ name = 'sub-connectivity'; id = $global:AzlVnetTestSubHub }, 'sub-management'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'landing_zone.subscriptions is not a map'
             Should -Invoke Get-AzContext -Times 0 -Exactly
         }
 

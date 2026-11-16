@@ -65,6 +65,11 @@ BeforeAll {
         if ($RouteTableId) { $s.routeTable = [ordered]@{ id = $RouteTableId } }
         $s
     }
+    # The peering list of a network of the default file: its peering to the other one (named as the script names it unless -Name says otherwise).
+    function New-ExistingPeeringList([string]$Network, [string]$State, [string]$Name) {
+        $remote = if ($Network -eq 'vnet-hub-01') { 'vnet-mgmt-01' } else { 'vnet-hub-01' }
+        ConvertTo-Json -InputObject @([ordered]@{ name = $(if ($Name) { $Name } else { "peer-$Network-to-$remote" }); remoteVirtualNetwork = [ordered]@{ id = "/vnets/$remote" }; peeringState = $State }) -Depth 5 -Compress
+    }
     # The routes of a landing zone whose networks all exist.
     function Add-ExistingRoute([switch]$HubLacksSharedSubnet, [object]$MgmtSubnet = (New-ExistingSubnet 'snet-mgmt' '203.0.113.0/26' '/nsgs/nsg-mgmt'), [string[]]$HubDns = @('192.0.2.4', '192.0.2.5'), [string[]]$HubSpace = @('198.51.100.0/24'), [string]$GatewayPrefix = '198.51.100.0/27') {
         $hubSubnets = @((New-ExistingSubnet 'GatewaySubnet' $GatewayPrefix))
@@ -84,7 +89,8 @@ Describe 'Deploy-VirtualNetworks.azcli.ps1' {
         Add-AzRoute 'network vnet create*' { $i = [array]::IndexOf($args, '--name'); ([ordered]@{ newVNet = [ordered]@{ id = "/vnets/$($args[$i + 1])" } } | ConvertTo-Json -Compress) }
         Add-AzRoute 'network nsg show*' { $i = [array]::IndexOf($args, '--name'); ([ordered]@{ id = "/nsgs/$($args[$i + 1])" } | ConvertTo-Json -Compress) }
         Add-AzRoute 'network route-table show*' { $i = [array]::IndexOf($args, '--name'); ([ordered]@{ id = "/routetables/$($args[$i + 1])" } | ConvertTo-Json -Compress) }
-        Add-AzNotFound 'network vnet peering show*'
+        # A network has no peering until a test says otherwise.
+        Add-AzRoute 'network vnet peering list*' '[]'
     }
 
     Context 'creating the networks (happy path)' {
@@ -175,23 +181,36 @@ Describe 'Deploy-VirtualNetworks.azcli.ps1' {
 
         It 'peers across subscriptions, each side in its own subscription' {
             $null = Invoke-AzCliScript $script:Script (New-InfraFile)
-            Get-AzCall "network vnet peering show --name peer-vnet-hub-01-to-vnet-mgmt-01 --vnet-name vnet-hub-01 --resource-group rg-conn-01 --subscription $($global:AzlVnetSubHub)" | Should -HaveCount 1
-            Get-AzCall "network vnet peering show --name peer-vnet-mgmt-01-to-vnet-hub-01 --vnet-name vnet-mgmt-01 --resource-group rg-mgmt-01 --subscription $($global:AzlVnetSubMgmt)" | Should -HaveCount 1
+            Get-AzCall "network vnet peering list --vnet-name vnet-hub-01 --resource-group rg-conn-01 --subscription $($global:AzlVnetSubHub)" | Should -HaveCount 1
+            Get-AzCall "network vnet peering list --vnet-name vnet-mgmt-01 --resource-group rg-mgmt-01 --subscription $($global:AzlVnetSubMgmt)" | Should -HaveCount 1
         }
 
         It 'a peering name stays within the 80 characters Azure allows' {
             $long = 'v' * 50
             $file = New-InfraFile @((New-Hub @{ name = $long; peer_with = $null }), (New-Spoke @{ name = ($long + 'x'); peer_with = @($long) }))
             $null = Invoke-AzCliScript $script:Script $file
-            @(Get-AzCall 'network vnet peering create*' | ForEach-Object { ($_ -split ' ')[4] }).Count | Should -Be 2
-            foreach ($call in Get-AzCall 'network vnet peering create*') { ($call -split ' ')[4].Length | Should -BeLessOrEqual 80 }
+            @(Get-AzCall 'network vnet peering create*' | ForEach-Object { ($_ -split ' ')[5] }).Count | Should -Be 2
+            foreach ($call in Get-AzCall 'network vnet peering create*') { ($call -split ' ')[5].Length | Should -BeLessOrEqual 80; ($call -split ' ')[5] | Should -Match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9_]$' }
+        }
+
+        It 'cuts a long peering name so that it still ends with a letter or digit, and keeps two long names that start alike apart' {
+            # Cut at 80 characters, the two peerings of the hub would both be "peer-hhh...-to-aaaaaaaaaa-": a name Azure refuses (it ends with a hyphen), and the same name twice.
+            $hub = 'h' * 60; $a = ('a' * 10) + '-x'; $b = ('a' * 10) + '-y'
+            $file = New-InfraFile @((New-Hub @{ name = $hub; peer_with = $null }), (New-Spoke @{ name = $a; peer_with = @($hub) }), (New-Spoke @{ name = $b; resource_group = 'rg-mgmt-02'; address_space = @('192.0.2.0/24'); subnets = $null; peer_with = @($hub) }))
+            $r = Invoke-AzCliScript $script:Script $file
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $names = @(Get-AzCall 'network vnet peering create*' | ForEach-Object { ($_ -split ' ')[5] })
+            $names.Count | Should -Be 4
+            @($names | Select-Object -Unique).Count | Should -Be 4
+            foreach ($n in $names) { $n.Length | Should -BeLessOrEqual 80; $n | Should -Match '^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9_]$' }
         }
     }
 
     Context 'the networks already exist (idempotent, additive)' {
         BeforeEach {
             Add-ExistingRoute
-            Add-AzRoute 'network vnet peering show*' ([ordered]@{ name = 'peer'; peeringState = 'Connected' })
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-hub-01*' (New-ExistingPeeringList 'vnet-hub-01' 'Connected')
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-mgmt-01*' (New-ExistingPeeringList 'vnet-mgmt-01' 'Connected')
         }
 
         It 'creates and changes nothing and says so' {
@@ -255,12 +274,28 @@ Describe 'Deploy-VirtualNetworks.azcli.ps1' {
         }
 
         It 'creates the peering that is missing and leaves the one that exists' {
-            Add-AzRoute 'network vnet peering show --name peer-vnet-hub-01*' ([ordered]@{ name = 'peer'; peeringState = 'Initiated' })
-            Add-AzNotFound 'network vnet peering show --name peer-vnet-mgmt-01*'
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-hub-01*' (New-ExistingPeeringList 'vnet-hub-01' 'Initiated')
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-mgmt-01*' '[]'
             $r = Invoke-AzCliScript $script:Script (New-InfraFile)
             $r.Rows[0].PeeringsCreated | Should -Be 1
             $r.Rows[0].PeeringsExisting | Should -Be 1
             Get-AzCall 'network vnet peering create --name peer-vnet-mgmt-01-to-vnet-hub-01*' | Should -HaveCount 1
+        }
+
+        It 'leaves a peering to the remote network that has another name, and makes no second one' {
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-hub-01*' (New-ExistingPeeringList 'vnet-hub-01' 'Connected' 'made-by-hand-hub')
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-mgmt-01*' (New-ExistingPeeringList 'vnet-mgmt-01' 'Connected' 'made-by-hand-mgmt')
+            $r = Invoke-AzCliScript $script:Script (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].PeeringsExisting | Should -Be 2
+            Get-AzCall 'network vnet peering create*' | Should -BeNullOrEmpty
+            ($r.Rows[0].Peerings | Where-Object Peering -EQ 'peer-vnet-hub-01-to-vnet-mgmt-01').Detail | Should -Match "exists as 'made-by-hand-hub'"
+        }
+
+        It 'does not take a peering to a third network for the one it needs' {
+            Add-AzRoute 'network vnet peering list*' '[{"name":"peer-to-elsewhere","remoteVirtualNetwork":{"id":"/vnets/vnet-other"},"peeringState":"Connected"}]'
+            $r = Invoke-AzCliScript $script:Script (New-InfraFile)
+            $r.Rows[0].PeeringsCreated | Should -Be 2
         }
 
         It 'never removes anything' {
@@ -280,7 +315,8 @@ Describe 'Deploy-VirtualNetworks.azcli.ps1' {
 
         It 'plans a missing subnet of an existing network and changes nothing' {
             Add-ExistingRoute -HubLacksSharedSubnet
-            Add-AzRoute 'network vnet peering show*' ([ordered]@{ name = 'peer'; peeringState = 'Connected' })
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-hub-01*' (New-ExistingPeeringList 'vnet-hub-01' 'Connected')
+            Add-AzRoute 'network vnet peering list --vnet-name vnet-mgmt-01*' (New-ExistingPeeringList 'vnet-mgmt-01' 'Connected')
             $r = Invoke-AzCliScript $script:Script (New-InfraFile) -DryRun
             $r.Rows[0].NetworksPlanned | Should -Be 1
             Get-AzWriteCall | Should -BeNullOrEmpty
@@ -427,7 +463,7 @@ Describe 'Deploy-VirtualNetworks.azcli.ps1' {
         }
 
         It 'does not hide a peering lookup error that is not a not-found' {
-            Add-AzRoute 'network vnet peering show*' 'ERROR: (AuthorizationFailed) The client does not have authorization to perform action.' 1
+            Add-AzRoute 'network vnet peering list*' 'ERROR: (AuthorizationFailed) The client does not have authorization to perform action.' 1
             $r = Invoke-AzCliScript $script:Script (New-InfraFile)
             $r.ExitCode | Should -Be 1
             $r.Rows[0].PeeringsFailed | Should -Be 2

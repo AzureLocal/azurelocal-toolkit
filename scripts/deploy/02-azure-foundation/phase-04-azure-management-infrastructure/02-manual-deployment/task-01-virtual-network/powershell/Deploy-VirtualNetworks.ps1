@@ -21,8 +21,13 @@
     false). A hub that has the VPN gateway sets allow_gateway_transit; the spokes that use it set use_remote_gateways, and the gateway must
     exist before a peering that uses it is created (the VPN gateway task, task 02).
 
-    The script reads Azure (read only) and writes only with New-AzVirtualNetwork, Add-AzVirtualNetworkSubnetConfig,
-    Set-AzVirtualNetworkSubnetConfig, Set-AzVirtualNetwork and Add-AzVirtualNetworkPeering, behind -WhatIf. It does not sign in: run
+    A peering is named peer-<network>-to-<peer>; a name longer than the 80 characters Azure allows is cut and ends with the first 8 hex digits
+    of the SHA-256 of the full name, so it stays valid and unique. A network that already has a peering to the remote network, whatever its
+    name (one made by hand, or by an earlier version of this script), is left alone, so no second peering to the same network is made.
+
+    The script reads Azure (read only) and writes only with New-AzVirtualNetwork, Add-AzVirtualNetworkSubnetConfig, Set-AzVirtualNetwork and
+    Add-AzVirtualNetworkPeering, behind -WhatIf. A security group or route table is attached by setting that one reference on the subnet and
+    saving the network, so the other settings of the subnet (service endpoints, delegations, more address prefixes) are kept. It does not sign in: run
     Connect-AzAccount to the tenant in azure.tenant_id first. You need Network Contributor (or Contributor) on each resource group, and, for a
     peering to a network in another subscription, on that network as well. The script changes the subscription of the session while it
     works and puts it back. The tags in the file-level tags map are put on the networks it creates.
@@ -128,9 +133,9 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networkEntries = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$networkEntries = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptionEntries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$subscriptionEntries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -163,7 +168,7 @@ $plan = foreach ($entry in $networkEntries) {
     foreach ($server in $dns) { if ($server -notmatch $Ipv4) { Exit-InputProblem "landing_zone.networks '$name': the DNS server '$server' is not an IPv4 address." } }
 
     $rawSubnets = if ($entry.Contains('subnets')) { $entry['subnets'] } else { $null }
-    $subnets = @(@($rawSubnets) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object {
+    $subnets = @(@($rawSubnets) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubnets)) { Exit-InputProblem 'An entry of landing_zone.networks[].subnets is not a map (names with their settings).' } } | ForEach-Object {
             $subnetName = Get-Entry $_ 'name'
             if (-not $subnetName) { Exit-InputProblem "landing_zone.networks '$name': a subnet has no name." }
             $prefix = Get-Entry $_ 'prefix'
@@ -209,7 +214,7 @@ foreach ($network in $plan) {
 }
 
 # ---- preconditions (read only)
-foreach ($cmd in 'Get-AzContext', 'Set-AzContext', 'Get-AzVirtualNetwork', 'New-AzVirtualNetwork', 'New-AzVirtualNetworkSubnetConfig', 'Add-AzVirtualNetworkSubnetConfig', 'Set-AzVirtualNetworkSubnetConfig',
+foreach ($cmd in 'Get-AzContext', 'Set-AzContext', 'Get-AzVirtualNetwork', 'New-AzVirtualNetwork', 'New-AzVirtualNetworkSubnetConfig', 'Add-AzVirtualNetworkSubnetConfig',
     'Set-AzVirtualNetwork', 'Get-AzNetworkSecurityGroup', 'Get-AzRouteTable', 'Get-AzVirtualNetworkPeering', 'Add-AzVirtualNetworkPeering') {
     if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) { Exit-Failed "$cmd was not found. Install the Az.Accounts and Az.Network modules: Install-Module Az.Accounts, Az.Network -Scope CurrentUser." }
 }
@@ -239,6 +244,16 @@ function Get-Attachment([string]$Kind, [string]$Name, [string]$ResourceGroup) {
 function Get-ExistingValue([object]$Object, [string]$Property) {
     if ($Object -and $Object.PSObject.Properties[$Property]) { return $Object.$Property }
     $null
+}
+
+# The name of the peering from one network to another: peer-<local>-to-<remote>. Azure allows 1 to 80 characters that end with a letter, a digit or
+# an underscore; a longer name is cut to 71, loses a trailing hyphen or period, and ends with a hyphen and the first 8 hex digits of the SHA-256 of
+# the full name, so it stays valid and two long names that start alike stay different.
+function Get-PeeringName([string]$Local, [string]$Remote) {
+    $name = "peer-$Local-to-$Remote"
+    if ($name.Length -le 80) { return $name }
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($name.ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant()
+    $name.Substring(0, 71).TrimEnd('-', '.') + '-' + $hash
 }
 
 Write-Line "Deploying $($plan.Count) virtual network(s)"
@@ -331,12 +346,10 @@ try {
                         }
                         elseif ($resource) {
                             if ($PSCmdlet.ShouldProcess("subnet '$($subnet.Name)' of '$($item.Name)'", "Attach the $($pair[2]) '$($pair[1])'")) {
-                                $arguments = @{ Name = $subnet.Name; VirtualNetwork = $existing; AddressPrefix = $subnet.Prefix; ErrorAction = 'Stop' }
-                                $arguments[$pair[2]] = $resource
-                                # Set-AzVirtualNetworkSubnetConfig replaces what it is not given: keep the other attachment.
-                                $other = if ($pair[0] -eq 'nsg') { @('RouteTable', (Get-ExistingValue $have 'RouteTable')) } else { @('NetworkSecurityGroup', (Get-ExistingValue $have 'NetworkSecurityGroup')) }
-                                if ($other[1] -and [string](Get-ExistingValue $other[1] 'Id')) { $arguments[$other[0]] = $other[1] }
-                                $existing = Set-AzVirtualNetworkSubnetConfig @arguments
+                                # Set only this reference on the subnet of the network object, which Set-AzVirtualNetwork then saves. Every other property of
+                                # the subnet (its other address prefixes, service endpoints, delegations, the other attachment) stays as Azure returned it;
+                                # Set-AzVirtualNetworkSubnetConfig would rebuild the subnet from its parameters and drop what it is not given.
+                                $have.($pair[2]) = $resource
                                 $changed = $true
                             }
                             $added.Add("$($subnet.Name):$($pair[2])")
@@ -388,8 +401,7 @@ try {
     }
     foreach ($pair in $pairs) {
         $localName = $pair.Local.Name; $remoteName = $pair.Remote.Name
-        $peeringName = "peer-$localName-to-$remoteName"
-        if ($peeringName.Length -gt 80) { $peeringName = $peeringName.Substring(0, 80) }
+        $peeringName = Get-PeeringName $localName $remoteName
         $row = [ordered]@{ Peering = $peeringName; Action = ''; Detail = '' }
         try {
             $localRow = @($networkRows | Where-Object { $_.Network -eq $localName }) | Select-Object -First 1
@@ -404,14 +416,19 @@ try {
             }
             else {
                 Use-Subscription $pair.Local.SubscriptionId
-                $current = $null
-                try { $current = Get-AzVirtualNetworkPeering -ResourceGroupName $pair.Local.ResourceGroup -VirtualNetworkName $localName -Name $peeringName -ErrorAction Stop }
+                # Every peering of the local network: the one to the remote network may have another name (made by hand, or a name an earlier
+                # version of this script cut differently), and a second peering to the same network must not be made.
+                $peerings = @()
+                try { $peerings = @(Get-AzVirtualNetworkPeering -ResourceGroupName $pair.Local.ResourceGroup -VirtualNetworkName $localName -ErrorAction Stop) }
                 catch { if ($_.Exception.Message -notmatch $NotFound) { throw } }
+                $remoteId = $networkId[$remoteName.ToLowerInvariant()]
+                $current = @($peerings | Where-Object { $_ -and ([string](Get-ExistingValue $_ 'Name') -ieq $peeringName -or [string](Get-ExistingValue (Get-ExistingValue $_ 'RemoteVirtualNetwork') 'Id') -ieq $remoteId) }) | Select-Object -First 1
                 if ($current) {
                     $row.Action = 'AlreadyExists'
                     $state = [string](Get-ExistingValue $current 'PeeringState')
-                    if ($state) { $row.Detail = "state $state" }
-                    Write-Line "[exists]  ${peeringName}: already there$(if ($state) { " ($state)" }), nothing changed."
+                    $currentName = [string](Get-ExistingValue $current 'Name')
+                    $row.Detail = (@($(if ($currentName -and $currentName -ine $peeringName) { "exists as '$currentName'" }), $(if ($state) { "state $state" })) | Where-Object { $_ }) -join ', '
+                    Write-Line "[exists]  ${peeringName}: already there$(if ($row.Detail) { " ($($row.Detail))" }), nothing changed."
                 }
                 elseif ($PSCmdlet.ShouldProcess("virtual network '$localName'", "Peer with '$remoteName' ($peeringName)")) {
                     $peeringArguments = @{ Name = $peeringName; VirtualNetwork = $networkObject[$localName.ToLowerInvariant()]; RemoteVirtualNetworkId = $networkId[$remoteName.ToLowerInvariant()]; ErrorAction = 'Stop' }

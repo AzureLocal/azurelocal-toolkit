@@ -22,6 +22,10 @@
     false). A hub that has the VPN gateway sets allow_gateway_transit; the spokes that use it set use_remote_gateways, and the gateway must
     exist before a peering that uses it is created (the VPN gateway task, task 02).
 
+    A peering is named peer-<network>-to-<peer>; a name longer than the 80 characters Azure allows is cut and ends with the first 8 hex digits
+    of the SHA-256 of the full name, so it stays valid and unique. A network that already has a peering to the remote network, whatever its
+    name (one made by hand, or by an earlier version of this script), is left alone, so no second peering to the same network is made.
+
     The script reads Azure (read only) and writes only with "az network vnet create", "az network vnet subnet create", "az network vnet subnet
     update" and "az network vnet peering create", behind -WhatIf. It does not sign in: run "az login --tenant <azure.tenant_id>" first. You
     need Network Contributor (or Contributor) on each resource group, and, for a peering to a network in another subscription, on that network
@@ -265,6 +269,15 @@ function Get-JsonValue([object]$Object, [string]$Path) {
     }
     $current
 }
+# The name of the peering from one network to another: peer-<local>-to-<remote>. Azure allows 1 to 80 characters that end with a letter, a digit or
+# an underscore; a longer name is cut to 71, loses a trailing hyphen or period, and ends with a hyphen and the first 8 hex digits of the SHA-256 of
+# the full name, so it stays valid and two long names that start alike stay different.
+function Get-PeeringName([string]$Local, [string]$Remote) {
+    $name = "peer-$Local-to-$Remote"
+    if ($name.Length -le 80) { return $name }
+    $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($name.ToLowerInvariant()))).Substring(0, 8).ToLowerInvariant()
+    $name.Substring(0, 71).TrimEnd('-', '.') + '-' + $hash
+}
 # The --tags arguments of az, from the file-level tags map; nothing when there are none.
 function Get-TagArgument { if ($tags.Count) { '--tags'; @($tags.Keys | Sort-Object | ForEach-Object { "$_=$($tags[$_])" }) } }
 
@@ -421,8 +434,7 @@ foreach ($item in $plan) {
 }
 foreach ($pair in $pairs) {
     $localName = $pair.Local.Name; $remoteName = $pair.Remote.Name
-    $peeringName = "peer-$localName-to-$remoteName"
-    if ($peeringName.Length -gt 80) { $peeringName = $peeringName.Substring(0, 80) }
+    $peeringName = Get-PeeringName $localName $remoteName
     $row = [ordered]@{ Peering = $peeringName; Action = ''; Detail = '' }
     try {
         $localRow = @($networkRows | Where-Object { $_.Network -eq $localName }) | Select-Object -First 1
@@ -436,12 +448,17 @@ foreach ($pair in $pairs) {
             Write-Line "[plan]    ${peeringName}: would be created once both networks exist."
         }
         else {
-            $current = Get-AzCliResource network vnet peering show --name $peeringName --vnet-name $localName --resource-group $pair.Local.ResourceGroup --subscription $pair.Local.SubscriptionId
+            # Every peering of the local network: the one to the remote network may have another name (made by hand, or a name an earlier
+            # version of this script cut differently), and a second peering to the same network must not be made.
+            $peerings = @(Get-AzCliResource network vnet peering list --vnet-name $localName --resource-group $pair.Local.ResourceGroup --subscription $pair.Local.SubscriptionId)
+            $remoteId = $networkId[$remoteName.ToLowerInvariant()]
+            $current = @($peerings | Where-Object { $_ -and ([string](Get-JsonValue $_ 'name') -ieq $peeringName -or [string](Get-JsonValue $_ 'remoteVirtualNetwork.id') -ieq $remoteId) }) | Select-Object -First 1
             if ($current) {
                 $row.Action = 'AlreadyExists'
                 $state = [string](Get-JsonValue $current 'peeringState')
-                if ($state) { $row.Detail = "state $state" }
-                Write-Line "[exists]  ${peeringName}: already there$(if ($state) { " ($state)" }), nothing changed."
+                $currentName = [string](Get-JsonValue $current 'name')
+                $row.Detail = (@($(if ($currentName -and $currentName -ine $peeringName) { "exists as '$currentName'" }), $(if ($state) { "state $state" })) | Where-Object { $_ }) -join ', '
+                Write-Line "[exists]  ${peeringName}: already there$(if ($row.Detail) { " ($($row.Detail))" }), nothing changed."
             }
             elseif ($PSCmdlet.ShouldProcess("virtual network '$localName'", "Peer with '$remoteName' ($peeringName)")) {
                 # The boolean options of "az network vnet peering create" default to false, so each is passed.
