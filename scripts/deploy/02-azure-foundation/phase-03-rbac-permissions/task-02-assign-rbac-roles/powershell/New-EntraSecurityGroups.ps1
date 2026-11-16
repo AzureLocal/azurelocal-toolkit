@@ -9,7 +9,8 @@
 
     Idempotent. A group whose display name already exists is reported as AlreadyExists and left alone, so a second run with the same file
     creates nothing. If more than one group already has the display name, the entry is reported as Conflict and nothing is created for it,
-    because the role assignment script could not tell which group is meant. -WhatIf changes nothing.
+    because the role assignment script could not tell which group is meant. The same holds for one group of that name that is not a security
+    group (a Microsoft 365 group or a distribution list): it cannot take the role assignments. -WhatIf changes nothing.
 
     The script reads Microsoft Entra ID and writes only with New-MgGroup, behind -WhatIf. It does not sign in: run Connect-MgGraph to the tenant
     in azure.tenant_id first, with the scope Group.ReadWrite.All (or Group.Create). The group object ids are written to the result, not to the
@@ -88,7 +89,7 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $rawGroups = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.entra.groups'
-$entries = @(@($rawGroups) | Where-Object { $_ -is [System.Collections.IDictionary] })
+$entries = @(@($rawGroups) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawGroups)) { Exit-InputProblem 'An entry of identity.entra.groups is not a map (names with their settings).' } })
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($entries.Count -eq 0) { Exit-InputProblem 'identity.entra.groups is empty. List the groups to create, each with a name.' }
@@ -128,6 +129,13 @@ $results = foreach ($item in $plan) {
         if ($found.Count -gt 1) {
             $row.Action = 'Conflict'
             $row.Detail = "$($found.Count) groups already have this display name; nothing was created. Remove or rename the extra groups, then run again."
+            Write-Warning "$($item.Name): $($row.Detail)"
+        }
+        elseif ($found.Count -eq 1 -and $found[0].PSObject.Properties['SecurityEnabled'] -and $found[0].SecurityEnabled -eq $false) {
+            # A group of this name that is not a security group (a Microsoft 365 group or a distribution list) cannot take the Azure role
+            # assignments of this task, and a second group of the same name would make the role assignment script unable to tell them apart.
+            $row.Action = 'Conflict'; $row.Id = [string]$found[0].Id
+            $row.Detail = 'A group with this display name already exists, but it is not a security group; nothing was created. Rename that group or choose another name, then run again.'
             Write-Warning "$($item.Name): $($row.Detail)"
         }
         elseif ($found.Count -eq 1) {

@@ -257,10 +257,29 @@ Describe 'New-EntraSecurityGroups.azcli.ps1' {
         $global:AzlK6Responder = {
             param($Line)
             if ($Line -like 'account show*') { return $global:AzlK6Tenant }
-            if ($Line -like 'ad group list*grp-iic-azl-readers*') { return (@($global:AzlK6GroupA) | ConvertTo-Json -Compress -AsArray) }
+            if ($Line -like 'ad group list*grp-iic-azl-readers*') { return (@([ordered]@{ id = $global:AzlK6GroupA; securityEnabled = $true }) | ConvertTo-Json -Compress -AsArray) }
             if ($Line -like 'ad group list*') { return '[]' }
             if ($Line -like 'ad group create*') { return [guid]::NewGuid().ToString() }
         }
+    }
+
+    It 'returns the object id of a group that exists' {
+        $r = Invoke-Tool $script:Groups (New-InfraFile -EntraGroups $script:GroupsInFile)
+        ($r.Rows[0].Groups | Where-Object Name -EQ 'grp-iic-azl-readers').Id | Should -Be $global:AzlK6GroupA
+    }
+
+    It 'reports one group of the name that is not a security group (a Microsoft 365 group) as a conflict, creates nothing for it and ends with exit code 1' {
+        $global:AzlK6Responder = {
+            param($Line)
+            if ($Line -like 'account show*') { return $global:AzlK6Tenant }
+            if ($Line -like 'ad group list*') { return (@([ordered]@{ id = $global:AzlK6GroupA; securityEnabled = $false }) | ConvertTo-Json -Compress -AsArray) }
+        }
+        $r = Invoke-Tool $script:Groups (New-InfraFile -EntraGroups @($script:GroupsInFile[0]))
+        $r.ExitCode | Should -Be 1
+        $r.Rows[0].Conflict | Should -Be 1
+        $r.Text | Should -Match 'not a security group'
+        (Get-Call 'ad group create').Count | Should -Be 0
+        (Get-Call '^ad group list .*--query \[\]\.\{id:id,securityEnabled:securityEnabled\}').Count | Should -Be 1
     }
 
     It 'creates only the groups that are missing, as security groups with a mail nickname and the purpose as description' {
@@ -285,7 +304,7 @@ Describe 'New-EntraSecurityGroups.azcli.ps1' {
         $global:AzlK6Responder = {
             param($Line)
             if ($Line -like 'account show*') { return $global:AzlK6Tenant }
-            if ($Line -like 'ad group list*') { return (@([guid]::NewGuid().ToString(), [guid]::NewGuid().ToString()) | ConvertTo-Json -Compress) }
+            if ($Line -like 'ad group list*') { return (@([ordered]@{ id = [guid]::NewGuid().ToString(); securityEnabled = $true }, [ordered]@{ id = [guid]::NewGuid().ToString(); securityEnabled = $true }) | ConvertTo-Json -Compress) }
         }
         $r = Invoke-Tool $script:Groups (New-InfraFile -EntraGroups @($script:GroupsInFile[0]))
         $r.ExitCode | Should -Be 1
