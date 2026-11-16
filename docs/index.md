@@ -9,7 +9,7 @@ Primary automation repository for Azure Local deployment, configuration, validat
 ## What This Repo Contains
 
 - Deployment and validation scripts across the full lifecycle
-- Infrastructure-as-code sources for Terraform, Bicep, ARM templates, and Ansible
+- Infrastructure-as-code sources for Terraform and Ansible, and the ARM parameter map and examples for Microsoft's Azure Local quickstart template
 - CI/CD pipeline samples for GitHub Actions and Azure DevOps
 - Config-driven variable handling and schema assets
 

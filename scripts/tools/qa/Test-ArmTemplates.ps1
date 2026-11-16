@@ -7,9 +7,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 if (-not $Path) {
-    $Path = Join-Path $repoRoot 'src\arm-templates'
+    # The toolkit carries no ARM template of its own: the cluster template is Microsoft's quickstart template, downloaded at
+    # run time, and config/azure/arm-templates holds only parameter maps and examples. Pass -Path to check a template folder.
+    Write-Host 'No ARM template folder in the toolkit; pass -Path to check one. Skipping.' -ForegroundColor Yellow
+    return [PSCustomObject]@{
+        Path = $null
+        TemplatesChecked = 0
+        Status = 'Skipped'
+    }
 }
 
 if (-not (Test-Path $Path)) {

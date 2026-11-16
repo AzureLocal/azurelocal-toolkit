@@ -9,8 +9,8 @@ The QA scripts target the main automation surfaces in this repo:
 - PowerShell under `scripts/`
 - Terraform under `src/terraform/`
 - Ansible under `src/ansible/`
-- Bicep under `src/bicep/`
-- ARM templates under `src/arm-templates/`
+- Bicep files anywhere under `src/` (the toolkit has none today; the check skips cleanly)
+- ARM templates in a folder you name with `-Path` (the toolkit carries no ARM template of its own: the cluster template is Microsoft's quickstart template, downloaded at run time)
 - Variable registry and variable files under `config/variables/`
 
 ## Files in this folder
@@ -23,7 +23,7 @@ The QA scripts target the main automation surfaces in this repo:
 | `Test-TerraformCode.ps1` | Runs `terraform fmt -check` and `terraform validate` across Terraform directories | Cleans temporary `.terraform` state it creates during validation |
 | `Test-AnsibleCode.ps1` | Runs full Ansible QA when available, or a Basic YAML/import validation fallback | Supports `Native`, `WSL`, or `Basic` execution modes |
 | `Test-BicepCode.ps1` | Runs `az bicep build` and `az bicep lint` | Skips cleanly if no `.bicep` files exist |
-| `Test-ArmTemplates.ps1` | Runs ARM TTK validation against ARM template JSON files | Skips cleanly if no ARM templates exist |
+| `Test-ArmTemplates.ps1` | Runs ARM TTK validation against ARM template JSON files | Skips cleanly without `-Path` or if no ARM templates exist |
 | `config/variables/scripts/validate-registry.ps1` | Lives with the variable files, not in this folder. Checks the structure of the master registry | Pair it with `scripts/common/infrastructure/Test-InfrastructureFile.ps1` for an infrastructure file |
 
 ## Recommended start point
@@ -108,7 +108,7 @@ Runs Azure CLI Bicep build and lint checks against every `.bicep` file.
 
 Important parameters:
 
-- `-Path` overrides the Bicep root.
+- `-Path` overrides the Bicep root (default: `src/`).
 
 Example:
 
@@ -122,12 +122,12 @@ Runs ARM TTK against ARM template JSON files, excluding parameter files.
 
 Important parameters:
 
-- `-Path` overrides the ARM template root.
+- `-Path` names the ARM template folder. Without it the script skips: the toolkit has no ARM template folder of its own.
 
 Example:
 
 ```powershell
-pwsh -File .\scripts\tools\qa\Test-ArmTemplates.ps1
+pwsh -File .\scripts\tools\qa\Test-ArmTemplates.ps1 -Path <folder with ARM template JSON files>
 ```
 
 ### Test-VariableConfig.ps1

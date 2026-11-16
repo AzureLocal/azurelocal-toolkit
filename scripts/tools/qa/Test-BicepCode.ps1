@@ -9,7 +9,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 if (-not $Path) {
-    $Path = Join-Path $repoRoot 'src\bicep'
+    # The toolkit keeps no Bicep folder of its own; by default every .bicep file under src is checked.
+    $Path = Join-Path $repoRoot 'src'
 }
 
 if (-not (Test-Path $Path)) {
