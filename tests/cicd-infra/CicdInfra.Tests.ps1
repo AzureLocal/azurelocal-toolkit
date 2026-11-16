@@ -460,14 +460,17 @@ Describe 'Task scripts' {
         $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
         @($names | Where-Object { $_ -match '(?i)token|secret|password|pat$' }) | Should -BeNullOrEmpty
     }
-    It 'has one script for each of the six tasks, and no Orchestrated wrapper or Azure CLI copy of it' {
+    It 'has one script for each of the six tasks, and no Orchestrated wrapper, and an Azure CLI script only for task 01' {
         $dirs = Get-ChildItem -Path $script:TaskRoot -Directory
         $dirs.Count | Should -Be 6
         foreach ($d in $dirs) {
             @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*.ps1').Count | Should -Be 1
             @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*-Orchestrated.ps1').Count | Should -Be 0
+            # Task 01 has one Azure CLI script of its own (New-CicdBootstrap.azcli.ps1: the app registration, the roles and the registrations are Azure work);
+            # the other tasks act on the CI/CD platform or run Terraform, and have none.
             $az = Join-Path $d.FullName 'azurecli'
-            if (Test-Path -LiteralPath $az) { @(Get-ChildItem $az -Filter '*.ps1').Count | Should -Be 0 }
+            $expectedAzureCli = if ($d.Name -eq 'task-01-bootstrap') { 1 } else { 0 }
+            if (Test-Path -LiteralPath $az) { @(Get-ChildItem $az -Filter '*.ps1').Count | Should -Be $expectedAzureCli }
         }
     }
     It '<Name> takes a mandatory -InfrastructureFile and no ConfigPath, default path, environment variable, CONFIGURATION region or prompt' -ForEach $script:Scripts {
