@@ -159,6 +159,14 @@ Describe 'Set-ManagementGroupDisplayNames.ps1' {
             $r.Text | Should -Match 'azure.tenant_id'
         }
 
+        It 'refuses an entry that is not a map, instead of skipping it' {
+            $r = Invoke-Rename (New-InfraFile @((New-MgEntry 'mg-platform' 'Platform'), 'mg-workloads'))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'is not a map'
+            Should -Invoke Get-AzContext -Times 0 -Exactly
+            Should -Invoke Update-AzManagementGroup -Times 0 -Exactly
+        }
+
         It 'refuses an entry with no name' {
             $r = Invoke-Rename (New-InfraFile @(, ([ordered]@{ display_name = 'No id' })))
             $r.ExitCode | Should -Be 2
