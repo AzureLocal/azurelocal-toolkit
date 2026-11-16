@@ -95,11 +95,11 @@ Describe 'Deploy-VpnGateway.ps1' {
     }
 
     Context 'creating the gateway (happy path)' {
-        It 'creates a zone-redundant Standard static public IP address and the gateway, from the file' {
+        It 'creates a Standard static public IP address without zones and the gateway, from the file' {
             $r = Invoke-Gateway (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Result.Action | Should -Be 'Created'
-            Should -Invoke New-AzPublicIpAddress -Times 1 -Exactly -ParameterFilter { $Name -eq 'vpng-hub-01-pip' -and $ResourceGroupName -eq 'rg-conn-01' -and $Location -eq 'westus2' -and $Sku -eq 'Standard' -and $AllocationMethod -eq 'Static' -and ($Zone -join ',') -eq '1,2,3' }
+            Should -Invoke New-AzPublicIpAddress -Times 1 -Exactly -ParameterFilter { $Name -eq 'vpng-hub-01-pip' -and $ResourceGroupName -eq 'rg-conn-01' -and $Location -eq 'westus2' -and $Sku -eq 'Standard' -and $AllocationMethod -eq 'Static' -and -not $Zone }
             Should -Invoke New-AzVirtualNetworkGateway -Times 1 -Exactly -ParameterFilter { $Name -eq 'vpng-hub-01' -and $ResourceGroupName -eq 'rg-conn-01' -and $GatewayType -eq 'Vpn' -and $VpnType -eq 'RouteBased' -and $GatewaySku -eq 'VpnGw2AZ' -and $EnableBgp -and $Asn -eq 65010 }
             $r.Text | Should -Match 'Gateway public IP address: 203\.0\.113\.10'
         }

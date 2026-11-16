@@ -56,11 +56,12 @@ Describe 'Deploy-VpnGateway.azcli.ps1' {
     }
 
     Context 'creating the gateway (happy path)' {
-        It 'creates a zone-redundant Standard static public IP address and the gateway, from the file' {
+        It 'creates a Standard static public IP address without zones and the gateway, from the file' {
             $r = Invoke-AzCliScript $script:Script (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Action | Should -Be 'Created'
-            Get-AzCall "network public-ip create --name vpng-hub-01-pip --resource-group rg-conn-01 --location westus2 --subscription $($global:AzlVpnSub) --sku Standard --allocation-method Static --zone 1 2 3" | Should -HaveCount 1
+            Get-AzCall "network public-ip create --name vpng-hub-01-pip --resource-group rg-conn-01 --location westus2 --subscription $($global:AzlVpnSub) --sku Standard --allocation-method Static" | Should -HaveCount 1
+            Get-AzCall 'network public-ip create *--zone*' | Should -HaveCount 0
             Get-AzCall "network vnet-gateway create --name vpng-hub-01 --resource-group rg-conn-01 --location westus2 --subscription $($global:AzlVpnSub) --vnet /vnets/vnet-hub-01 --public-ip-address vpng-hub-01-pip --gateway-type Vpn --vpn-type RouteBased --sku VpnGw2AZ --vpn-gateway-generation Generation2 --asn 65010" | Should -HaveCount 1
         }
 

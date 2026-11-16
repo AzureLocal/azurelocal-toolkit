@@ -246,8 +246,10 @@ try {
         try { $pip = Get-AzCliResource network public-ip show --name $publicIpName --resource-group $gatewayGroup --subscription $subscriptionId }
         catch { Exit-Failed "The public IP address '$publicIpName' could not be read: $($_.Exception.Message)" }
         $createPip = -not $pip
-        if ($createPip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$gatewayGroup'", 'Create a Standard, static, zone-redundant public IP address')) {
-            $pipArgs = @('network', 'public-ip', 'create', '--name', $publicIpName, '--resource-group', $gatewayGroup, '--location', $location, '--subscription', $subscriptionId, '--sku', 'Standard', '--allocation-method', 'Static', '--zone', '1', '2', '3')
+        # No --zone is given: a Standard public IP address without zones is zone-redundant in a region that has availability zones and
+        # regional in one that does not (Microsoft Learn: Public IP addresses, Availability Zone), so the same call works in every region.
+        if ($createPip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$gatewayGroup'", 'Create a Standard, static public IP address (zone-redundant where the region has zones)')) {
+            $pipArgs = @('network', 'public-ip', 'create', '--name', $publicIpName, '--resource-group', $gatewayGroup, '--location', $location, '--subscription', $subscriptionId, '--sku', 'Standard', '--allocation-method', 'Static')
             $pipArgs += @(Get-TagArgument)
             $pip = Invoke-AzJson @pipArgs
             Write-Line "[created] Public IP address '$publicIpName'."
