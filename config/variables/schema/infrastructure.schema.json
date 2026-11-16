@@ -2449,6 +2449,11 @@
               "type": "boolean",
               "default": false
             },
+            "create_parent_ous": {
+              "description": "Schema 5.6.28. Whether Set-ADConfiguration.ps1 creates the parent OUs of ou_path that are missing, from the domain down, before it runs New-HciAdObjectsPreCreation. Microsoft's cmdlet creates only the OU itself and stops when its parent does not exist; Microsoft Learn (Prepare Active Directory for Azure Local deployment, Considerations for large scale deployments) recommends one OU per instance under a single parent OU. A parent that exists is never changed, and no group policy setting is made on a parent it creates. Default false: a missing parent stops the script with exit code 1 and nothing is created.",
+              "type": "boolean",
+              "default": false
+            },
             "forest_functional_level": {
               "description": "Schema 5.6.28. Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry with role domain_controller and dc_promotion new_forest); ignored for a replica. WinThreshold is the Windows Server 2016 level: the highest a Windows Server 2022 domain controller supports and the lowest a new forest may have. Win2025 needs every domain controller on Windows Server 2025 (Microsoft Learn: Active Directory Domain Services functional levels, https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels).",
               "type": "string",
@@ -3397,7 +3402,7 @@
               "type": "boolean"
             },
             "log_analytics_workspace": {
-              "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it.",
+              "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it: Enable-HciInsights.ps1 stops when the rule sends to no workspace of this name in operations.monitoring.workspace_resource_group.",
               "type": "string"
             },
             "workspace_resource_group": {
@@ -3412,7 +3417,7 @@
               "maximum": 730
             },
             "data_collection_rule": {
-              "description": "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates.",
+              "description": "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group, checks (read only) that it collects what Microsoft Learn lists for Insights (the five performance counters and the event log channels Microsoft-Windows-Health/Operational and Microsoft-Windows-SDDC-Management/Operational) and sends to a Log Analytics workspace (operations.monitoring.log_analytics_workspace when set), and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates.",
               "type": "string"
             },
             "data_collection_endpoint": {

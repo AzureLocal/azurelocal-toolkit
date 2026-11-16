@@ -1077,6 +1077,9 @@ identity:
     # default: false; used by: deployment, ansible
     precreate_computer_objects: false
     # (since 5.6.28) 
+    # default: false; used by: deployment
+    create_parent_ous: false
+    # (since 5.6.28) 
     # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
     forest_functional_level: "WinThreshold"
     # (since 5.6.28) 

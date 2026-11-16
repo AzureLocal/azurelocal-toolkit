@@ -1336,7 +1336,7 @@
               "type": "boolean"
             },
             "log_analytics_workspace": {
-              "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it.",
+              "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it: Enable-HciInsights.ps1 stops when the rule sends to no workspace of this name in operations.monitoring.workspace_resource_group.",
               "type": "string"
             },
             "workspace_resource_group": {
@@ -1344,7 +1344,7 @@
               "description": "Resource group of the Log Analytics workspace. It is also the resource group of the data collection endpoint and of the action group that the monitoring scripts create and of the Insights data collection rule that Enable-HciInsights.ps1 looks up."
             },
             "data_collection_rule": {
-              "description": "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates.",
+              "description": "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group, checks (read only) that it collects what Microsoft Learn lists for Insights (the five performance counters and the event log channels Microsoft-Windows-Health/Operational and Microsoft-Windows-SDDC-Management/Operational) and sends to a Log Analytics workspace (operations.monitoring.log_analytics_workspace when set), and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates.",
               "type": "string"
             },
             "data_collection_endpoint": {

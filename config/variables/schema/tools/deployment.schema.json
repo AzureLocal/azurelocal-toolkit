@@ -1307,6 +1307,11 @@
               "description": "Schema 5.6.23. Whether Set-ADConfiguration.ps1 creates the computer objects of the machines (nodes[].name) and of the cluster (cluster.name) in the OU before the deployment. Microsoft Learn allows this instead of letting the deployment create them (Custom Active Directory configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled. Default false: the domain join of the OS configuration and the deployment create the objects.",
               "type": "boolean",
               "default": false
+            },
+            "create_parent_ous": {
+              "description": "Schema 5.6.28. Whether Set-ADConfiguration.ps1 creates the parent OUs of ou_path that are missing, from the domain down, before it runs New-HciAdObjectsPreCreation. Microsoft's cmdlet creates only the OU itself and stops when its parent does not exist; Microsoft Learn (Prepare Active Directory for Azure Local deployment, Considerations for large scale deployments) recommends one OU per instance under a single parent OU. A parent that exists is never changed, and no group policy setting is made on a parent it creates. Default false: a missing parent stops the script with exit code 1 and nothing is created.",
+              "type": "boolean",
+              "default": false
             }
           }
         }
