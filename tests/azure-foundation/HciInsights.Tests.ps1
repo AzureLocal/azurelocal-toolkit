@@ -26,6 +26,20 @@ BeforeAll {
     $global:AzlInsTestSub = [guid]::NewGuid().ToString()
     $global:AzlInsTestHome = [guid]::NewGuid().ToString()
 
+    # A rule as Get-AzDataCollectionRule (Az.Monitor) returns it, with what Learn lists for Insights unless the test takes something out.
+    $global:AzlInsTestCounters = @('\Memory(*)\Available Bytes', '\Network Interface(*)\Bytes Total/sec', '\Processor(_Total)\% Processor Time', '\RDMA Activity(*)\RDMA Inbound Bytes/sec', '\RDMA Activity(*)\RDMA Outbound Bytes/sec')
+    $global:AzlInsTestQueries = @('Microsoft-Windows-SDDC-Management/Operational!*[System[(EventID=3000 or EventID=3001 or EventID=3002 or EventID=3003 or EventID=3004)]]', 'microsoft-windows-health/operational!*')
+    function New-InsightsRule([string]$Name, [string]$Group, [string]$Subscription, [string[]]$Counters = $global:AzlInsTestCounters, [string[]]$Queries = $global:AzlInsTestQueries, [string[]]$Workspaces = @("/subscriptions/$Subscription/resourceGroups/rg-mgmt-01/providers/Microsoft.OperationalInsights/workspaces/log-azl-01")) {
+        [pscustomobject]@{
+            Name                         = $Name
+            Location                     = 'westus2'
+            Id                           = "/subscriptions/$Subscription/resourceGroups/$Group/providers/Microsoft.Insights/dataCollectionRules/$Name"
+            DataSourcePerformanceCounter = @([pscustomobject]@{ Name = 'perfCounters'; CounterSpecifier = $Counters; SamplingFrequencyInSecond = 10 })
+            DataSourceWindowsEventLog    = @([pscustomobject]@{ Name = 'events'; XPathQuery = $Queries })
+            DestinationLogAnalytic       = @($Workspaces | ForEach-Object { [pscustomobject]@{ Name = 'la'; WorkspaceResourceId = $_ } })
+        }
+    }
+
     function New-InfraFile {
         param([object]$Monitoring = (New-Monitoring), [object]$Nodes = @(@{ name = 'iic-azl-n01' }, @{ name = 'iic-azl-n02'; arc_machine_name = 'iic-arc-n02' }), [object]$TenantId = $global:AzlInsTestTenant, [object]$SubscriptionId = $global:AzlInsTestSub,
             [string]$Group = 'rg-azl-01', [string]$Cluster = 'iic-azl-01')
@@ -62,14 +76,14 @@ BeforeAll {
 
 Describe 'Enable-HciInsights.ps1' {
     AfterAll {
-        Remove-Variable -Name AzlInsTestTenant, AzlInsTestSub, AzlInsTestHome -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzlInsTestTenant, AzlInsTestSub, AzlInsTestHome, AzlInsTestCounters, AzlInsTestQueries, AzlInsCaseCounters, AzlInsCaseQueries -Scope Global -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
         Mock Get-AzContext { [pscustomobject]@{ Tenant = [pscustomobject]@{ Id = $global:AzlInsTestTenant }; Subscription = [pscustomobject]@{ Id = $global:AzlInsTestHome } } }
         Mock Set-AzContext { }
         Mock Get-AzStackHciExtension { [pscustomobject]@{ Name = $Name; ProvisioningState = 'Succeeded' } }
-        Mock Get-AzDataCollectionRule { [pscustomobject]@{ Name = $Name; Location = 'westus2'; Id = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Insights/dataCollectionRules/$Name" } }
+        Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId }
         Mock Get-AzDataCollectionRuleAssociation { @() }
         Mock New-AzDataCollectionRuleAssociation { [pscustomobject]@{ Name = $AssociationName } }
     }
@@ -118,6 +132,58 @@ Describe 'Enable-HciInsights.ps1' {
             Mock Get-AzDataCollectionRule { $null }
             (Invoke-Insights (New-InfraFile)).ExitCode | Should -Be 1
             Should -Invoke New-AzDataCollectionRuleAssociation -Times 0 -Exactly
+        }
+    }
+
+    Context 'the rule lacks what Insights needs (Learn: Monitor a single Azure Local system with Insights, Data collection rules)' {
+        It 'stops with exit 1 and associates nothing when <Why>' -ForEach @(
+            @{ Why = 'an RDMA counter is missing'; Counters = @('\Memory(*)\Available Bytes', '\Network Interface(*)\Bytes Total/sec', '\Processor(_Total)\% Processor Time', '\RDMA Activity(*)\RDMA Inbound Bytes/sec'); Expect = 'RDMA Outbound Bytes/sec' }
+            @{ Why = 'no counter is collected'; Counters = @(); Expect = 'Memory\\Available Bytes' }
+            @{ Why = 'the health channel is missing'; Queries = @('Microsoft-Windows-SDDC-Management/Operational!*'); Expect = 'Microsoft-Windows-Health/Operational' }
+            @{ Why = 'the SDDC channel is missing'; Queries = @('Microsoft-Windows-Health/Operational!*', 'System!*'); Expect = 'Microsoft-Windows-SDDC-Management/Operational' }
+        ) {
+            $global:AzlInsCaseCounters = if ($_.ContainsKey('Counters')) { [string[]]@($_.Counters) } else { $global:AzlInsTestCounters }
+            $global:AzlInsCaseQueries = if ($_.ContainsKey('Queries')) { [string[]]@($_.Queries) } else { $global:AzlInsTestQueries }
+            Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId -Counters $global:AzlInsCaseCounters -Queries $global:AzlInsCaseQueries }
+            $r = Invoke-Insights (New-InfraFile)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match $Expect
+            $r.Text | Should -Match 'Update'
+            Should -Invoke New-AzDataCollectionRuleAssociation -Times 0 -Exactly
+            Should -Invoke Get-AzDataCollectionRuleAssociation -Times 0 -Exactly
+        }
+
+        It 'stops under -WhatIf too, so the plan does not promise an association that would not give data' {
+            Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId -Counters @() }
+            (Invoke-Insights (New-InfraFile) -DryRun).ExitCode | Should -Be 1
+        }
+
+        It 'stops when the rule sends to no workspace, or to another workspace than the file names' {
+            Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId -Workspaces @() }
+            $r = Invoke-Insights (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match 'no Log Analytics workspace'
+            Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId -Workspaces @("/subscriptions/$SubscriptionId/resourceGroups/rg-mgmt-01/providers/Microsoft.OperationalInsights/workspaces/log-other") }
+            $r = Invoke-Insights (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match "log-other, not to the workspace 'log-azl-01'"
+            Should -Invoke New-AzDataCollectionRuleAssociation -Times 0 -Exactly
+        }
+
+        It 'takes any workspace when the file names none, and matches names and counters without regard to case or instance' {
+            Mock Get-AzDataCollectionRule { New-InsightsRule -Name $Name -Group $ResourceGroupName -Subscription $SubscriptionId -Workspaces @('/subscriptions/x/resourcegroups/rg-elsewhere/providers/microsoft.operationalinsights/workspaces/LOG-ANY') `
+                    -Counters @('Memory\Available Bytes', '\Network Interface(Ethernet 1)\Bytes Total/sec', '\Processor(*)\% Processor Time', '\rdma activity(*)\rdma inbound bytes/sec', '\RDMA Activity(*)\RDMA Outbound Bytes/sec') }
+            $r = Invoke-Insights (New-InfraFile -Monitoring (New-Monitoring @{ log_analytics_workspace = $null }))
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke New-AzDataCollectionRuleAssociation -Times 2 -Exactly
+        }
+
+        It 'reads a rule that has no data source or destination property at all without a strict-mode error' {
+            Mock Get-AzDataCollectionRule { [pscustomobject]@{ Name = $Name; Id = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Insights/dataCollectionRules/$Name" } }
+            $r = Invoke-Insights (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match 'not ready for Insights'
+            $r.Text | Should -Not -Match 'cannot be found on this object|PropertyNotFound'
         }
     }
 
@@ -270,8 +336,17 @@ Describe 'Enable-HciInsights.ps1' {
             [regex]::Matches($script:Text, '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}').Count | Should -Be 0
         }
 
-        It 'never creates or changes a rule and carries no stream, counter or event list' {
-            $script:Text | Should -Not -Match 'New-AzDataCollectionRule\b|Set-AzDataCollectionRule|Update-AzDataCollectionRule|Remove-AzDataCollectionRule|New-AzDataFlowObject|New-AzPerfCounter|New-AzWindowsEventLog|Microsoft-Perf|Microsoft-Event|RDMA|SamplingFrequency'
+        It 'never creates or changes a rule and builds no stream or data flow (it only reads the counters and channels Learn lists)' {
+            $script:Text | Should -Not -Match 'New-AzDataCollectionRule\b|Set-AzDataCollectionRule|Update-AzDataCollectionRule|Remove-AzDataCollectionRule|New-AzDataFlowObject|New-AzPerfCounter|New-AzWindowsEventLog|Microsoft-Perf|Microsoft-Event|SamplingFrequency'
+        }
+
+        It 'lists the five counters and two channels of Learn, and nothing more' {
+            foreach ($item in 'Memory', 'Network Interface', 'Processor', 'RDMA Inbound Bytes/sec', 'RDMA Outbound Bytes/sec', 'Microsoft-Windows-Health/Operational', 'Microsoft-Windows-SDDC-Management/Operational') {
+                $script:Text | Should -Match ([regex]::Escape($item))
+            }
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Script, [ref]$null, [ref]$null)
+            $counters = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$InsightsCounters' }, $true)
+            $counters.Right.Extent.Text.Split("`n").Where({ $_ -match '^\s*''.+''\s*=' }).Count | Should -Be 5
         }
 
         It 'does nothing outside Learn: no workbook, no solution, no legacy agent, no syslog, no Sentinel, no Linux, no cluster remoting, no Key Vault' {

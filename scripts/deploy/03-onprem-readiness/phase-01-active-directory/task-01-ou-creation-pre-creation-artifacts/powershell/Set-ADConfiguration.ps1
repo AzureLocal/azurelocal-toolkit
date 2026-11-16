@@ -12,6 +12,15 @@
     The LCM user name and the OU are the keys of the file; the password is read through the secret resolver
     (scripts/common/secrets/AzlSecret.psm1) from the reference in identity.active_directory.lcm_user.password, in memory only.
 
+    Microsoft's cmdlet creates only the OU itself, inside a parent that must already exist (it checks the parent first and stops when it is
+    missing). Learn recommends one OU per instance under a single parent OU when many instances are deployed. So before the cmdlet runs, the
+    script checks every parent OU of identity.active_directory.ou_path, from the domain down. When one is missing:
+        identity.active_directory.create_parent_ous true     the missing parent OUs are created, top-down, with New-ADOrganizationalUnit
+                                                              (protected from accidental deletion, the cmdlet's default); nothing else is set
+                                                              on them (no group policy change)
+        false or not set (default)                            the script stops with exit 1, names the first missing parent and changes nothing
+    A parent OU that exists is never changed.
+
     When identity.active_directory.precreate_computer_objects is true, the script also creates a computer object for each machine (nodes[].name)
     and the cluster (cluster.name) in the OU, as Microsoft Learn allows instead of letting the deployment create them (Custom Active Directory
     configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled, as that page says.
@@ -29,12 +38,14 @@
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         scenario.identity
-        identity.active_directory.domain_fqdn, .ou_path, .lcm_user.username, .lcm_user.password, .precreate_computer_objects
+        identity.active_directory.domain_fqdn, .ou_path, .lcm_user.username, .lcm_user.password, .precreate_computer_objects,
+        .create_parent_ous
         cluster.name, nodes[].name                  (only with precreate_computer_objects)
 
     Exit codes: 0 the OU, the user (and the objects) are in place (created now, already there, or planned under -WhatIf); 1 a precondition or a
-    call failed (module missing, domain not reachable, a half-made preparation, the secret could not be read); 2 a value in the file is missing
-    or not usable (no domain, an OU that is not in the domain, a user name Microsoft does not allow, no password reference).
+    call failed (module missing, domain not reachable, a half-made preparation, a parent OU missing and not to be created, the secret could not
+    be read); 2 a value in the file is missing or not usable (no domain, an OU that is not in the domain or not inside OUs, a user name
+    Microsoft does not allow, no password reference).
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
@@ -54,6 +65,12 @@
     ./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml
 
     Creates the OU and the LCM user. Run it again: both are reported as AlreadyExists.
+
+.EXAMPLE
+    # infrastructure.yml: identity.active_directory.ou_path OU=azl-01,OU=AzureLocal,DC=contoso,DC=com and create_parent_ous: true
+    ./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+    Shows that OU=AzureLocal would be created first when it is missing, then the OU and the LCM user.
 #>
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
@@ -114,6 +131,25 @@ if ($lcmName -ieq 'admin') { Exit-InputProblem "identity.active_directory.lcm_us
 if (-not $lcmReference) { Exit-InputProblem 'identity.active_directory.lcm_user.password is missing. It is the secret reference of the deployment user''s password.' }
 if ($precreate.Trim().ToLowerInvariant() -notin 'true', 'false') { Exit-InputProblem "identity.active_directory.precreate_computer_objects '$precreate' is not true or false." }
 $precreateObjects = $precreate.Trim().ToLowerInvariant() -eq 'true'
+$createParentsText = [string](Get-Field $directory 'create_parent_ous' 'false')
+if ($createParentsText.Trim().ToLowerInvariant() -notin 'true', 'false') { Exit-InputProblem "identity.active_directory.create_parent_ous '$createParentsText' is not true or false." }
+$createParents = $createParentsText.Trim().ToLowerInvariant() -eq 'true'
+
+# The parent OUs of ou_path, from the domain down. A distinguished name is split at commas that are not escaped: a comma after an even number
+# of backslashes (none, or escaped backslashes such as \\) separates two parts. An OU sits in the domain or in another OU, so every part
+# between the OU and the first DC= is an OU, and every part after it is a DC=.
+$parts = @([regex]::Split($ouPath, '(?<=(?:^|[^\\])(?:\\\\)*),') | ForEach-Object { $_.Trim() })
+$firstDc = [Array]::FindIndex([string[]]$parts, [Predicate[string]] { param($p) $p -match '^DC=' })
+if ($firstDc -lt 1 -or @($parts[$firstDc..($parts.Count - 1)] | Where-Object { $_ -notmatch '^DC=' }).Count -gt 0) {
+    Exit-InputProblem "identity.active_directory.ou_path '$ouPath' is not an OU inside the domain (OU=...,DC=...)."
+}
+$parentOus = [System.Collections.Generic.List[object]]::new()
+for ($i = $firstDc - 1; $i -ge 1; $i--) {
+    if ($parts[$i] -notmatch '^OU=(?<name>.+)$') { Exit-InputProblem "identity.active_directory.ou_path '$ouPath' has '$($parts[$i])' above the OU: an OU can only sit in the domain or in another OU." }
+    # the name as Active Directory takes it: the escapes of the distinguished name (RFC 4514: \ before a character, or \ and two hex digits) undone
+    $name = [regex]::Replace($Matches['name'], '\\([0-9A-Fa-f]{2}|.)', { param($m) $v = $m.Groups[1].Value; if ($v.Length -eq 2) { [string][char][Convert]::ToInt32($v, 16) } else { $v } })
+    $parentOus.Add([pscustomobject]@{ Dn = ($parts[$i..($parts.Count - 1)] -join ','); Name = $name; ParentDn = ($parts[($i + 1)..($parts.Count - 1)] -join ',') })
+}
 
 $objectNames = [System.Collections.Generic.List[object]]::new()
 if ($precreateObjects) {
@@ -129,6 +165,7 @@ if ($precreateObjects) {
 # ---- preconditions (read only)
 $needed = @('Get-ADOrganizationalUnit', 'Get-ADUser', 'New-HciAdObjectsPreCreation')
 if ($precreateObjects) { $needed += 'Get-ADComputer', 'New-ADComputer' }
+if ($createParents -and $parentOus.Count -gt 0) { $needed += 'New-ADOrganizationalUnit' }
 foreach ($cmd in $needed) {
     if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) {
         $hint = if ($cmd -eq 'New-HciAdObjectsPreCreation') { 'Install the module: Install-Module AsHciADArtifactsPreCreationTool -Repository PSGallery.' } else { 'Install the ActiveDirectory module (Remote Server Administration Tools) or run the script on a domain controller.' }
@@ -162,25 +199,54 @@ elseif ($ouExists -or $userExists) {
     $what = if ($ouExists) { "The OU '$ouPath' exists and the user '$lcmName' does not" } else { "The user '$lcmName' exists and the OU '$ouPath' does not" }
     Add-Row "OU $ouPath / LCM user $lcmName" 'Failed' "$what. New-HciAdObjectsPreCreation creates both, so the script stops: finish or undo the earlier preparation by hand, then run it again."
 }
-elseif ($PSCmdlet.ShouldProcess("domain $domain", "Create the OU '$ouPath' and the LCM user '$lcmName' (New-HciAdObjectsPreCreation)")) {
-    $secure = $null
-    try { $secure = Get-AzlSecretValue -Reference $lcmReference -Infrastructure $infra }
-    catch {
-        $code = if ($_.Exception.Data.Contains('AzlExit')) { [int]$_.Exception.Data['AzlExit'] } else { 1 }
-        if ($code -eq 2) { Exit-InputProblem "identity.active_directory.lcm_user.password: $($_.Exception.Message)" }
-        Exit-Failed "The password of the LCM user could not be read: $($_.Exception.Message)"
-    }
-    try {
-        $lcmCredential = [pscredential]::new($lcmName, $secure)
-        New-HciAdObjectsPreCreation -AzureStackLCMUserCredential $lcmCredential -AsHciOUName $ouPath
-        Add-Row "OU $ouPath" 'Created'
-        Add-Row "LCM user $lcmName" 'Created'
-    }
-    catch { Add-Row "OU $ouPath / LCM user $lcmName" 'Failed' $_.Exception.Message }
-}
 else {
-    Add-Row "OU $ouPath" 'WouldCreate'
-    Add-Row "LCM user $lcmName" 'WouldCreate'
+    # ---- the parent OUs: Microsoft's cmdlet needs the parent of the OU to exist. Read from the domain down; below a missing one, none exists.
+    $missingParents = [System.Collections.Generic.List[object]]::new()
+    try {
+        foreach ($parent in $parentOus) {
+            if ($missingParents.Count -gt 0 -or -not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$($parent.Dn.Replace("'", "''"))'" @adCommon)) { $missingParents.Add($parent) }
+        }
+    }
+    catch { Exit-Failed "The parent OUs of '$ouPath' could not be read in the domain ${domain}: $($_.Exception.Message)" }
+
+    if ($missingParents.Count -gt 0 -and -not $createParents) {
+        Add-Row "parent OU $($missingParents[0].Dn)" 'Failed' "It does not exist, and New-HciAdObjectsPreCreation creates the OU only inside a parent that exists. Create the parent OU by hand, or set identity.active_directory.create_parent_ous to true, then run the script again."
+    }
+    else {
+        foreach ($parent in $missingParents) {
+            if ($PSCmdlet.ShouldProcess("domain $domain", "Create the parent OU '$($parent.Dn)'")) {
+                try {
+                    New-ADOrganizationalUnit -Name $parent.Name -Path $parent.ParentDn @adCommon
+                    Add-Row "parent OU $($parent.Dn)" 'Created'
+                }
+                catch { Add-Row "parent OU $($parent.Dn)" 'Failed' $_.Exception.Message; break }
+            }
+            else { Add-Row "parent OU $($parent.Dn)" 'WouldCreate' }
+        }
+
+        if (@($rows | Where-Object Action -EQ 'Failed').Count -eq 0) {
+            if ($PSCmdlet.ShouldProcess("domain $domain", "Create the OU '$ouPath' and the LCM user '$lcmName' (New-HciAdObjectsPreCreation)")) {
+                $secure = $null
+                try { $secure = Get-AzlSecretValue -Reference $lcmReference -Infrastructure $infra }
+                catch {
+                    $code = if ($_.Exception.Data.Contains('AzlExit')) { [int]$_.Exception.Data['AzlExit'] } else { 1 }
+                    if ($code -eq 2) { Exit-InputProblem "identity.active_directory.lcm_user.password: $($_.Exception.Message)" }
+                    Exit-Failed "The password of the LCM user could not be read: $($_.Exception.Message)"
+                }
+                try {
+                    $lcmCredential = [pscredential]::new($lcmName, $secure)
+                    New-HciAdObjectsPreCreation -AzureStackLCMUserCredential $lcmCredential -AsHciOUName $ouPath
+                    Add-Row "OU $ouPath" 'Created'
+                    Add-Row "LCM user $lcmName" 'Created'
+                }
+                catch { Add-Row "OU $ouPath / LCM user $lcmName" 'Failed' $_.Exception.Message }
+            }
+            else {
+                Add-Row "OU $ouPath" 'WouldCreate'
+                Add-Row "LCM user $lcmName" 'WouldCreate'
+            }
+        }
+    }
 }
 
 # ---- the computer objects, when the file asks for them

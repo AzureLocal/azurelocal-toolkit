@@ -119,6 +119,17 @@ BeforeAll {
             'extension show' = { param($o, $a) if (-not $global:K6State.Extension) { return (New-K6Error 'The extension is not installed.') }; '{"name":"x"}' }
         }
     }
+    # The Insights rule as az monitor data-collection rule show returns it: what Learn lists for Insights unless the test takes something out.
+    function New-K6InsightsRule([string[]]$Counters = @('\Memory(*)\Available Bytes', '\Network Interface(*)\Bytes Total/sec', '\Processor(_Total)\% Processor Time', '\RDMA Activity(*)\RDMA Inbound Bytes/sec', '\RDMA Activity(*)\RDMA Outbound Bytes/sec'),
+        [string[]]$Queries = @('Microsoft-Windows-SDDC-Management/Operational!*[System[(EventID=3000)]]', 'Microsoft-Windows-Health/Operational!*'),
+        [string[]]$Workspaces = @("/subscriptions/$($global:K6Sub)/resourceGroups/rg-example-mon/providers/Microsoft.OperationalInsights/workspaces/law-example-01")) {
+        [ordered]@{
+            name         = 'dcr-example-insights'
+            id           = "/subscriptions/$($global:K6Sub)/resourceGroups/rg-example-mon/providers/Microsoft.Insights/dataCollectionRules/dcr-example-insights"
+            dataSources  = [ordered]@{ performanceCounters = @([ordered]@{ name = 'perf'; counterSpecifiers = $Counters }); windowsEventLogs = @([ordered]@{ name = 'events'; xPathQueries = $Queries }) }
+            destinations = [ordered]@{ logAnalytics = @($Workspaces | ForEach-Object { [ordered]@{ name = 'la'; workspaceResourceId = $_ } }) }
+        } | ConvertTo-Json -Depth 6
+    }
     # Fake Azure where nothing the script creates exists yet and every creation works.
     function Set-K6Empty([string]$Name) {
         $h = $global:K6Handlers
@@ -147,7 +158,7 @@ BeforeAll {
             }
             'Enable-HciInsights' {
                 $h['stack-hci extension show'] = { param($o, $a) '{"name":"AzureMonitorWindowsAgent","provisioningState":"Succeeded"}' }
-                $h['monitor data-collection rule show'] = { param($o, $a) ('{"name":"dcr-example-insights","id":"/subscriptions/' + $global:K6Sub + '/resourceGroups/rg-example-mon/providers/Microsoft.Insights/dataCollectionRules/dcr-example-insights"}') }
+                $h['monitor data-collection rule show'] = { param($o, $a) New-K6InsightsRule }
                 $h['monitor data-collection rule association list-by-resource'] = { param($o, $a) '[]' }
                 $h['monitor data-collection rule association create'] = $quiet
             }
@@ -185,7 +196,7 @@ BeforeAll {
     }
 }
 
-AfterAll { Remove-Variable -Name K6Benchmark, K6AzBody, K6Rules, K6Tenant, K6Sub, K6Calls, K6State, K6Handlers, K6Params, K6Shows -Scope Global -ErrorAction SilentlyContinue }
+AfterAll { Remove-Variable -Name K6Rule, K6Benchmark, K6AzBody, K6Rules, K6Tenant, K6Sub, K6Calls, K6State, K6Handlers, K6Params, K6Shows -Scope Global -ErrorAction SilentlyContinue }
 
 Describe 'every Azure CLI script of the batch: <Name>' -ForEach $script:Cases {
     BeforeEach {
@@ -575,6 +586,22 @@ Describe 'the monitoring scripts' {
             $r.Text | Should -Match 'portal'
             Get-K6Change | Should -BeNullOrEmpty
             $global:K6Calls.Command | Should -Not -Contain 'monitor data-collection rule create'
+        }
+        It 'reads the rule and stops with exit code 1, associating nothing, when it lacks what Insights needs: <Why>' -ForEach @(
+            @{ Why = 'an RDMA counter'; Rule = { New-K6InsightsRule -Counters @('\Memory(*)\Available Bytes', '\Network Interface(*)\Bytes Total/sec', '\Processor(_Total)\% Processor Time', '\RDMA Activity(*)\RDMA Inbound Bytes/sec') }; Expect = 'RDMA Outbound' }
+            @{ Why = 'the health channel'; Rule = { New-K6InsightsRule -Queries @('Microsoft-Windows-SDDC-Management/Operational!*') }; Expect = 'Microsoft-Windows-Health/Operational' }
+            @{ Why = 'a destination'; Rule = { New-K6InsightsRule -Workspaces @() }; Expect = 'no Log Analytics workspace' }
+            @{ Why = 'the workspace of the file'; Rule = { New-K6InsightsRule -Workspaces @("/subscriptions/$($global:K6Sub)/resourceGroups/rg-example-mon/providers/Microsoft.OperationalInsights/workspaces/law-other") }; Expect = "law-other, not to the workspace 'law-example-01'" }
+            @{ Why = 'any data source at all'; Rule = { '{"name":"dcr-example-insights","id":"/x/dcr-example-insights"}' }; Expect = 'not ready for Insights' }
+        ) {
+            $global:K6Rule = $Rule
+            $global:K6Handlers['monitor data-collection rule show'] = { param($o, $a) & $global:K6Rule }
+            $r = Invoke-K6 $script:Insights (New-K6Infra)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match $Expect
+            $r.Text | Should -Match 'Update'
+            Get-K6Change | Should -BeNullOrEmpty
+            Get-K6Call 'monitor data-collection rule association list-by-resource' | Should -BeNullOrEmpty
         }
         It 'stops with exit code 1 when the Azure Monitor Agent is not on the instance' {
             $global:K6Handlers['stack-hci extension show'] = { param($o, $a) New-K6NotFound }
