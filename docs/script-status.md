@@ -20,9 +20,9 @@ Task folders: 110.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 58 | 52 | 0 |
-| Azure CLI | 11 | 42 | 57 |
+| Azure CLI | 45 | 0 | 65 |
 
-Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
+Azure CLI applies to 45 tasks, does not apply to 65, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -58,20 +58,20 @@ Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources` | not built | built | yes |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | not built | built | yes |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | not built | built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | built | yes |
+| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not applicable | no |
 
 ## 03-onprem-readiness
 
@@ -116,23 +116,23 @@ Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
 | `phase-03-os-configuration/task-10-configure-hostname` | not built | not applicable | no |
 | `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | not built | not applicable | no |
 | `phase-03-os-configuration/task-13-phase03-verification` | not built | not applicable | no |
-| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | not built | yes |
-| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not built | yes |
-| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | not built | unclear |
+| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | built | yes |
+| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not applicable | no |
+| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | built | yes |
+| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
+| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not applicable | no |
+| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | built | yes |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
-| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | not built | yes |
+| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |
-| `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | not built | yes |
-| `phase-06-post-deployment/task-05-storage-configuration` | built | not built | yes |
-| `phase-06-post-deployment/task-06-image-downloads` | built | not built | yes |
-| `phase-06-post-deployment/task-07-configure-nsgs` | built | not built | yes |
-| `phase-06-post-deployment/task-08-logical-network-creation` | built | not built | yes |
-| `phase-06-post-deployment/task-09-post-deployment-verification` | built | not built | yes |
+| `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | built | yes |
+| `phase-06-post-deployment/task-05-storage-configuration` | built | built | yes |
+| `phase-06-post-deployment/task-06-image-downloads` | built | built | yes |
+| `phase-06-post-deployment/task-07-configure-nsgs` | built | built | yes |
+| `phase-06-post-deployment/task-08-logical-network-creation` | built | built | yes |
+| `phase-06-post-deployment/task-09-post-deployment-verification` | built | built | yes |
 | `phase-06-post-deployment/task-10-sbe-update-import` | built | not applicable | no |
 
 ## 05-operational-foundations
@@ -140,19 +140,19 @@ Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
 | `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | not built | not applicable | no |
-| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | not built | not built | yes |
-| `phase-01-sdn-deployment/task-03-configure-network-security-groups` | not built | not built | yes |
-| `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | not built | yes |
-| `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | not built | yes |
-| `phase-02-monitoring-observability/task-03-enable-hci-insights` | built | not built | yes |
-| `phase-02-monitoring-observability/task-04-setup-alerting` | built | not built | yes |
-| `phase-04-security-governance/task-01-enable-defender-for-cloud` | built | not built | yes |
-| `phase-04-security-governance/task-02-apply-azure-policy-initiatives` | built | not built | yes |
+| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | not built | built | yes |
+| `phase-01-sdn-deployment/task-03-configure-network-security-groups` | not built | built | yes |
+| `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | built | yes |
+| `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | built | yes |
+| `phase-02-monitoring-observability/task-03-enable-hci-insights` | built | built | yes |
+| `phase-02-monitoring-observability/task-04-setup-alerting` | built | built | yes |
+| `phase-04-security-governance/task-01-enable-defender-for-cloud` | built | built | yes |
+| `phase-04-security-governance/task-02-apply-azure-policy-initiatives` | built | built | yes |
 | `phase-04-security-governance/task-03-configure-security-baselines` | built | not applicable | no |
-| `phase-04-security-governance/task-04-enable-security-logging` | not built | not built | unclear |
-| `phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit` | built | not built | yes |
-| `phase-05-licensing-telemetry/task-02-activate-windows-server-subscription` | built | not built | yes |
-| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | not built | not built | unclear |
+| `phase-04-security-governance/task-04-enable-security-logging` | not built | not applicable | no |
+| `phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit` | built | built | yes |
+| `phase-05-licensing-telemetry/task-02-activate-windows-server-subscription` | built | built | yes |
+| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | not built | not applicable | no |
 
 ## 06-testing-validation
 
@@ -162,16 +162,4 @@ Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
 | `task-02-vmfleet-storage-testing` | built | not applicable | no |
 | `task-03-network-rdma-validation` | built | not applicable | no |
 | `task-04-high-availability-testing` | built | not applicable | no |
-| `task-05-security-compliance-validation` | built | not built | yes |
-
-## Tasks that need a decision
-
-Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in `TaskCatalogue.psd1`.
-
-| Task | Why it is not decided |
-|---|---|
-| `04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check Active Directory and cluster health on premises. |
-| `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | Named for the Azure portal, but the real scripts create local accounts on the nodes. |
-| `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises. |
-| `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | No script. Audit policy and the Security log size are part of the security baseline, which drift control holds; the supported way to change them is Set-AzsSecurity (task-03, security.baseline_settings). Not decided whether Azure is involved. |
-| `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | No script. Microsoft Learn documents no way to set the Windows telemetry level of an Azure Local machine; diagnostic data is collected by the telemetry and diagnostics extension. Not decided whether Azure is involved. |
+| `task-05-security-compliance-validation` | built | built | yes |

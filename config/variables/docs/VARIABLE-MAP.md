@@ -17,9 +17,9 @@ Registry version 5.0.62. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 753 | 508 | 82 | 5 | 156 | 2 |
-| Owned by a tool (`tools.*`) | 4377 | 4169 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4428 | 4220 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6503 | 4679 | 93 | 5 | 1714 | 12 |
+| All registry leaves | 6554 | 4730 | 93 | 5 | 1714 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1020 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1071 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 89 | 0 | 554 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 236 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 238 | 0 | 0 |
 
 ### trailwright
 
@@ -201,7 +201,7 @@ Where in the code (file, function, keys read by name; 36 places, the first 12):
 **Reads (95):**
 `identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_server_config`, `identity.local_identity.dns_zone`, `identity.local_identity.dns_forwarders`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.dns_servers`, `networking.management.use_dhcp`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.ntp_servers`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.cluster_network_properties.bandwidth_percentage_smb`, `networking.cluster_network_properties.jumbo_packet`, `networking.cluster_network_properties.priority_cluster`, `networking.cluster_network_properties.priority_smb`, `networking.cluster_networks[].name`, `networking.cluster_networks[].adapter`, `networking.cluster_networks[].vlan_id`, `networking.cluster_networks[].subnet`, `security.level`, `security.drift_control`, `security.credential_guard`, `security.smb_signing`, `security.smb_cluster_encryption`, `security.bitlocker_boot_volume`, `security.bitlocker_data_volumes`, `security.wdac`, `security.telemetry.streaming_data`, `security.telemetry.episodic_data_upload`, `security.telemetry.eu_location`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.hci_resource_provider_object_id`, `azure.custom_location`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `cluster.name`, `cluster.naming_prefix`, `cluster.deployment_mode`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.key_vault.name`, `cluster.key_vault.create_new`, `cluster.key_vault.soft_delete_retention_days`, `cluster.diagnostics.storage_account`, `cluster.diagnostics.logs_retention_days`, `cluster.diagnostics.storage_account_type`, `nodes[].name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.source_path`, `hardware.sbe.partner_properties[].name`, `hardware.sbe.partner_properties[].value`, `hardware.sbe.partner_credentials[].secret_name`, `hardware.sbe.partner_credentials[].secret`, `storage.configuration_mode`, `storage.san.type`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.iscsi.chap.username`, `storage.san.iscsi.chap.secret`, `storage.san.iscsi.chap.mutual`, `storage.san.iscsi.jumbo_packet`, `storage.san.iscsi.networks[].fabric`, `storage.san.iscsi.networks[].vlan_id`, `storage.san.iscsi.networks[].subnet`, `storage.san.iscsi.networks[].next_hop`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 11 places):
+Where in the code (file, function, keys read by name; 13 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -209,13 +209,14 @@ Where in the code (file, function, keys read by name; 11 places):
 | `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `Select-AzlArmTemplate` | 6 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `(script)` | 6 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `Invoke-AzlArmDeploymentRun` | 6 |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.azcli.ps1` | `(script)` | 6 |
 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1` | `(script)` | 6 |
+| `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Test-AzureLocalClusterDeployment.azcli.ps1` | `(script)` | 5 |
 | `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `ConvertTo-AzlArmParameterFile` | 3 |
 | `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/New-AzureLocalArmParameters.ps1` | `(script)` | 3 |
 | `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `Resolve-AzlAdapterName` | 2 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `Resolve-AzlArmSbeCatalogFile` | 2 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `Get-AzlArmArcMachineCached` | 1 |
-| `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `Invoke-AzlArmPrecondition` | 1 |
 
 ### sonar
 
@@ -301,10 +302,10 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (236):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (238):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
-- `cluster`: 1 keys
+- `cluster`: 3 keys
 - `hardware`: 14 keys
 - `identity`: 19 keys
 - `key_vaults`: 5 keys
@@ -322,22 +323,22 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 98 places, the first 12):
+Where in the code (file, function, keys read by name; 129 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/azurecli/Deploy-ManagementVMs.azcli.ps1` | `(script)` | 22 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1` | `(script)` | 22 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/azurecli/New-LandingZoneNsg.azcli.ps1` | `(script)` | 21 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1` | `(script)` | 21 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources/azurecli/Test-ManagementResources.azcli.ps1` | `(script)` | 20 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 20 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/azurecli/New-VpnConnection.azcli.ps1` | `(script)` | 19 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1` | `(script)` | 19 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/azurecli/New-LogicalNetwork.azcli.ps1` | `(script)` | 19 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/azurecli/New-NetworkSecurityGroup.azcli.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 17 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/azurecli/Test-ManagementConfiguration.azcli.ps1` | `(script)` | 15 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1` | `(script)` | 14 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1` | `(script)` | 14 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1` | `(script)` | 14 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | `(script)` | 14 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -419,9 +420,9 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 | Variable | What it is | Set it by | Read by | Becomes |
 | --- | --- | --- | --- | --- |
-| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar subscriptionId |
 | `azure.resource_group` | Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar resourceGroup |
+| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
@@ -1013,8 +1014,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName | read |
 | `cluster.naming_prefix` | string, default `hci` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM namingPrefix | read |
 | `cluster.deployment_mode` | string, default `validate`, one of `validate`, `deploy` | operator; Trailwright; default | deployment | arm-deployment | ARM deploymentMode | read |
-| `cluster.witness.type` | string, required, one of `cloud`, `file_share`, `none` | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers | ARM clusterWitnessStorageAccountName; witnessType | read |
-| `cluster.witness.storage_account` | string (storage_account_name) | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers | ARM clusterWitnessStorageAccountName | read |
+| `cluster.witness.type` | string, required, one of `cloud`, `file_share`, `none` | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers; toolkit-legacy-scripts | ARM clusterWitnessStorageAccountName; witnessType | read |
+| `cluster.witness.storage_account` | string (storage_account_name) | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers; toolkit-legacy-scripts | ARM clusterWitnessStorageAccountName | read |
 | `cluster.witness.path` | string | operator; Trailwright | trailwright | infrastructure-helpers |  | read |
 | `cluster.key_vault.name` | string (key_vault_name), required | operator; Trailwright | deployment; trailwright; terraform | arm-deployment | ARM keyVaultName | read |
 | `cluster.key_vault.create_new` | boolean, default `true` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM createNewKeyVault | read |
@@ -1865,7 +1866,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 907 | 907 | 0 |
+| arm_deployment | parameters | 958 | 958 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
