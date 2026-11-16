@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Standardized logging functions.
@@ -8,6 +9,8 @@
 
 .NOTES
     Dot-source this file to use logging functions.
+    It sets no Set-StrictMode or $ErrorActionPreference at file level on purpose: a dot-sourced file runs in the
+    caller's scope, so those lines would change the strict mode and error preference of the calling script.
 #>
 
 # Script-level variables for file logging
