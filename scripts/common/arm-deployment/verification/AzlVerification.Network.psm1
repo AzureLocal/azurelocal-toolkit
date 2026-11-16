@@ -7,7 +7,7 @@
 .DESCRIPTION
     Harvested, not written from scratch: azl-toolkit 03-onprem-readiness phase-03-network-infrastructure task-04 Test-NetworkReadiness.ps1
     and task-03 firewall endpoint verification (outbound endpoints), 04-cluster-deployment phase-03-os-configuration task-03/04/05/06/09
-    (static IP, DHCP, DNS, unused adapters) and task-13 verification, the toolkit's stage 07 task 03
+    (static IP, DHCP, DNS, unused adapters) and the phase 03 verification (task-16, was task-13), the toolkit's stage 07 task 03
     (scripts/deploy/07-validation-handover) Test-NetworkConfiguration.ps1, and Microsoft Learn (azloc-2610) host-network-requirements and cloud-deployment-network-considerations.
 
     Real failure of the lab that is a check here: the RDMA operational check failed on a MANAGEMENT intent (NW-002): RDMA / Network
@@ -227,7 +227,7 @@ function Get-AzlVerificationCheckDefinition {
     $hasIntents = { param($Context) if (@(Get-AzlVerIntent $Context).Count) { $true } else { $false } }
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-001' -Category network -Title 'Intents against adapters: every adapter of every intent exists under the same name on every node, link up, at least two per intent' `
-                -Source "$($script:Src.HostNet); $($script:Src.NetPlan) (Decision 6, 7); azl-toolkit phase-03-os-configuration task-03 network step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task0304_StaticIP" -Run {
+                -Source "$($script:Src.HostNet); $($script:Src.NetPlan) (Decision 6, 7); azl-toolkit phase-03-os-configuration task-03 network step of Set-AzureLocalNodeConfiguration.ps1 / task-16 (was task-13) Task0304_StaticIP" -Run {
                 param($Context)
                 $intents = @(Get-AzlVerIntent $Context)
                 if (-not $intents.Count) { return New-AzlVerResult Failed 'networking.intents is empty: the deployment needs at least one network intent.' 'Define the intents in infrastructure.yml (networking.intents).' }
@@ -328,7 +328,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-004' -Category network -Title 'Management network: the management adapter has the file''s address, a static IP and the default gateway, and the gateway and DNS servers answer' `
-                -Source "$($script:Src.NetPlan) (Node and cluster IP assignment, DNS server and Management IP pool considerations); azl-toolkit phase-03-os-configuration task-03/04 and task-13 Task0304_StaticIP" -Run {
+                -Source "$($script:Src.NetPlan) (Node and cluster IP assignment, DNS server and Management IP pool considerations); azl-toolkit phase-03-os-configuration task-03/04 and task-16 (was task-13) Task0304_StaticIP" -Run {
                 param($Context)
                 $infra = Get-AzlVerInfra $Context
                 $gateway = [string](Get-AzlProp $infra 'networking.management.gateway' '')
@@ -481,7 +481,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-011' -Category network -Title 'Unused adapters that are disconnected are disabled' `
-                -Source "azl-toolkit phase-03-os-configuration task-09 Disable-UnusedAdapters.ps1 (removed) / task-13 Task09_Adapters" -Blocking $false -Run {
+                -Source "azl-toolkit phase-03-os-configuration task-09 Disable-UnusedAdapters.ps1 (removed) / task-16 (was task-13) Task09_Adapters" -Blocking $false -Run {
                 param($Context)
                 $mine = @(Get-AzlVerIntentAdapter @(Get-AzlVerIntent $Context))
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {

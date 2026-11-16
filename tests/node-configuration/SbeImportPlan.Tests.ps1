@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# Phase 06, task 10: Get-AzureLocalSbeImportPlan.ps1 lists the SBE files on the share and the exact Add-SolutionUpdate commands (Microsoft Learn, Import and rediscover updates), and
+# Phase 06, task 11: Get-AzureLocalSbeImportPlan.ps1 lists the SBE files on the share and the exact Add-SolutionUpdate commands (Microsoft Learn, Import and rediscover updates), and
 # executes none of them. The "share" is a folder in TestDrive with made-up file names that follow SBE_<Vendor>_<Family>_<Version>; no Azure, no node, no network.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/node-configuration/SbeImportPlan.Tests.ps1
 
@@ -9,7 +9,7 @@ param()
 
 BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
-    $script:Script = Join-Path $repo 'scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-10-sbe-update-import\powershell\Get-AzureLocalSbeImportPlan.ps1'
+    $script:Script = Join-Path $repo 'scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-11-sbe-update-import\powershell\Get-AzureLocalSbeImportPlan.ps1'
     function New-Share([switch]$SkipZip) {
         $dir = Join-Path $TestDrive ('share-' + [guid]::NewGuid().ToString('N').Substring(0, 6))
         $null = New-Item -ItemType Directory $dir

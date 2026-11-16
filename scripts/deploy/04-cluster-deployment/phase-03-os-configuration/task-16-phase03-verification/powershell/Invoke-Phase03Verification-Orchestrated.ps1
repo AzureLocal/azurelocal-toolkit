@@ -27,7 +27,7 @@ Import-Module (Get-DeploymentCommonModulePath) -Force
 
 Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
-    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification' `
+    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification' `
     -ActionName 'Invoke-Phase03Verification-Orchestrated' `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

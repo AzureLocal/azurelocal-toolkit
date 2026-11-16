@@ -67,7 +67,7 @@ BeforeDiscovery {
         "$p3/task-09-disable-unused-network-adapters/powershell/Invoke-DisableAdapters-Orchestrated.ps1"
         "$p3/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1"
         "$p3/task-11-clear-previous-storage-configuration-conditional/powershell/Invoke-ClearStorage-Orchestrated.ps1"
-        "$p3/task-13-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1"
+        "$p3/task-16-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1"
         "$p4/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1"
         "$p4/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1"
         "$p4/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1"

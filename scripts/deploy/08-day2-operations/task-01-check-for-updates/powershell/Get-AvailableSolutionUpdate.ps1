@@ -16,7 +16,7 @@
          AttentionNeeded, when an update is in a failed state or needs a prerequisite, when the health of the update environment is Failure, Error or Warning, or when the
          update environment state is UpdateFailed, NeedsAttention or PreparationFailed: waiting longer does not fix any of them;
       3. says, for each update that is not finished, what is next: Ready or ReadyToInstall (start it: task 02), AdditionalContentRequired (import the SBE files
-         first: stage 04, phase 06, task 10, then check again), Downloading, Preparing, HealthChecking or Installing (follow it), or a failed state (look at it).
+         first: stage 04, phase 06, task 11, then check again), Downloading, Preparing, HealthChecking or Installing (follow it), or a failed state (look at it).
 
     It changes nothing: no update is started, nothing is imported, nothing is written on the cluster. It reads no secret and signs in nowhere; it connects as the
     account that runs it, or as -Credential (Learn: use the deployment user account). The Azure side of the same question (the update summary and the updates
@@ -97,7 +97,7 @@ $WaitState = 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress', 
 $BlockingHealth = 'Failure', 'Error', 'Warning'
 $BadEnvironmentState = 'UpdateFailed', 'NeedsAttention', 'PreparationFailed'
 $StateAdvice = @{
-    AdditionalContentRequired = 'Import the SBE files from the hardware vendor first (stage 04, phase 06, task 10, Get-AzureLocalSbeImportPlan.ps1), then check again.'
+    AdditionalContentRequired = 'Import the SBE files from the hardware vendor first (stage 04, phase 06, task 11, Get-AzureLocalSbeImportPlan.ps1), then check again.'
     HasPrerequisite           = 'It needs another update installed first (see its Prerequisites in Get-SolutionUpdate).'
     DownloadFailed            = 'The download failed (Get-SolutionUpdateRun, Learn: Troubleshoot updates).'
     PreparationFailed         = 'The preparation failed (Get-SolutionUpdateRun, Learn: Troubleshoot updates).'

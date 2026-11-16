@@ -26,7 +26,7 @@
     watches the progress. Learn recommends predownloading first: run with -PrepareOnly, wait for the state ReadyToInstall (task 01 shows it), then run again
     without it inside the maintenance window. An update that was prepared with -PrepareOnly must be installed with PowerShell, not from the portal (Learn).
 
-    Order of a monthly update: task 01 (check what is offered), the SBE import (stage 04, phase 06, task 10) when an update says AdditionalContentRequired,
+    Order of a monthly update: task 01 (check what is offered), the SBE import (stage 04, phase 06, task 11) when an update says AdditionalContentRequired,
     this task (start), task 01 again (follow), then the post-update validation.
 
     Idempotent. The script reports and exits 0 without starting anything when
@@ -113,7 +113,7 @@ $RunningEnvironmentState = 'UpdateInProgress', 'PreparationInProgress'
 $BadEnvironmentState = 'UpdateFailed', 'NeedsAttention', 'PreparationFailed'
 $BlockingHealth = 'Failure', 'Error', 'Warning'
 $StateAdvice = @{
-    AdditionalContentRequired = 'it needs content from the hardware vendor: import it first (Learn: Solution Builder Extension updates, the AdditionalContentRequired state; toolkit: stage 04, phase 06, task 10, SBE update import)'
+    AdditionalContentRequired = 'it needs content from the hardware vendor: import it first (Learn: Solution Builder Extension updates, the AdditionalContentRequired state; toolkit: stage 04, phase 06, task 11, SBE update import)'
     HasPrerequisite           = 'it needs another update installed first (see its Prerequisites)'
     Invalid                   = 'it does not match the hardware model of the cluster'
     Obsolete                  = 'a higher version of this update is already installed'

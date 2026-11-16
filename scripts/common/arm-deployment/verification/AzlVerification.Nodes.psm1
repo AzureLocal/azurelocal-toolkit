@@ -8,7 +8,7 @@
     Harvested, not written from scratch. Sources, per check, are in the check definitions; in short:
       azl-toolkit 04-cluster-deployment/phase-02-os-installation Test-OsDeployment.ps1 (removed) (OS, domain, features),
       phase-03-os-configuration task-06 Test-DnsClientConfig / Test-DnsConfiguration (removed), task-07 NTP, task-10 hostname,
-      task-13 Invoke-Phase03Verification-Orchestrated.ps1 (removed) (the per node verification block), phase-04-arc-registration
+      task-16 (was task-13) Invoke-Phase03Verification-Orchestrated.ps1 (removed; now a placeholder) (the per node verification block), phase-04-arc-registration
       Invoke-ArcPrerequisites-Orchestrated.ps1 (removed) (Environment Checker run), the node payload of the OS configuration
       (AzlNodePayload.psm1) for the shape of the reads, Microsoft Learn (azloc-2610) deployment-prerequisites,
       system-requirements-23h2, deployment-install-os and manage/use-environment-checker.
@@ -70,7 +70,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-002' -Category nodes -Title 'Computer name equals the node name in the file and is a valid name' `
-                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-10 hostname step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task10_Hostname" -Run {
+                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-10 hostname step of Set-AzureLocalNodeConfiguration.ps1 / task-16 (was task-13) Task10_Hostname" -Run {
                 param($Context)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetOsBuild' -Body {
                     param($Name, $D, $N)
@@ -115,7 +115,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-005' -Category nodes -Title 'Time: a real NTP source (not the CMOS clock), the same on every node, in step with this host' `
-                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-07 time step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task07_NTP; Learn software validator (same NTP on all nodes)" -Run {
+                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-07 time step of Set-AzureLocalNodeConfiguration.ps1 / task-16 (was task-13) Task07_NTP; Learn software validator (same NTP on all nodes)" -Run {
                 param($Context)
                 $expected = @(ConvertTo-AzlVerList (Get-AzlProp (Get-AzlVerInfra $Context) 'networking.ntp_servers' @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
                 $maxSkew = [double](Get-AzlVerSetting $Context 'verificationMaxClockSkewSeconds')

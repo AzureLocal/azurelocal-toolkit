@@ -42,7 +42,7 @@ Import-Module (Get-DeploymentCommonModulePath) -Force
 
 Invoke-DeploymentStandalone `
     -ScriptPath $PSCommandPath `
-    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification' `
+    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification' `
     -ActionName 'Test-Phase03Verification' `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters `

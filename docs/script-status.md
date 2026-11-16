@@ -115,7 +115,7 @@ Azure CLI applies to 47 tasks, does not apply to 73, and is not decided for 0.
 | `phase-03-os-configuration/task-09-disable-unused-network-adapters` | not built | not applicable | no |
 | `phase-03-os-configuration/task-10-configure-hostname` | not built | not applicable | no |
 | `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | not built | not applicable | no |
-| `phase-03-os-configuration/task-13-phase03-verification` | not built | not applicable | no |
+| `phase-03-os-configuration/task-16-phase03-verification` | not built | not applicable | no |
 | `phase-04-arc-registration/task-01-pre-registration-validation` | not built | built | yes |
 | `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not applicable | no |
 | `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | built | yes |
@@ -133,7 +133,7 @@ Azure CLI applies to 47 tasks, does not apply to 73, and is not decided for 0.
 | `phase-06-post-deployment/task-07-configure-nsgs` | built | built | yes |
 | `phase-06-post-deployment/task-08-logical-network-creation` | built | built | yes |
 | `phase-06-post-deployment/task-09-post-deployment-verification` | built | built | yes |
-| `phase-06-post-deployment/task-10-sbe-update-import` | built | not applicable | no |
+| `phase-06-post-deployment/task-11-sbe-update-import` | built | not applicable | no |
 
 ## 05-operational-foundations
 
