@@ -141,7 +141,7 @@ Describe 'The day 2 and validation pipelines: every file' {
         $text = Get-Text $File
         switch ($Platform) {
             'GitHub' {
-                foreach ($job in (Get-Yaml $File)['jobs'].Values) {
+                foreach ($job in @((Get-Yaml $File)['jobs'].GetEnumerator() | Where-Object { $_.Key -ne 'approval-environment-not-set' } | ForEach-Object { $_.Value })) {
                     $upload = @($job['steps'] | Where-Object { [string]$_['uses'] -like 'actions/upload-artifact@*' })
                     $upload.Count | Should -Be 1
                     [string]$upload[0]['if'] | Should -Match 'always\(\)'
@@ -176,7 +176,8 @@ Describe 'The approval binding of the jobs that change the cluster' {
             $doc['jobs'][$job].Contains('environment') | Should -BeFalse -Because "$job only reads"
             $doc['jobs'][$job].Contains('concurrency') | Should -BeFalse -Because "$job only reads, so it need not wait for a change"
         }
-        @($doc['jobs'].Keys).Count | Should -Be ($Read.Count + $Change.Count)
+        @($doc['jobs'].Keys | Where-Object { $_ -ne 'approval-environment-not-set' }).Count | Should -Be ($Read.Count + $Change.Count)
+        $doc['jobs'].Contains('approval-environment-not-set') | Should -BeTrue -Because 'an empty approval environment must refuse, not run with no approval'
     }
     It 'GitHub <Name>: no read-only job passes a change, and the plan job passes -WhatIf' -ForEach @($script:Files | Where-Object { $_.Platform -eq 'GitHub' }) {
         $doc = Get-Yaml $File

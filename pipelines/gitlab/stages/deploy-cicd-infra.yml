@@ -19,6 +19,10 @@
 # Protect the approval environment with an approval rule (task 04 creates it), so the apply waits for a reviewer.
 # Reuses the stages of .gitlab-ci.yml: validate, plan and deploy-foundation.
 # =============================================================================
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_CICD_INFRA is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
 .cicd-infra:base:
   variables:
@@ -95,6 +99,19 @@ cicd-infra:apply:
   environment:
     name: ${AZL_ENVIRONMENT_CICD_INFRA}
   rules:
-    - if: '$CICD_INFRA == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CICD_INFRA == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $AZL_ENVIRONMENT_CICD_INFRA != null && $AZL_ENVIRONMENT_CICD_INFRA != ""'
       when: manual
   allow_failure: false
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+cicd-infra-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: deploy-foundation
+  needs: ["cicd-infra:plan"]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '$CICD_INFRA == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && ($AZL_ENVIRONMENT_CICD_INFRA == null || $AZL_ENVIRONMENT_CICD_INFRA == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_CICD_INFRA (devops.pipelines.environments.cicd_infra) is empty, and the apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

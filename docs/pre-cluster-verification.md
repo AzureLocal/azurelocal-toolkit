@@ -73,8 +73,8 @@ pipeline input `accept_skipped` takes the ids to accept, and the report records 
 The approval environment is not something the person who starts a run can choose. GitHub reads it from the repository variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT`. Azure DevOps reads it from
 the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml`, a YAML file of the repository (a template expression sees only the variables of YAML files, so a
 run parameter would have let the person who queues the run type the name of an environment with no approval check). The toolkit ships it empty: write the name once, in a pull request. While
-it is empty and `fix` or `install_environment_checker` is set, the stage `ApprovalEnvironmentNotSet` fails and nothing is changed. GitLab reads it from the project CI/CD variable of the same
-name; a person who starts a GitLab pipeline by hand can override a variable in the run form, so restrict who may set pipeline variables (project Settings > CI/CD > Variables, the minimum role to use pipeline variables) and protect the environment.
+it is empty and `fix` or `install_environment_checker` is set, the stage `ApprovalEnvironmentNotSet` fails and nothing is changed. GitHub and GitLab read it from the repository or project variable of the same
+name, and refuse the same way: with the variable empty the job that changes something does not run and the job `approval-environment-not-set` fails and changes nothing; a person who starts a GitLab pipeline by hand can override a variable in the run form, so restrict who may set pipeline variables (project Settings > CI/CD > Variables, the minimum role to use pipeline variables) and protect the environment.
 
 ## Statuses and the verdict
 

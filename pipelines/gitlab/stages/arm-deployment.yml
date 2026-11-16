@@ -36,6 +36,10 @@
 # references in the master file. Runner: the general runner with the tag AZL_RUNNER_LABEL and pwsh 7. The Active Directory check needs a
 # domain-joined runner; elsewhere it is Skipped, not failed.
 # Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_ARM_DEPLOYMENT is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
 stages:
   - arm-plan
@@ -148,7 +152,7 @@ arm-deploy:
     name: $AZL_ENVIRONMENT_ARM_DEPLOYMENT
   rules:
     # The approval gate: the job waits until someone plays it, after reading the arm-validate job's summary.
-    - if: '$ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy"'
+    - if: '($ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy") && $AZL_ENVIRONMENT_ARM_DEPLOYMENT != null && $AZL_ENVIRONMENT_ARM_DEPLOYMENT != ""'
       when: manual
       allow_failure: false
   variables:
@@ -163,3 +167,16 @@ arm-deploy:
     name: arm-deployment-deploy
     paths:
       - $REPORT_DIRECTORY/deploy/
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+arm-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: arm-deploy
+  needs: [{ job: arm-preconditions }, { job: arm-validate, optional: true }]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '($ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy") && ($AZL_ENVIRONMENT_ARM_DEPLOYMENT == null || $AZL_ENVIRONMENT_ARM_DEPLOYMENT == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_ARM_DEPLOYMENT (devops.pipelines.environments.arm_deployment) is empty, and the arm-deploy job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

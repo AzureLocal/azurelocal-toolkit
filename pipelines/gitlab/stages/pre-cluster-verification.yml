@@ -46,6 +46,10 @@
 # controller (LDAP, TCP 389) and to the DNS servers of the file. A check the runner cannot ask is Skipped with its reason, and a Skipped check
 # blocks the verdict: accept its id in PRECLUSTER_ACCEPT_SKIPPED, or run from a runner that can ask.
 # Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_ARM_DEPLOYMENT is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
 stages:
   - pre-cluster-verification
@@ -134,9 +138,21 @@ pre-cluster-verify-changes:
     PRECLUSTER_CHANGES: 'true'
   # The approval gate: the job waits until someone allowed in the protected environment plays it.
   rules:
-    - if: '$PRECLUSTER_FIX == "true" || $PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER == "true"'
+    - if: '($PRECLUSTER_FIX == "true" || $PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER == "true") && $AZL_ENVIRONMENT_ARM_DEPLOYMENT != null && $AZL_ENVIRONMENT_ARM_DEPLOYMENT != ""'
       when: manual
       allow_failure: false
   environment:
     name: $AZL_ENVIRONMENT_ARM_DEPLOYMENT
   script: *pre-cluster-run
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+pre-cluster-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: pre-cluster-verification
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '($PRECLUSTER_FIX == "true" || $PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER == "true") && ($AZL_ENVIRONMENT_ARM_DEPLOYMENT == null || $AZL_ENVIRONMENT_ARM_DEPLOYMENT == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_ARM_DEPLOYMENT (devops.pipelines.environments.arm_deployment) is empty, and the pre-cluster-verify-changes job (-Fix and -InstallEnvironmentChecker) changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

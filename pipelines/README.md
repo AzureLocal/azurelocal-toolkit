@@ -284,6 +284,10 @@ Azure DevOps pipelines are started by hand.
 
 Each environment is an entry of `devops.environments[]` with `approval_required: true`; task 05 stops when a name is not.
 
+**An empty environment variable refuses to run, on every platform.** A job that names an environment through a variable (GitHub: `environment: ${{ vars.AZL_ENVIRONMENT_* }}`, GitLab: `environment:name: $AZL_ENVIRONMENT_*`) runs with no environment, and so with no approval, when the variable is empty. So every job that changes something has the same guard as the Azure DevOps stage `ApprovalEnvironmentNotSet`: on GitHub its `if` carries `&& vars.AZL_ENVIRONMENT_X != ''` and the job `approval-environment-not-set` runs instead (its `if` is the same condition with `== ''`); on GitLab its rule carries `&& $AZL_ENVIRONMENT_X != null && $AZL_ENVIRONMENT_X != ""` and a job named `<pipeline>-approval-environment-not-set` has the opposite rule. The refusal job writes one error that names the variable and its `devops.pipelines.environments.*` key, exits 1 and sends nothing to any machine. `tests/pipelines/ApprovalEnvironmentPipelines.Tests.ps1` checks every GitHub and GitLab job that binds an `AZL_ENVIRONMENT_*` variable.
+
+**The master file comes from the branch.** On Azure DevOps the `infrastructure_file` run parameter can name any file on the branch the run starts from, so `-RequireNodeInFile` (the node of the day 2 pipelines must be a node of the file) trusts the infrastructure files of that branch: keep them under review (a branch policy on the protected default branch) and run the changing pipelines from that branch.
+
 ## Sign-in
 
 Every pipeline follows `devops.authentication.method` through `AZL_AUTH_METHOD`:

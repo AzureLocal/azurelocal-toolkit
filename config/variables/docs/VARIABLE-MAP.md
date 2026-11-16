@@ -1881,8 +1881,8 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
 | cicd_infra | env_vars | 156 | 156 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 316 | 316 | 0 |
-| cicd_infra | pipeline_variables | 205 | 205 | 0 |
+| cicd_infra | pipeline_inputs | 317 | 317 | 0 |
+| cicd_infra | pipeline_variables | 204 | 204 | 0 |
 | cicd_infra | secret_names | 31 | 31 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |

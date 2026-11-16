@@ -193,3 +193,112 @@ Describe 'Azure DevOps azure-local-deploy.yml: the deployment stages' {
         @($g[0].Stage['dependsOn']) | Should -Contain 'Plan'
     }
 }
+
+BeforeDiscovery {
+    # computed from this file's folder, never from a variable set at run time: the list must be right whatever the working folder is
+    $root = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
+    $github = @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($root, 'pipelines', 'github-actions')) -Filter '*.yml' -File | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } })
+    $gitlabRoot = [IO.Path]::Combine($root, 'pipelines', 'gitlab')
+    $gitlab = @(Get-ChildItem -LiteralPath $gitlabRoot -Recurse -Filter '*.yml' -File -Force | ForEach-Object { @{ File = 'pipelines/gitlab/' + $_.FullName.Substring($gitlabRoot.Length + 1).Replace('\', '/') } })
+    # the files that have a job bound to an AZL_ENVIRONMENT_* variable (found in the text, so a new pipeline cannot be left out)
+    $script:GitHubBound = @($github | Where-Object { [IO.File]::ReadAllText([IO.Path]::Combine($root, $_.File)) -match '(?m)^\s+environment: \$\{\{ vars\.AZL_ENVIRONMENT_' })
+    $script:GitLabBound = @($gitlab | Where-Object { [IO.File]::ReadAllText([IO.Path]::Combine($root, $_.File)) -match '(?m)^\s+name: \$\{?AZL_ENVIRONMENT_' })
+}
+
+Describe 'GitHub and GitLab: a job bound to an AZL_ENVIRONMENT_* variable does not run, and a refusal job fails, while the variable is empty' {
+    BeforeAll {
+        $script:RepoRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
+        Import-Module powershell-yaml
+        function Read-Yaml([string]$File) { ConvertFrom-Yaml ([IO.File]::ReadAllText([IO.Path]::Combine($script:RepoRoot, $File))) -Ordered }
+    }
+    It 'the workflows and stage files that bind such a variable are found (so the tests below are not empty)' {
+        $github = @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:RepoRoot, 'pipelines', 'github-actions')) -Filter '*.yml' -File | Where-Object { [IO.File]::ReadAllText($_.FullName) -match '(?m)^\s+environment: \$\{\{ vars\.AZL_ENVIRONMENT_' })
+        $gitlab = @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:RepoRoot, 'pipelines', 'gitlab')) -Recurse -Filter '*.yml' -File -Force | Where-Object { [IO.File]::ReadAllText($_.FullName) -match '(?m)^\s+name: \$\{?AZL_ENVIRONMENT_' })
+        $github.Count | Should -BeGreaterThan 8
+        $gitlab.Count | Should -BeGreaterThan 8
+    }
+    It 'GitHub <File>: every job bound to an environment variable has the non-empty condition in its if, and the job approval-environment-not-set refuses with the opposite condition' -ForEach $script:GitHubBound {
+        $jobs = (Read-Yaml $File)['jobs']
+        $bound = @($jobs.Keys | Where-Object { $jobs[$_].Contains('environment') })
+        $bound.Count | Should -BeGreaterThan 0
+        $refuse = $jobs['approval-environment-not-set']
+        $refuse | Should -Not -BeNullOrEmpty -Because "$File needs a refusal job"
+        $variables = @()
+        foreach ($name in $bound) {
+            $j = $jobs[$name]
+            $variable = [regex]::Match([string]$j['environment'], '^\$\{\{ vars\.(AZL_ENVIRONMENT_[A-Z_]+) \}\}').Groups[1].Value
+            $variable | Should -Not -BeNullOrEmpty -Because "$File $name"
+            $variables += $variable
+            $j.Contains('if') | Should -BeTrue -Because "$File $name has a job-level if"
+            $andForm = '&& vars\.' + $variable + " != ''"
+            $onlyForm = '^\$\{\{ vars\.' + $variable + " != '' \}\}`$"
+            [string]$j['if'] | Should -Match "$andForm|$onlyForm" -Because "$name does not run without $variable"
+        }
+        # one variable per pipeline; the refusal job has the opposite condition, the runner of the guarded job, and one pwsh step that names the variable and its key and exits 1
+        $variable = $variables[0]
+        @($variables | Sort-Object -Unique) | Should -Be @($variable)
+        [string]$refuse['if'] | Should -Match ('vars\.' + $variable + " == ''")
+        [string]$refuse['if'] | Should -Not -Match "!= ''"
+        $refuseNeeds = @($refuse['needs'] | Where-Object { $_ }) -join ','
+        $guardedNeeds = @($bound | ForEach-Object { (@($jobs[$_]['needs'] | Where-Object { $_ })) -join ',' })
+        $guardedNeeds | Should -Contain $refuseNeeds -Because 'the refusal job waits for the same jobs as a guarded job'
+        (ConvertTo-Json $refuse['runs-on'] -Compress) | Should -Be (ConvertTo-Json $jobs[$bound[0]]['runs-on'] -Compress)
+        $refuse.Contains('environment') | Should -BeFalse
+        $steps = @($refuse['steps'])
+        $steps.Count | Should -Be 1
+        $steps[0]['shell'] | Should -Be 'pwsh'
+        $steps[0].Contains('uses') | Should -BeFalse
+        [string]$steps[0]['run'] | Should -Not -Match '\$\{\{'
+        [string]$steps[0]['run'] | Should -Match ("Write-Error '" + $variable + ' \(devops\.pipelines\.environments\.[a-z0-9_]+\)')
+        [string]$steps[0]['run'] | Should -Match 'Nothing was changed\.'
+        [string]$steps[0]['run'] | Should -Match '(?m)^\s*exit 1\r?$'
+        [string]$steps[0]['run'] | Should -Not -Match '(?i)\baz\s|terraform\s+(init|apply|plan)|ansible-playbook|Invoke-Command|checkout'
+        $refuse.Contains('timeout-minutes') | Should -BeTrue
+    }
+    It 'GitLab <File>: every job bound to an environment variable has the non-empty condition in every rule, and a job named approval-environment-not-set has the opposite rule' -ForEach $script:GitLabBound {
+        $doc = Read-Yaml $File
+        $jobs = @($doc.Keys | Where-Object { $doc[$_] -is [System.Collections.IDictionary] -and $doc[$_].Contains('environment') -and $doc[$_]['environment'] -is [System.Collections.IDictionary] -and [string]$doc[$_]['environment']['name'] -match '^\$\{?AZL_ENVIRONMENT_' })
+        $jobs.Count | Should -BeGreaterThan 0
+        $refusals = @($doc.Keys | Where-Object { [string]$_ -like '*approval-environment-not-set' })
+        $refusals.Count | Should -Be 1 -Because "$File needs one refusal job"
+        $refuse = $doc[$refusals[0]]
+        $variable = ''
+        foreach ($name in $jobs) {
+            $j = $doc[$name]
+            $variable = [regex]::Match([string]$j['environment']['name'], 'AZL_ENVIRONMENT_[A-Z_]+').Value
+            @($j['rules']).Count | Should -BeGreaterThan 0 -Because "$name has rules, so it is not created without $variable"
+            foreach ($r in @($j['rules'])) { [string]$r['if'] | Should -Match ('\$' + $variable + ' != null && \$' + $variable + ' != ""') -Because "$name needs $variable" }
+        }
+        $refuse.Contains('environment') | Should -BeFalse
+        $refuse.Contains('resource_group') | Should -BeFalse
+        @($refuse['rules']).Count | Should -Be 1
+        [string]@($refuse['rules'])[0]['if'] | Should -Match ('\(\$' + $variable + ' == null \|\| \$' + $variable + ' == ""\)')
+        @($refuse['rules'])[0].Contains('when') | Should -BeFalse -Because 'the refusal runs by itself and fails the pipeline'
+        # the stage of the guarded job, which may come from the template it extends
+        $guardedJob = $doc[$jobs[0]]
+        $stage = if ($guardedJob.Contains('stage')) { $guardedJob['stage'] } else { $doc[[string]@($guardedJob['extends'])[0]]['stage'] }
+        $refuse['stage'] | Should -Be $stage
+        [string]@($refuse['tags'])[0] | Should -Be '$AZL_RUNNER_LABEL'
+        $script = (@($refuse['script']) -join "`n")
+        $script | Should -Match ('Write-Error "' + $variable + ' \(devops\.pipelines\.environments\.[a-z0-9_]+\)')
+        $script | Should -Match 'Nothing was changed\.'
+        $script | Should -Match 'exit 1'
+        $script | Should -Not -Match '(?i)\baz\s|terraform\s+(init|apply|plan)|ansible-playbook|Invoke-Command'
+        $refuse.Contains('timeout') | Should -BeTrue
+    }
+    It 'GitLab <File>: a job that needs a guarded job exists only when it does (its rule has the variable condition, or the need is optional)' -ForEach $script:GitLabBound {
+        $doc = Read-Yaml $File
+        $guarded = @($doc.Keys | Where-Object { $doc[$_] -is [System.Collections.IDictionary] -and $doc[$_].Contains('environment') -and $doc[$_]['environment'] -is [System.Collections.IDictionary] } | ForEach-Object { [string]$_ })
+        foreach ($name in $doc.Keys) {
+            $j = $doc[$name]
+            if ($j -isnot [System.Collections.IDictionary] -or -not $j.Contains('needs') -or [string]$name -like '*approval-environment-not-set') { continue }
+            foreach ($n in @($j['needs'])) {
+                $target = if ($n -is [System.Collections.IDictionary]) { [string]$n['job'] } else { [string]$n }
+                if ($target -notin $guarded) { continue }
+                $optional = ($n -is [System.Collections.IDictionary] -and $n['optional'] -eq $true)
+                $same = @($j['rules']).Count -gt 0 -and ([string]@($j['rules'])[0]['if'] -match 'AZL_ENVIRONMENT_')
+                ($optional -or $same) | Should -BeTrue -Because "$name needs $target, which is not created while the variable is empty"
+            }
+        }
+    }
+}

@@ -27,6 +27,10 @@
 # tagged with AZL_RUNNER_LABEL, with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the
 # nodes). A node whose firewall still limits WinRM to its own subnet needs os_configuration.remoting.bootstrap_transport arc once, or WinRM-In
 # opened for the runner's CIDR.
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_OS_CONFIGURATION is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
 stages:
   - plan
@@ -88,6 +92,11 @@ os-configuration-apply:
   when: manual
   allow_failure: false
   resource_group: azure-local-os-configuration
+  # The job exists only when the approval environment is set; the job below refuses to run without it.
+  rules:
+    - if: '$AZL_ENVIRONMENT_OS_CONFIGURATION != null && $AZL_ENVIRONMENT_OS_CONFIGURATION != ""'
+      when: manual
+      allow_failure: false
   environment:
     name: $AZL_ENVIRONMENT_OS_CONFIGURATION
   script:
@@ -108,3 +117,16 @@ os-configuration-apply:
     name: os-configuration-report
     paths:
       - $REPORT_DIRECTORY/apply/
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+os-configuration-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: apply
+  needs: [os-configuration-plan]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '($AZL_ENVIRONMENT_OS_CONFIGURATION == null || $AZL_ENVIRONMENT_OS_CONFIGURATION == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_OS_CONFIGURATION (devops.pipelines.environments.os_configuration) is empty, and the apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

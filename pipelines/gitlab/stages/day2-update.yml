@@ -34,6 +34,10 @@
 # must be an administrator of the cluster (Learn: Update Azure Local by using PowerShell uses the deployment user account).
 # Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7 and a route to the cluster (WinRM, TCP 5985 or 5986).
 # Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_OPERATIONS is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
 stages:
   - day2-update
@@ -90,7 +94,7 @@ day2-update-apply:
   timeout: 1 hour
   # The approval gate: the job waits until someone allowed in the protected environment plays it.
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($DAY2UPDATE_ACTION == "PrepareOnly" || $DAY2UPDATE_ACTION == "Install")'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($DAY2UPDATE_ACTION == "PrepareOnly" || $DAY2UPDATE_ACTION == "Install") && $AZL_ENVIRONMENT_OPERATIONS != null && $AZL_ENVIRONMENT_OPERATIONS != ""'
       when: manual
       allow_failure: false
   environment:
@@ -107,3 +111,16 @@ day2-update-apply:
       '
   after_script:
     - pwsh -NoProfile -Command '$s = "$env:DAY2UPDATE_LOG_DIRECTORY/apply.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+day2-update-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: day2-update
+  needs: [day2-update-plan]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($DAY2UPDATE_ACTION == "PrepareOnly" || $DAY2UPDATE_ACTION == "Install") && ($AZL_ENVIRONMENT_OPERATIONS == null || $AZL_ENVIRONMENT_OPERATIONS == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) is empty, and the day2-update-apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

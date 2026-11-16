@@ -96,7 +96,7 @@ Describe 'The discovery and pre-cluster verification pipelines' {
         $text = Get-Text $File
         switch ($Platform) {
             'GitHub' {
-                foreach ($job in (Get-Yaml $File)['jobs'].Values) {
+                foreach ($job in @((Get-Yaml $File)['jobs'].GetEnumerator() | Where-Object { $_.Key -ne 'approval-environment-not-set' } | ForEach-Object { $_.Value })) {
                     $upload = @($job['steps'] | Where-Object { [string]$_['uses'] -like 'actions/upload-artifact@*' })
                     $upload.Count | Should -Be 1
                     [string]$upload[0]['if'] | Should -Match 'always\(\)'

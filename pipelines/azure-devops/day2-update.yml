@@ -36,6 +36,9 @@
 #                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
 #                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the variable group and the file path
 #                   are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#
+# The run parameter infrastructure_file can name any file on the branch the run starts from, so -RequireNodeInFile trusts the infrastructure files of the
+# branch the pipeline runs from: keep them under review (a branch policy on the protected default branch) and run changes from that branch.
 name: day2-update-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none

@@ -37,6 +37,10 @@
 # The node login is never in this file or in a variable of this repository: it is the secret reference of the master file (identity.local_admin, with
 # identity.active_directory.lcm_user as the fallback), and the toolkit secret resolver reads it from Key Vault at run time with the Azure sign-in of the job.
 # Runner: the general self-hosted runner with pwsh 7 and a route to the node (WinRM, TCP 5985 or 5986, and ping).
+#
+# No approval environment, no change. While the repository variable AZL_ENVIRONMENT_OPERATIONS is empty, the job that changes something does not run (its if needs the
+# variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 name: Azure Local day 2 node maintenance
 
 on:
@@ -133,7 +137,7 @@ jobs:
   apply:
     name: Apply (needs approval)
     needs: plan
-    if: ${{ inputs.action == 'Reboot' || inputs.action == 'Resume' }}
+    if: ${{ (inputs.action == 'Reboot' || inputs.action == 'Resume') && vars.AZL_ENVIRONMENT_OPERATIONS != '' }}
     runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     # Required reviewers on this environment are the approval gate.
     environment: ${{ vars.AZL_ENVIRONMENT_OPERATIONS }}
@@ -194,3 +198,19 @@ jobs:
           # The log of a change: 90 days is the toolkit's retention for the record of a change to the cluster.
           retention-days: 90
           if-no-files-found: warn
+
+  # A change was asked for, but the approval environment is not set: the job that changes something does not run (it needs the variable named below), and this job fails and says why.
+  # Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+  approval-environment-not-set:
+    name: Refuse, no approval environment is set
+    needs: plan
+    if: ${{ (inputs.action == 'Reboot' || inputs.action == 'Resume') && vars.AZL_ENVIRONMENT_OPERATIONS == '' }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 5
+    steps:
+      - name: No approval environment is set, so nothing is changed
+        shell: pwsh
+        run: |
+          Write-Error 'AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) is empty, and the apply job (Reboot and Resume) changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed.' -ErrorAction Continue
+          exit 1

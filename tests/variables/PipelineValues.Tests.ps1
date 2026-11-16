@@ -60,9 +60,11 @@ BeforeAll {
     $script:PlatformVersionToken = '@v\d+\b', '\b[A-Za-z]+@\d+\b', '\$\(Date:yyyyMMdd\)\$\(Rev:\.r\)'
     # Jobs that only validate or plan may run on the vendor's hosted image (a platform choice). cicd-infra plans and applies on it only for
     # the first run, before the self-hosted runners exist (its runner input or agentPool parameter chooses).
+    # approval-environment-not-set of cicd-infra.yml is a refusal job: it only prints one error and exits 1 (no checkout, no sign-in, nothing sent), so it may run on the same
+    # runner choice as the apply job it guards, which is the hosted image for the first run.
     $script:HostedJob = @{
         'pipelines/github-actions/azure-local-deploy.yml' = @('terraform-validate', 'ansible-lint', 'terraform-plan')
-        'pipelines/github-actions/cicd-infra.yml'         = @('validate', 'plan', 'apply')
+        'pipelines/github-actions/cicd-infra.yml'         = @('validate', 'plan', 'apply', 'approval-environment-not-set')
         'pipelines/azure-devops/azure-local-deploy.yml'   = @('TerraformValidate', 'AnsibleLint', 'TerraformPlan')
         # ApprovalEnvironmentNotSet only prints one error and exits 1 (no approval environment is set): it changes nothing, and on the first run it has no agent either
         'pipelines/azure-devops/cicd-infra.yml'           = @('Validate', 'Plan', 'Apply', 'ApprovalEnvironmentNotSet')

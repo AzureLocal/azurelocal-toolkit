@@ -27,6 +27,10 @@
 # jobs that validate and plan use it; the apply and the on-premises jobs run on the self-hosted runner.
 # Trigger: every push and pull request that touches the code validates it. Plan, apply and the configuration run only on the default branch
 # of the repository (github.event.repository.default_branch): the branch filter of a trigger cannot read a variable.
+#
+# No approval environment, no change. While the repository variable AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT is empty, the job that changes something does not run (its if needs the
+# variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 name: Azure Local Deployment
 
 on:
@@ -176,6 +180,7 @@ jobs:
   terraform-apply:
     name: Terraform Apply
     needs: [terraform-plan]
+    if: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT != '' }}
     runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     env:
@@ -234,6 +239,7 @@ jobs:
   configure-onprem:
     name: Configure On-Premises
     needs: [terraform-apply]
+    if: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT != '' }}
     runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     env:
@@ -306,6 +312,7 @@ jobs:
   configure-operations:
     name: Configure Operations
     needs: [configure-onprem]
+    if: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT != '' }}
     runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     env:
@@ -353,3 +360,19 @@ jobs:
       - name: Run Monitoring Setup
         working-directory: ${{ env.ANSIBLE_ROOT }}
         run: ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+
+  # A change was asked for, but the approval environment is not set: the job that changes something does not run (it needs the variable named below), and this job fails and says why.
+  # Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+  approval-environment-not-set:
+    name: Refuse, no approval environment is set
+    needs: [terraform-plan]
+    if: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT == '' }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 5
+    steps:
+      - name: No approval environment is set, so nothing is changed
+        shell: pwsh
+        run: |
+          Write-Error 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT (devops.pipelines.environments.terraform_deployment) is empty, and the jobs that apply the reviewed plan and run the on-premises Ansible plays change a system, so they do not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed.' -ErrorAction Continue
+          exit 1

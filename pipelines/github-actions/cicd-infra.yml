@@ -25,6 +25,10 @@
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. The
 # validate job only validates; plan and apply use it only for the first run, before the self-hosted runners exist.
+#
+# No approval environment, no change. While the repository variable AZL_ENVIRONMENT_CICD_INFRA is empty, the job that changes something does not run (its if needs the
+# variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 name: CI/CD infrastructure
 
 on:
@@ -165,7 +169,7 @@ jobs:
   apply:
     name: Apply (needs approval)
     needs: plan
-    if: ${{ inputs.apply }}
+    if: ${{ inputs.apply && vars.AZL_ENVIRONMENT_CICD_INFRA != '' }}
     # The same runner choice as the plan: the first run has no self-hosted runner yet.
     runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON(format('["self-hosted","{0}","{1}"]', vars.AZL_RUNNER_OS, vars.AZL_RUNNER_LABEL)) || 'ubuntu-latest' }}
     environment: ${{ vars.AZL_ENVIRONMENT_CICD_INFRA }} # required reviewers: the manual approval
@@ -205,3 +209,19 @@ jobs:
           Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
           & $env:TASK06 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -PlanFile "$env:RUNNER_TEMP/cicd-infra/cicd-infra.tfplan" -Apply
           exit $LASTEXITCODE
+
+  # A change was asked for, but the approval environment is not set: the job that changes something does not run (it needs the variable named below), and this job fails and says why.
+  # Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+  approval-environment-not-set:
+    name: Refuse, no approval environment is set
+    needs: plan
+    if: ${{ inputs.apply && vars.AZL_ENVIRONMENT_CICD_INFRA == '' }}
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON(format('["self-hosted","{0}","{1}"]', vars.AZL_RUNNER_OS, vars.AZL_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 5
+    steps:
+      - name: No approval environment is set, so nothing is changed
+        shell: pwsh
+        run: |
+          Write-Error 'AZL_ENVIRONMENT_CICD_INFRA (devops.pipelines.environments.cicd_infra) is empty, and the Apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed.' -ErrorAction Continue
+          exit 1

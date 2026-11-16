@@ -48,6 +48,7 @@ for the files per platform, the inputs, the approval and the lock.
   at all, apart from the storage performance test (below).
 - **The storage performance test is behind the approval.** `-RunPerformanceTest` writes and reads a scratch file on every cluster shared volume. The
   validation pipeline runs the other checks read only and the load test as a separate approved job (input `run_performance_test`).
+- **No approval environment, no change.** With `devops.pipelines.environments.operations` empty, the job that changes the cluster does not run on any platform: on GitHub and GitLab a refusal job (`approval-environment-not-set`) fails with a message that names the variable, and on Azure DevOps the stage `ApprovalEnvironmentNotSet` does. Nothing is changed.
 - **One change at a time.** The update, the node maintenance, the changing cluster operations and the load test share one concurrency group
   (GitHub), one `resource_group` (GitLab) and one environment with an Exclusive lock check (Azure DevOps), so two of them never run on the cluster
   together.

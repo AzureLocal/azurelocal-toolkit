@@ -29,6 +29,10 @@
 #   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
 #   AZL_POWERSHELL_YAML_VERSION       devops.pipelines.tool_versions.powershell_yaml
 # Runner: the general self-hosted runner with pwsh 7 and a route to the cluster (WinRM, TCP 5985 or 5986).
+#
+# No approval environment, no change. While the repository variable AZL_ENVIRONMENT_OPERATIONS is empty, the job that changes something does not run (its if needs the
+# variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 name: Azure Local day 2 cluster operations
 
 on:
@@ -156,7 +160,7 @@ jobs:
   apply-changes:
     name: Apply the change (needs approval)
     needs: plan-changes
-    if: ${{ contains(fromJSON('["MaintenanceMode","LiveMigrate","Rebalance"]'), inputs.action) }}
+    if: ${{ contains(fromJSON('["MaintenanceMode","LiveMigrate","Rebalance"]'), inputs.action) && vars.AZL_ENVIRONMENT_OPERATIONS != '' }}
     runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     # Required reviewers on this environment are the approval gate.
     environment: ${{ vars.AZL_ENVIRONMENT_OPERATIONS }}
@@ -202,3 +206,19 @@ jobs:
           # The log of a change: 90 days is the toolkit's retention for the record of a change to the cluster.
           retention-days: 90
           if-no-files-found: warn
+
+  # A change was asked for, but the approval environment is not set: the job that changes something does not run (it needs the variable named below), and this job fails and says why.
+  # Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+  approval-environment-not-set:
+    name: Refuse, no approval environment is set
+    needs: plan-changes
+    if: ${{ contains(fromJSON('["MaintenanceMode","LiveMigrate","Rebalance"]'), inputs.action) && vars.AZL_ENVIRONMENT_OPERATIONS == '' }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 5
+    steps:
+      - name: No approval environment is set, so nothing is changed
+        shell: pwsh
+        run: |
+          Write-Error 'AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) is empty, and the apply-changes job (MaintenanceMode, LiveMigrate and Rebalance) changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed.' -ErrorAction Continue
+          exit 1
