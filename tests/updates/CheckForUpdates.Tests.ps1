@@ -112,7 +112,7 @@ Describe 'Get-AvailableSolutionUpdate.ps1 (the cluster)' {
             $r = Invoke-Check (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Next | Should -Be 'ImportSbe'
-            $r.Rows[0].Detail | Should -Match 'task 10'
+            $r.Rows[0].Detail | Should -Match 'task 11'
             $r.Text | Should -Match 'Verdict: AdditionalContentRequired'
         }
 
