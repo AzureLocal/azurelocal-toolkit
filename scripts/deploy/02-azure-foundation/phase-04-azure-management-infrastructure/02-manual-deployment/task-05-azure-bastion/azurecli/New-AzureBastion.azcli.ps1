@@ -200,8 +200,11 @@ try {
         $pip = $null
         try { $pip = Get-AzCliResource network public-ip show --name $publicIpName --resource-group $group --subscription $subscriptionId }
         catch { Exit-Failed "The public IP address '$publicIpName' could not be read: $($_.Exception.Message)" }
-        if (-not $pip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$group'", 'Create a Standard, static, zone-redundant public IP address')) {
-            $pipArgs = @('network', 'public-ip', 'create', '--name', $publicIpName, '--resource-group', $group, '--location', $location, '--subscription', $subscriptionId, '--sku', 'Standard', '--allocation-method', 'Static', '--zone', '1', '2', '3')
+        # No --zone is given: a Standard public IP address without zones is zone-redundant in a region that has availability zones and
+        # regional in one that does not (Microsoft Learn: Public IP addresses), and a Bastion host deployed without zones takes any public
+        # IP address, zonal or not (Microsoft Learn: Bastion configuration settings), so the same call works in every region.
+        if (-not $pip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$group'", 'Create a Standard, static public IP address (zone-redundant where the region has zones)')) {
+            $pipArgs = @('network', 'public-ip', 'create', '--name', $publicIpName, '--resource-group', $group, '--location', $location, '--subscription', $subscriptionId, '--sku', 'Standard', '--allocation-method', 'Static')
             $pipArgs += @(Get-TagArgument)
             $null = Invoke-AzJson @pipArgs
             Write-Line "[created] Public IP address '$publicIpName'."

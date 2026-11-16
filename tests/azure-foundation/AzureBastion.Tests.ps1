@@ -78,7 +78,7 @@ Describe 'New-AzureBastion.ps1' {
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Row.Action | Should -Be 'Created'
             Should -Invoke Set-AzContext -Times 1 -Exactly -ParameterFilter { $SubscriptionId -eq $global:AzlBsSub }
-            Should -Invoke New-AzPublicIpAddress -Times 1 -Exactly -ParameterFilter { $Name -eq 'bas-iic-hub-01-pip' -and $ResourceGroupName -eq 'rg-iic-conn-01' -and $Location -eq 'westeurope' -and $Sku -eq 'Standard' -and $AllocationMethod -eq 'Static' }
+            Should -Invoke New-AzPublicIpAddress -Times 1 -Exactly -ParameterFilter { $Name -eq 'bas-iic-hub-01-pip' -and $ResourceGroupName -eq 'rg-iic-conn-01' -and $Location -eq 'westeurope' -and $Sku -eq 'Standard' -and $AllocationMethod -eq 'Static' -and -not $Zone }
             Should -Invoke New-AzBastion -Times 1 -Exactly -ParameterFilter { $Name -eq 'bas-iic-hub-01' -and $ResourceGroupName -eq 'rg-iic-conn-01' -and $Sku -eq 'Standard' -and $VirtualNetworkId -like '*/virtualNetworks/vnet-iic-hub-01' -and $PublicIpAddressId -eq '/pip/bas-iic-hub-01-pip' }
             Should -Invoke Set-AzContext -Times 1 -Exactly -ParameterFilter { $SubscriptionId -eq $global:AzlBsHome }
         }

@@ -157,8 +157,11 @@ try {
         try { $pip = Get-AzPublicIpAddress -ResourceGroupName $group -Name $publicIpName -ErrorAction Stop }
         catch { if ($_.Exception.Message -notmatch $NotFound) { Exit-Failed "The public IP address '$publicIpName' could not be read: $($_.Exception.Message)" } }
         $createPip = -not $pip
-        if ($createPip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$group'", 'Create a Standard, static, zone-redundant public IP address')) {
-            $pipArgs = @{ ResourceGroupName = $group; Name = $publicIpName; Location = $location; Sku = 'Standard'; AllocationMethod = 'Static'; Zone = @('1', '2', '3'); ErrorAction = 'Stop' }
+        # No zones are given: a Standard public IP address without zones is zone-redundant in a region that has availability zones and
+        # regional in one that does not (Microsoft Learn: Public IP addresses), and a Bastion host deployed without zones takes any public
+        # IP address, zonal or not (Microsoft Learn: Bastion configuration settings), so the same call works in every region.
+        if ($createPip -and $PSCmdlet.ShouldProcess("public IP address '$publicIpName' in '$group'", 'Create a Standard, static public IP address (zone-redundant where the region has zones)')) {
+            $pipArgs = @{ ResourceGroupName = $group; Name = $publicIpName; Location = $location; Sku = 'Standard'; AllocationMethod = 'Static'; ErrorAction = 'Stop' }
             if ($tags.Count) { $pipArgs.Tag = $tags }
             $pip = New-AzPublicIpAddress @pipArgs
             Write-Line "[created] Public IP address '$publicIpName'."

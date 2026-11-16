@@ -51,11 +51,12 @@ Describe 'New-AzureBastion.azcli.ps1' {
     }
 
     Context 'creating the host (happy path)' {
-        It 'creates a Standard static zone-redundant public IP address and the host, in the subscription, group and region of the file' {
+        It 'creates a Standard static public IP address without zones and the host, in the subscription, group and region of the file' {
             $r = Invoke-AzCliScript $script:Script (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Action | Should -Be 'Created'
-            Get-AzCall "network public-ip create --name bas-iic-hub-01-pip --resource-group rg-iic-hub-01 --location westeurope --subscription $($global:AzlBsSub) --sku Standard --allocation-method Static --zone 1 2 3" | Should -HaveCount 1
+            Get-AzCall "network public-ip create --name bas-iic-hub-01-pip --resource-group rg-iic-hub-01 --location westeurope --subscription $($global:AzlBsSub) --sku Standard --allocation-method Static" | Should -HaveCount 1
+            Get-AzCall 'network public-ip create *--zone*' | Should -HaveCount 0
             Get-AzCall "network bastion create --name bas-iic-hub-01 --resource-group rg-iic-hub-01 --location westeurope --subscription $($global:AzlBsSub) --vnet-name /vnets/vnet-iic-hub-01 --public-ip-address bas-iic-hub-01-pip --sku Standard" | Should -HaveCount 1
         }
 
