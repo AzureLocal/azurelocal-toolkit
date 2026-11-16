@@ -1,21 +1,11 @@
 # =============================================================================
-# Stage: Validate Deployment — End-to-end validation
+# Stage: Validate Deployment — read-only Azure summary
 # =============================================================================
-
-validate:connectivity:
-  stage: validate-deployment
-  script:
-    - |
-      pwsh -NoProfile -Command '
-        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
-        ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
-        Write-Output "The post-deployment checks are Invoke-VerifyPostDeployment.ps1 and the scripts of scripts/deploy/06-testing-validation; run them from a jump server that reaches the cluster."
-      '
-  when: manual
-  allow_failure: true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+# One job: the Azure Policy compliance summary and the first Defender for Cloud assessments of the subscription. It changes nothing and takes
+# the sign-in of devops.authentication.method (AZL_AUTH_METHOD) and the subscription of azure.subscription_id from the variables task 05 sets.
+# The post-deployment checks of the cluster itself are Invoke-VerifyPostDeployment.ps1 and the scripts of scripts/deploy/06-testing-validation:
+# they need a jump server that reaches the cluster, so no job here runs them. (A job that only ran the file check and printed this hint was
+# removed in K7: config:validate in the validate stage already checks the file.)
 
 validate:compliance:
   stage: validate-deployment

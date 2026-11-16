@@ -6,7 +6,7 @@ repoType: ps-module
 
 adopts:
   standards: true
-  # None: the workflows drift-check, release-please, validate-structure and add-to-project are archived under archive/github-actions/
+  # None: the workflows drift-check, release-please, validate-structure and add-to-project are removed (history before the K7 commit holds them under archive/github-actions/)
   # and run nowhere. The repository CI is azure-pipelines.yml (Azure DevOps); the only live GitHub workflow is deploy-docs.yml.
   reusableWorkflows: []
   maproom: false

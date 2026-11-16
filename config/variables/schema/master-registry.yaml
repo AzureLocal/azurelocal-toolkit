@@ -23199,9 +23199,7 @@ tools:
               type: object
               area: "pipelines/gitlab/stages/validate-deployment.yml"
               properties:
-                AZL_POWERSHELL_YAML_VERSION: {"name":"AZL_POWERSHELL_YAML_VERSION","type":"string","declared_type":"string","required":"Y","source_key":"devops.pipelines.tool_versions.powershell_yaml","read_at":"pipelines/gitlab/stages/validate-deployment.yml:10","description":"[pipelines/gitlab/stages/validate-deployment.yml] The powershell-yaml version: a GitLab project CI/CD variable that task 05 of the CI/CD setup sets from devops.pipelines.tool_versions.powershell_yaml."}
-                AZL_INFRASTRUCTURE_FILE: {"name":"AZL_INFRASTRUCTURE_FILE","type":"string","declared_type":"string","required":"Y","source_key":"devops.pipelines.infrastructure_file","read_at":"pipelines/gitlab/stages/validate-deployment.yml:11","description":"[pipelines/gitlab/stages/validate-deployment.yml] The infrastructure file: a GitLab project CI/CD variable that task 05 of the CI/CD setup sets from devops.pipelines.infrastructure_file."}
-                AZL_AUTH_METHOD: {"name":"AZL_AUTH_METHOD","type":"string","declared_type":"string","required":"Y","source_key":"devops.authentication.method","read_at":"pipelines/gitlab/stages/validate-deployment.yml:27","description":"[pipelines/gitlab/stages/validate-deployment.yml] The sign-in method: a GitLab project CI/CD variable that task 05 of the CI/CD setup sets from devops.authentication.method."}
+                AZL_AUTH_METHOD: {"name":"AZL_AUTH_METHOD","type":"string","declared_type":"string","required":"Y","source_key":"devops.authentication.method","read_at":"pipelines/gitlab/stages/validate-deployment.yml:17","description":"[pipelines/gitlab/stages/validate-deployment.yml] The sign-in method: a GitLab project CI/CD variable that task 05 of the CI/CD setup sets from devops.authentication.method."}
             pipelines_gitlab_stages_validate_yml:
               type: object
               area: "pipelines/gitlab/stages/validate.yml"
@@ -23338,10 +23336,10 @@ tools:
               type: object
               area: "pipelines/gitlab/stages/validate-deployment.yml"
               properties:
-                ARM_CLIENT_ID: {"name":"ARM_CLIENT_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:27","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
-                ARM_SUBSCRIPTION_ID: {"name":"ARM_SUBSCRIPTION_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:29","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
-                ARM_TENANT_ID: {"name":"ARM_TENANT_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:27","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
-                ARM_OIDC_TOKEN: {"name":"ARM_OIDC_TOKEN","type":"oidc id_token","declared_type":"oidc id_token","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:27","description":"[pipelines/gitlab/stages/validate-deployment.yml] The ID token the platform issues for the job (GitLab id_tokens, audience api://AzureADTokenExchange; Azure DevOps: idToken of the service connection), used only when AZL_AUTH_METHOD is oidc."}
+                ARM_CLIENT_ID: {"name":"ARM_CLIENT_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:17","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
+                ARM_SUBSCRIPTION_ID: {"name":"ARM_SUBSCRIPTION_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:19","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
+                ARM_TENANT_ID: {"name":"ARM_TENANT_ID","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:17","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
+                ARM_OIDC_TOKEN: {"name":"ARM_OIDC_TOKEN","type":"oidc id_token","declared_type":"oidc id_token","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:17","description":"[pipelines/gitlab/stages/validate-deployment.yml] The ID token the platform issues for the job (GitLab id_tokens, audience api://AzureADTokenExchange; Azure DevOps: idToken of the service connection), used only when AZL_AUTH_METHOD is oidc."}
             scripts_common_cicd_infra_AzlCicdInfra_psm1:
               type: object
               area: "scripts/common/cicd-infra/AzlCicdInfra.psm1"
@@ -23443,7 +23441,7 @@ tools:
               type: object
               area: "pipelines/gitlab/stages/validate-deployment.yml"
               properties:
-                ARM_CLIENT_SECRET: {"name":"ARM_CLIENT_SECRET","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:28","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
+                ARM_CLIENT_SECRET: {"name":"ARM_CLIENT_SECRET","type":"string","declared_type":"string","required":"N","read_at":"pipelines/gitlab/stages/validate-deployment.yml:18","description":"[pipelines/gitlab/stages/validate-deployment.yml] Referenced but not defined in the file: set it under Settings > CI/CD > Variables."}
             scripts_common_cicd_infra_AzlCicdInfra_psm1:
               type: object
               area: "scripts/common/cicd-infra/AzlCicdInfra.psm1"
