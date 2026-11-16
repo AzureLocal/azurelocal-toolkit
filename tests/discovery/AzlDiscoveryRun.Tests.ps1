@@ -101,6 +101,29 @@ Describe 'Invoke-AzlDiscoveryRun.ps1' {
         Test-Path -LiteralPath $env:STUB_LOG | Should -BeFalse
         $env:STUB_LOG = $null
     }
+    It 'exits 2, runs nothing and creates no output when the file cannot be parsed (<Case>)' -ForEach @(
+        @{ Case = 'broken YAML'; Content = "nodes: [`n  - name: a`n  bad: {`n    unclosed" }
+        @{ Case = 'a tab and a stray colon'; Content = "nodes:`n`t- name: a`n: :`n" }
+        @{ Case = 'not a mapping'; Content = "- one`n- two`n" }
+        @{ Case = 'a plain scalar'; Content = "just some text`n" }
+    ) {
+        $file = Join-Path $TestDrive ('broken-' + [guid]::NewGuid().ToString('N') + '.yml')
+        Set-Content -LiteralPath $file -Value $Content -Encoding utf8NoBOM
+        $out = Join-Path $TestDrive ('broken-out-' + [guid]::NewGuid().ToString('N'))
+        $env:STUB_LOG = Join-Path $TestDrive ('broken-' + [guid]::NewGuid().ToString('N') + '.jsonl')
+        $text = & pwsh -NoProfile -NonInteractive -File $script:Run -InfrastructureFile $file -OutputDirectory $out -ToolkitRoot $script:Toolkit 2>&1 | Out-String
+        $code = $LASTEXITCODE
+        $log = $env:STUB_LOG
+        $env:STUB_LOG = $null
+        $code | Should -Be 2 -Because $text
+        $text | Should -Match 'cannot be read'
+        Test-Path -LiteralPath $log | Should -BeFalse -Because 'no discovery script was started'
+        Test-Path -LiteralPath $out | Should -BeFalse -Because 'nothing was created'
+    }
+    It 'accepts a file that parses but is not complete (discovery is what fills it in)' {
+        $r = Invoke-Discovery -Arguments '-Scope HardwareInventory'
+        $r.ExitCode | Should -Be 0 -Because $r.Console
+    }
     It 'exits 2 and runs nothing for -WriteBack without DellDiscovery' {
         $r = Invoke-Discovery -Arguments '-WriteBack'
         $r.ExitCode | Should -Be 2

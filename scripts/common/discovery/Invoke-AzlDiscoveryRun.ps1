@@ -76,9 +76,14 @@ $ErrorActionPreference = 'Stop'
 
 if (-not $ToolkitRoot) { $ToolkitRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..')) }
 function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { Exit-InputProblem "The infrastructure file '$InfrastructureFile' does not exist." }
 $InfrastructureFile = (Resolve-Path -LiteralPath $InfrastructureFile).Path
+# The file must parse as a YAML mapping (the same read every discovery script makes); a file that cannot be read ends the run here, with nothing run and nothing created.
+# It is not validated against the schema: a file that is still being filled in is exactly what discovery is for.
+try { $null = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "The infrastructure file '$InfrastructureFile' cannot be read: $($_.Exception.Message)" }
 if (@($Scope).Count -eq 0) { Exit-InputProblem 'The scope is empty: name at least one step.' }
 if ($WriteBack -and 'DellDiscovery' -notin $Scope) { Exit-InputProblem '-WriteBack needs DellDiscovery in -Scope: there is nothing to write back without it.' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
