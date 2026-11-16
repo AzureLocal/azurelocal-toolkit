@@ -105,6 +105,17 @@ adapter's well-known paths are used only when `-Vendor Dell` is given and the se
 - **Bounded parallelism.** `-ThrottleLimit` nodes at a time (default 4, 1 to 16); the requests to one node are sequential. A failing node never stops the others.
 - **TLS.** Self-signed certificates are accepted unless `-VerifyCertificate`; the skip applies to these requests only.
 
+## Run it in a pipeline
+
+`pipelines/github-actions/discovery.yml`, `pipelines/gitlab/stages/discovery.yml` and `pipelines/azure-devops/discovery.yml` run
+`scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` on the general self-hosted runner (see [pipelines/README.md](../pipelines/README.md)). The script runs, one after the other,
+`Get-HardwareInventory.ps1` (any maker), `Invoke-HardwareDiscovery.ps1` (Dell), `Inventory-AzureTenant.ps1` and `Get-OnPremInventory.ps1`, and writes one report
+(`discovery-report.json`, `summary.md` and a folder per step) that the pipeline publishes as an artifact even when a step failed. Every step is read only, so there is no approval.
+The BMC login is the secret reference of the master file, read from Key Vault at run time: no pipeline file or variable holds a password.
+
+With the pipeline input `write_back` (scope `dell`) the run edits a **copy** of the master file in the artifact (`write-back/infrastructure.yml` and `write-back/changes.txt`:
+the serial numbers and MAC addresses found). The file in the repository is never changed and nothing is committed; review the copy and commit it through a pull request.
+
 ## Run it
 
 ```powershell

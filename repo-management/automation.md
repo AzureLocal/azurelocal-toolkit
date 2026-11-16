@@ -1,10 +1,11 @@
 # GitHub Actions — azurelocal-toolkit (archived)
 
-> **Archived.** The workflows this document describes are no longer live. Their files are kept under
-> `archive/github-actions/` for reference and run nowhere. The repository's own CI is the Azure DevOps pipeline
-> `azure-pipelines.yml` (governed by HCS Platform Engineering); the only live GitHub workflow is
-> `.github/workflows/deploy-docs.yml` (the documentation site). Where this document says `.github/workflows/<file>`,
-> read `archive/github-actions/<file>`.
+> **Archived.** The workflows this document describes are no longer live, and their files are removed from the tree (K7: none of
+> them is a deployment pipeline, and each called a reusable workflow of an organisation this repository no longer adopts, or a script
+> that no longer exists). They stay in git history: the last commit that holds them is `182484a5`, under `archive/github-actions/`.
+> The repository's own CI is the Azure DevOps pipeline `azure-pipelines.yml` (governed by HCS Platform Engineering); the only live
+> GitHub workflow is `.github/workflows/deploy-docs.yml` (the documentation site). Where this document says
+> `.github/workflows/<file>`, read that file at commit `182484a5`.
 >
 > The deployment pipelines the toolkit ships for its users (Azure DevOps, GitHub Actions, GitLab) are under `pipelines/`;
 > see `pipelines/README.md`.

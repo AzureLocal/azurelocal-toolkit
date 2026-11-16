@@ -123,7 +123,7 @@ Describe 'Every Ansible variable is registered' {
 
     It 'finds every defaults and vars file under src/ansible (a new one must be listed above), and no group_vars or host_vars file is in git' {
         $found = @(Get-ChildItem (Join-Path $script:Repo 'src\ansible') -Recurse -Include main.yml, all.yml -File | Where-Object { $_.DirectoryName -match 'defaults$|vars$' } | ForEach-Object { Get-RelativePath $_.FullName })
-        $found.Count | Should -Be 8
+        $found.Count | Should -Be 9   # the eight above, and the role azurelocal_os_configuration (registered and checked by tests/variables/AnsibleValues.Tests.ps1)
         @(& git -C $script:Repo ls-files 'src/ansible/inventory/group_vars' 'src/ansible/inventory/host_vars' 'src/ansible/inventory/hosts.yml' 'src/ansible/inventory/cicd-runners.yml') | Should -BeNullOrEmpty
     }
 

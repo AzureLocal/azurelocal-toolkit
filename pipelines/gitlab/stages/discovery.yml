@@ -1,0 +1,92 @@
+# Azure Local discovery, GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/discovery.yml) or copy it. It declares its own stage, so it
+# is NOT included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the command an
+# operator runs by hand:
+#   pwsh -File scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1 ...
+# and nothing else; the logic is in the script, not here. The script runs the discovery scripts of the toolkit one after the other:
+#   hardware   Get-HardwareInventory.ps1: every BMC of nodes[] over the standard Redfish API (any maker; GET requests only)
+#   dell       Invoke-HardwareDiscovery.ps1: the Dell iDRAC reading, with the proposal for nodes[] (Dell only; GET requests only)
+#   tenant     Inventory-AzureTenant.ps1: the Azure tenant of azure.tenant_id (read only)
+#   directory  Get-OnPremInventory.ps1: the computer objects of the Active Directory OU of the instance (read only)
+#   all        hardware, tenant and directory
+# Nothing in this run changes a BMC, a node, Azure or Active Directory, so there is no approval job.
+#
+# The job fails when a step fails; the report, summary.md and what each step wrote are its artifacts. With DISCOVERY_WRITE_BACK=true (scope dell)
+# the run also prepares the serial numbers and MAC addresses it found in a COPY of the master file, in the artifacts (write-back/). The file in the
+# repository is not changed and nothing is committed: review the copy and commit it through a merge request.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: expands CI/CD variables
+# (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  azure.automation_identity, azure.tenant_id, azure.subscription_id (Reader on the
+#                          subscriptions of the tenant inventory; Get on the Key Vault secrets of the BMC login)
+#   AZL_AUTH_METHOD        devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                          or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# Run variables (a pipeline run from the web form offers them):
+#   DISCOVERY_SCOPE        all | hardware | dell | tenant | directory
+#   DISCOVERY_MANAGEMENT_PORT  scope dell: the management port of every node, by suggested name or MAC (empty: the MAC already in the file)
+#   DISCOVERY_WRITE_BACK   true: scope dell, prepare the copy of the master file described above
+#   DISCOVERY_INCLUDE_RBAC true: scope tenant, also record the role assignments
+# The BMC login is never in this file or in a variable of this project: it is the secret reference of the master file (hardware.bmc, or
+# nodes[].bmc), and the toolkit secret resolver reads it from Key Vault at run time with the Azure sign-in of the job.
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7, a route to the BMC addresses (HTTPS, TCP 443) and, for the directory step,
+# the ActiveDirectory module (RSAT) on a domain-joined runner. A step the runner cannot do fails with its reason in the report.
+
+stages:
+  - discovery
+
+variables:
+  DISCOVERY_SCRIPT: scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1
+  DISCOVERY_SCOPE:
+    value: all
+    options: [all, hardware, dell, tenant, directory]
+    description: 'What to discover: all (hardware inventory, Azure tenant, Active Directory), hardware, dell, tenant or directory.'
+  DISCOVERY_MANAGEMENT_PORT: ''
+  DISCOVERY_WRITE_BACK: 'false'
+  DISCOVERY_INCLUDE_RBAC: 'false'
+  REPORT_DIRECTORY: discovery-report
+
+discovery:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: discovery
+  # One discovery at a time (GitHub: concurrency group; Azure DevOps: lockBehavior).
+  resource_group: azure-local-discovery
+  # A read-only run: the toolkit's limit, not a figure from Microsoft. A BMC is read for at most 900 seconds (Invoke-HardwareDiscovery.ps1, NodeBudgetSeconds), four at a time.
+  timeout: 2 hours
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    ARM_OIDC_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null }
+        else { Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null }
+      '
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $scopes = @{ all = @("HardwareInventory", "AzureTenant", "ActiveDirectory"); hardware = @("HardwareInventory"); dell = @("DellDiscovery"); tenant = @("AzureTenant"); directory = @("ActiveDirectory") }
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputDirectory = $env:REPORT_DIRECTORY; Scope = $scopes[$env:DISCOVERY_SCOPE] }
+        if ($env:DISCOVERY_MANAGEMENT_PORT) { $p.ManagementPort = $env:DISCOVERY_MANAGEMENT_PORT }
+        if ($env:DISCOVERY_WRITE_BACK -eq "true") { $p.WriteBack = $true }
+        if ($env:DISCOVERY_INCLUDE_RBAC -eq "true") { $p.IncludeRBAC = $true }
+        & $env:DISCOVERY_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:REPORT_DIRECTORY/summary.md"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+  artifacts:
+    when: always
+    # The report of a discovery run (serial numbers and MAC addresses; with write-back a copy of the master file, whose secrets are references): 30 days is the toolkit's retention for reports.
+    expire_in: 30 days
+    name: discovery-report
+    paths:
+      - $REPORT_DIRECTORY/

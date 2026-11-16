@@ -17,9 +17,9 @@ Registry version 5.0.62. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 753 | 504 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4428 | 4220 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4570 | 4362 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6554 | 4726 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6696 | 4868 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,9 +94,9 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1071 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1078 |
 | sonar | Sonar | 19 | 0 | 266 |
-| cicd-infra | Outside the flow | 89 | 0 | 554 |
+| cicd-infra | Outside the flow | 89 | 0 | 687 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 231 | 0 | 0 |
@@ -114,7 +114,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 **Reads (30):**
 `identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.domain_controllers`, `scenario.identity`, `azure.tenant_id`, `nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.type`, `nodes[].bmc.username`, `nodes[].bmc.password`, `nodes[].bios.*`, `hardware.vendor`, `hardware.model`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.gpu.enabled`, `hardware.gpu.model`, `hardware.gpu.count_per_node`, `hardware.bmc.username`, `hardware.bmc.password`, `hardware.bmc.verify_certificate`, `hardware.inventory.output_directory`, `hardware.inventory.file_name_prefix`, `hardware.inventory.format`, `hardware.inventory.timeout_seconds`, `hardware.bios.*`
 
-Where in the code (file, function, keys read by name; 11 places):
+Where in the code (file, function, keys read by name; 12 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -129,6 +129,7 @@ Where in the code (file, function, keys read by name; 11 places):
 | `scripts/common/idrac-management/Enable-IdracVnc.ps1` | `(script)` | 2 |
 | `scripts/common/redfish/AzlRedfishInventory.psm1` | `Get-AzlHardwareSymmetry` | 2 |
 | `scripts/common/discovery/Inventory-AzureTenant.ps1` | `(script)` | 1 |
+| `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` | `(script)` | 1 |
 
 ### ztp
 
@@ -1865,22 +1866,21 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 
 | Tool | Kind | Variables | read | placeholder |
 | --- | --- | ---: | ---: | ---: |
-| ansible | config_keys | 12 | 12 | 0 |
+| ansible | config_keys | 14 | 14 | 0 |
 | ansible | variables | 114 | 114 | 0 |
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 958 | 958 | 0 |
+| arm_deployment | parameters | 965 | 965 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
-| cicd_infra | config_keys | 5 | 5 | 0 |
-| cicd_infra | env_vars | 67 | 67 | 0 |
+| cicd_infra | env_vars | 103 | 103 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 153 | 153 | 0 |
-| cicd_infra | pipeline_variables | 127 | 127 | 0 |
-| cicd_infra | secret_names | 23 | 23 | 0 |
+| cicd_infra | pipeline_inputs | 219 | 219 | 0 |
+| cicd_infra | pipeline_variables | 159 | 159 | 0 |
+| cicd_infra | secret_names | 27 | 27 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |
 | discovery | parameters | 75 | 75 | 0 |

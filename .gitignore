@@ -22,7 +22,9 @@ override.tf.json
 # Ansible
 ansible/roles/
 *.retry
-ansible/.vault_pass
+.vault_pass
+*.vault
+src/ansible/vars/*.yml
 
 # PowerShell
 *.psm1~

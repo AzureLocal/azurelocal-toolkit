@@ -9,7 +9,7 @@ BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Repo = $repo
     $script:Automation = @(
-        foreach ($dir in 'pipelines', 'ansible') {
+        foreach ($dir in 'pipelines', 'src/ansible') {
             Get-ChildItem -LiteralPath (Join-Path $repo $dir) -Recurse -File | Where-Object { $_.Extension -in '.yml', '.yaml', '.example', '.j2' -or $_.Name -like '*.yml.*' }
         }
     )
@@ -22,7 +22,7 @@ Describe 'Pipelines and the Ansible role do not enable an SBE' {
     It 'sets no hardware.sbe value, delivery route, bundle or pull address in <_>' -ForEach @(
         'pipelines/github-actions/os-configuration.yml', 'pipelines/gitlab/os-configuration.gitlab-ci.yml', 'pipelines/azure-devops/os-configuration.yml',
         'pipelines/azure-devops/arm-deployment.yml', 'pipelines/github-actions/arm-deployment.yml',
-        'ansible/os-configuration/roles/azurelocal_os_configuration/defaults/main.yml', 'ansible/os-configuration/inventory/hosts.yml.example'
+        'src/ansible/roles/azurelocal_os_configuration/defaults/main.yml', 'src/ansible/vars/os-configuration.yml.example'
     ) {
         $text = Get-Content -LiteralPath (Join-Path $script:Repo $_) -Raw
         $text | Should -Not -Match '(?im)^\s*(?!#)[^#\r\n]*\b(winrm_copy|node_pull)\b\s*$' -Because 'a pipeline never picks a delivery route'
@@ -30,14 +30,14 @@ Describe 'Pipelines and the Ansible role do not enable an SBE' {
         $text | Should -Not -Match '(?im)^\s*sbe\s*:'
     }
     It 'defaults the step list to the steps of each node''s method, and the Sbe step is then a no-op without hardware.sbe' {
-        $defaults = Get-Content -LiteralPath (Join-Path $script:Repo 'ansible/os-configuration/roles/azurelocal_os_configuration/defaults/main.yml') -Raw
+        $defaults = Get-Content -LiteralPath (Join-Path $script:Repo 'src/ansible/roles/azurelocal_os_configuration/defaults/main.yml') -Raw
         $defaults | Should -Match 'azurelocal_os_configuration_steps:\s*\[\]'
         $ado = Get-Content -LiteralPath (Join-Path $script:Repo 'pipelines/azure-devops/os-configuration.yml') -Raw
         $ado | Should -Match "(?s)- name: steps.*?default: all"
         $ado | Should -Match 'hardware\.sbe\.delivery'
     }
     It 'says in the Ansible README that the SBE is opt-in' {
-        (Get-Content -LiteralPath (Join-Path $script:Repo 'ansible/os-configuration/README.md') -Raw) | Should -Match 'opt-in'
+        (Get-Content -LiteralPath (Join-Path $script:Repo 'src/ansible/roles/azurelocal_os_configuration/README.md') -Raw) | Should -Match 'opt-in'
     }
 }
 

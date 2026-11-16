@@ -1,11 +1,11 @@
 # Azure Local OS configuration: the Ansible front end
 
-An Ansible role (`azurelocal_os_configuration`) and a playbook (`os-configuration.yml`) that start
+An Ansible role (`azurelocal_os_configuration`, in `src/ansible/roles`) and a playbook (`src/ansible/playbooks/02-os-configuration.yml`) that start
 `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` for operators and teams that run
 everything from Ansible or AWX. **The engine stays PowerShell 7.** Ansible does not configure the nodes, does not connect to them and
 does not decide anything the wrapper decides: it starts `pwsh`, gives the wrapper its parameters, puts a pause for approval between Plan
 and Apply, surfaces `report.json` as facts and fails with the wrapper's exit code. What the wrapper does, step by step, is in
-[OS configuration and ARM Validate/Deploy](../../docs/os-configuration-and-arm-deployment.md).
+[OS configuration and ARM Validate/Deploy](../../../../docs/os-configuration-and-arm-deployment.md).
 
 ## What runs where
 
@@ -16,7 +16,7 @@ ansible-playbook (controller, or an AWX execution environment / runner)
             -> Azure Arc Run Command (ZTP nodes)  or  WinRM TCP 5985 (ISO-installed nodes)  ->  the Azure Local nodes
 ```
 
-The nodes are not Ansible hosts. The play runs on **one runner** (the inventory group `os_config_runner`, usually `localhost` with
+The nodes are not Ansible hosts. The play runs on **one runner** (`localhost`: the controller or the AWX execution environment, with
 `ansible_connection: local`). The runner needs:
 
 - PowerShell 7 (`pwsh`) with the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules;
@@ -32,10 +32,10 @@ The `infrastructure.yml` and the ZTP handoff files are paths **on the runner**.
 ## Run it
 
 ```bash
-cd ansible/os-configuration
-cp inventory/hosts.yml.example inventory/hosts.yml        # edit: infrastructure file, handoff path
-ansible-playbook os-configuration.yml --check             # Plan only. Reads the nodes, changes nothing.
-ansible-playbook os-configuration.yml                     # Plan, pause for approval, Apply
+cd src/ansible
+cp vars/os-configuration.yml.example /srv/azurelocal/os-configuration.yml    # edit: infrastructure file, handoff path (keep it out of the repository)
+ansible-playbook playbooks/02-os-configuration.yml -e @/srv/azurelocal/os-configuration.yml --check    # Plan only. Reads the nodes, changes nothing.
+ansible-playbook playbooks/02-os-configuration.yml -e @/srv/azurelocal/os-configuration.yml            # Plan, pause for approval, Apply
 ```
 
 1. **Plan** runs `-Mode Plan` (read only). The play prints the wrapper's `summary.md` and the storage wipe list.
@@ -66,13 +66,13 @@ starts `pwsh`, and that task has `no_log: true`:
 
 | Source | How |
 | --- | --- |
-| ansible-vault | Copy `inventory/vault.yml.example` to `inventory/group_vars/os_config_runner/vault.yml`, fill it, run `ansible-vault encrypt` on it, and set `azurelocal_os_configuration_node_admin_user` and `azurelocal_os_configuration_node_admin_password: "{{ vault_azl_node_admin_password }}"`. Run with `--ask-vault-pass` or `--vault-password-file`. |
+| ansible-vault | Copy `vars/vault.yml.example` outside the repository, fill it, run `ansible-vault encrypt` on it, pass it with `-e @vault.yml`, and set `azurelocal_os_configuration_node_admin_user` and `azurelocal_os_configuration_node_admin_password: "{{ vault_azl_node_admin_password }}"`. Run with `--ask-vault-pass` or `--vault-password-file`. |
 | Environment variable | `AZL_NODE_ADMIN_USER` and `AZL_NODE_ADMIN_PASSWORD` in the environment of `ansible-playbook` (in AWX, a custom credential type that injects them). The role's defaults read them. |
 
 The launcher turns them into the wrapper's `-Credential` and removes the password from its own environment before the wrapper starts, so no
 child process inherits it. The task is `no_log`, so the wrapper's console output is not shown by Ansible; the play shows `summary.md`,
 `wipe-list.txt` and, on failure, the errors from `report.json` instead. Do not run with `ANSIBLE_DEBUG=1` on a real run: debug output is
-not covered by `no_log`. Keep `inventory/hosts.yml` and `inventory/group_vars/` out of Git (this folder's `.gitignore` does).
+not covered by `no_log`. Keep the vars file and the vault file out of Git (the repository `.gitignore` ignores `src/ansible/vars/*.yml` and `*.vault`).
 
 ## ZTP or ISO: the wrapper decides
 
@@ -138,11 +138,12 @@ Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/ansible      
 ```
 
 ```bash
-cd ansible/os-configuration
+cd src/ansible
+ansible-lint playbooks/ roles/
+ansible-playbook playbooks/02-os-configuration.yml --syntax-check
+cd roles/azurelocal_os_configuration
 yamllint .
-ansible-lint
-ansible-playbook os-configuration.yml --syntax-check
 ```
 
-The Pester test parses the files and runs the launcher against a stub wrapper; it does not run Ansible. `.yamllint` and `.ansible-lint` here
-apply to this folder only. The older `src/ansible` tree is a separate, Windows-host oriented set of roles and is not used by this front end.
+The Pester test parses the files and runs the launcher against a stub wrapper; it does not run Ansible. `src/ansible/.ansible-lint` (profile `moderate`) is the lint configuration of the whole tree, as the pipelines run it; `.yamllint` in this folder
+applies to this role only. The other roles of `src/ansible` are Windows-host oriented and are not used by this front end.

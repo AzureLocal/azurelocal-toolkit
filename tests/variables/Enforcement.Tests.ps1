@@ -11,7 +11,7 @@
 #      given to a parameter that names a resource, policy, account, vault, workspace, subscription, tenant, host or address). The generator
 #      config/variables/scripts/New-ScriptParameterRegistry.ps1 flags the same kinds; the tests below make sure the two agree.
 #   D  a prompt (Read-Host, Get-Credential, $Host.UI.Prompt*, [Console]::ReadLine) in a script that has -InfrastructureFile.
-# The scan covers every .ps1 and .psm1 of the repository outside tests/, docs/ and .claude/ (scripts/, config/variables/scripts/, tools/, ansible/, src/ ...).
+# The scan covers every .ps1 and .psm1 of the repository outside tests/, docs/ and .claude/ (scripts/, config/variables/scripts/, tools/, src/ansible, src/ ...).
 # What is not a violation is written down twice over:
 #   * values Microsoft or the protocol fixes are rule-level exceptions in this file, each with its reason (documentation, loopback,
 #     link-local and mask addresses, the Azure platform address, Microsoft endpoints, built-in role IDs ...);
@@ -449,7 +449,7 @@ BeforeAll {
     # The repository
     # ------------------------------------------------------------------------------------------------------------------------------
     # Every .ps1 and .psm1 of the repository except the tests, the docs and the agent settings (top-level tests/, docs/, .claude/, .git/):
-    # scripts/ and config/variables/scripts/ as before, and the PowerShell that lives elsewhere (tools/, ansible/, src/, pipelines/ ...).
+    # scripts/ and config/variables/scripts/ as before, and the PowerShell that lives elsewhere (tools/, src/ansible, src/, pipelines/ ...).
     # scripts/deferred stays in the scan, as it always was: its findings are baselined.
     $excludedTop = @('tests', 'docs', '.claude', '.git')
     $script:Files = @(Get-ChildItem -LiteralPath $script:Repo -Directory -Force | Where-Object { $_.Name -notin $excludedTop } |
@@ -495,7 +495,7 @@ Describe 'The scan sees what it is meant to see' {
 
     It 'scans the PowerShell outside scripts/ too (tools/install-tools.ps1, the Ansible launcher), and not tests/ or docs/' {
         $script:Files | Should -Contain ([IO.Path]::Combine($script:Repo, 'tools', 'install-tools.ps1'))
-        @($script:Files | Where-Object { $_ -like (Join-Path $script:Repo 'ansible*') }).Count | Should -BeGreaterThan 0
+        @($script:Files | Where-Object { $_ -like (Join-Path (Join-Path $script:Repo 'src') 'ansible*') }).Count | Should -BeGreaterThan 0
         @($script:Files | Where-Object { $_ -like ((Join-Path $script:Repo 'tests') + [IO.Path]::DirectorySeparatorChar + '*') }).Count | Should -Be 0
         @($script:Files | Where-Object { $_ -like ((Join-Path $script:Repo 'docs') + [IO.Path]::DirectorySeparatorChar + '*') }).Count | Should -Be 0
     }

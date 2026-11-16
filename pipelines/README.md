@@ -10,7 +10,23 @@ reads the file and sets it on the platform; the pipelines only read the variable
 when a pipeline file carries a tool version, an infrastructure file path, a runner OS label, a sign-in method of its own, a deploy
 branch or a parameter default that is a choice of a deployment.
 
-## Pipeline Architecture
+## The route, pipeline by pipeline
+
+One pipeline per piece of the route, in the order a deployment runs them. Each exists once per platform, and each runs one entry point of the
+toolkit and nothing else.
+
+| Pipeline | Entry point | GitHub Actions | GitLab CI | Azure DevOps |
+| --- | --- | --- | --- | --- |
+| CI/CD infrastructure (the runners) | `Deploy-CicdRunners.ps1` (task 06) | `cicd-infra.yml` | `stages/deploy-cicd-infra.yml` | `cicd-infra.yml` |
+| Discovery (BMCs, Azure tenant, Active Directory) | `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` | `discovery.yml` | `stages/discovery.yml` | `discovery.yml` |
+| OS configuration (phase 03) | `Invoke-AzureLocalOsConfiguration.ps1` | `os-configuration.yml` | `os-configuration.gitlab-ci.yml` | `os-configuration.yml` |
+| Pre-cluster verification (the gate) | `Invoke-AzureLocalPreClusterVerification.ps1` | `pre-cluster-verification.yml` | `stages/pre-cluster-verification.yml` | `pre-cluster-verification.yml` |
+| ARM Validate and Deploy | `Invoke-AzureLocalArmDeployment.ps1` | `arm-deployment.yml` | `stages/arm-deployment.yml` | `arm-deployment.yml` |
+| Terraform foundation and Ansible configuration (the older chain, below) | Terraform, `ansible-playbook` | `azure-local-deploy.yml` | `.gitlab-ci.yml` with `stages/*.yml` | `azure-local-deploy.yml` |
+
+The day 2 pipelines are not in this table yet.
+
+## The Terraform and Ansible chain
 
 ```
 validate → plan → deploy-foundation → configure-onprem → configure-operations → validate-deployment
@@ -23,9 +39,15 @@ validate → plan → deploy-foundation → configure-onprem → configure-opera
 | **Deploy Foundation** | Terraform apply | Self-hosted |
 | **Configure On-Prem** | Ansible playbooks | Self-hosted (on-prem access) |
 | **Configure Operations** | Ansible playbooks | Self-hosted |
-| **Validate Deployment** | Azure CLI, PowerShell | Self-hosted |
+| **Validate Deployment** | Azure CLI (GitLab only) | Self-hosted |
 
-The Azure Local cluster itself is deployed by the ARM pipelines below (schema 5, one script), not by this chain.
+The Azure Local cluster itself is deployed by the ARM pipelines below (schema 5, one script), not by this chain. This chain is the Azure
+foundation (Terraform) and the Ansible plays of `src/ansible` (domain controllers 05, AD preparation 01, OS configuration 02, Arc registration
+03, monitoring 04). K7 checked every script, playbook and path it names against the toolkit: all exist, and every value comes from the variables
+task 05 sets. GitHub Actions and Azure DevOps end at Configure Operations; only GitLab has the Validate Deployment stage, and it holds one job,
+the read-only policy and Defender for Cloud summary (`validate:compliance`). The no-op `validate:connectivity` job (it ran the same file check as
+`config:validate` and printed a hint) is removed: the post-deployment checks are `Invoke-VerifyPostDeployment.ps1` and the scripts of
+`scripts/deploy/06-testing-validation`, which need a jump server that reaches the cluster.
 
 Every Terraform and Ansible job writes its inputs from the infrastructure file first:
 `config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile <file> -OutputDirectory <the job's temporary directory>`.
@@ -36,13 +58,13 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 ### GitLab CI/CD
 
-- **Location**: `gitlab/.gitlab-ci.yml` (includes `gitlab/stages/*.yml`)
+- **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`
 - **Features**: manual approval gates, protected environments, `resource_group`
 - **Tools**: `gitlab/Use-AzlGitLabTool.ps1` installs the versions of `devops.pipelines.tool_versions` (GitLab has no installer action or task)
 
 ### GitHub Actions
 
-- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `cicd-infra.yml`)
+- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `cicd-infra.yml`, `discovery.yml`, `pre-cluster-verification.yml`). This is the only folder of GitHub pipelines: the workflows of this repository's own CI are in `.github/workflows` (K7 removed `archive/github-actions`: see below)
 - **Features**: environment protection rules, OIDC or client secret sign-in, artifact passing
 - **Copy to**: `.github/workflows/` in your repository
 
@@ -62,6 +84,47 @@ The one-run entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-confi
 
 Where the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 
+## Discovery (before the OS configuration)
+
+`scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` runs the discovery scripts of the toolkit one after the other and writes one report
+(`discovery-report.json`, `summary.md`, and a folder per step): the hardware inventory of every BMC over the standard Redfish API (any maker),
+the Dell iDRAC discovery with the proposal for `nodes[]`, the Azure tenant inventory and the Active Directory inventory. Every step is read
+only (GET requests to the BMCs, reads in Azure and Active Directory), so the pipelines have **no approval gate**. The run fails when a step
+fails, and the report is published as an artifact even then.
+
+- GitHub Actions: `github-actions/discovery.yml` (input `scope`: `all`, `hardware`, `dell`, `tenant`, `directory`).
+- GitLab CI: `gitlab/stages/discovery.yml` (run variable `DISCOVERY_SCOPE`; declares its own stage, include it from a pipeline file of its own).
+- Azure DevOps: `azure-devops/discovery.yml` (parameter `scope`).
+
+The job runs on the general self-hosted runner, which needs a route to the BMC addresses (HTTPS) and, for the Active Directory step, the
+ActiveDirectory module on a domain-joined runner. The BMC login is never in a pipeline file or a pipeline variable: it is the secret reference
+of `infrastructure.yml` (`hardware.bmc`, or `nodes[].bmc`), and the toolkit secret resolver reads it from Key Vault at run time with the Azure
+sign-in of the job.
+
+**The write-back** (`write_back` / `DISCOVERY_WRITE_BACK`, scope `dell`) prepares the serial numbers and MAC addresses the discovery found in a
+**copy** of the master file, in the artifact (`write-back/infrastructure.yml` and `write-back/changes.txt`). The file in the repository is not
+changed and no pipeline commits, pushes or opens a pull request: review the copy and commit it through a pull request of your own.
+
+## Pre-cluster verification (the gate before the ARM Validate)
+
+`Invoke-AzureLocalPreClusterVerification.ps1` ([docs/pre-cluster-verification.md](../docs/pre-cluster-verification.md)) checks, read only, everything
+Microsoft Learn lists as a prerequisite of a deployment. The ARM run refuses to go on without a passing, current result of it for the same
+master file. The pipelines run it, publish `report.json`, `summary.md` and the event feed as an artifact and in the run summary, and **fail the run
+when the verdict is not Pass**.
+
+- GitHub Actions: `github-actions/pre-cluster-verification.yml` (job `verify`; job `verify-with-changes` behind the environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`).
+- GitLab CI: `gitlab/stages/pre-cluster-verification.yml` (job `pre-cluster-verify`; the manual job `pre-cluster-verify-changes` in the protected environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`).
+- Azure DevOps: `azure-devops/pre-cluster-verification.yml` (stage `Verify`; stage `VerifyWithChanges`, a deployment job in the environment of the parameter `approval_environment`).
+
+The read-only job runs Plan or Verify. The two changes the gate can make, `-Fix` (it registers the mandatory resource providers that are not
+registered: Azure side only) and `-InstallEnvironmentChecker` (the Environment Checker on the nodes for the run, removed again at the end), run
+only in the second, approved job, selected by the inputs `fix` and `install_environment_checker`. A Skipped check blocks the verdict; the input
+`accept_skipped` (ids, comma separated) accepts it and the report records that you did.
+
+The script writes its result where the ARM run reads it: `deployment.pre_cluster_verification_report_directory`, else `arm-report/verification/live` in
+the environment data folder of the master file. The pipeline passes no `-ReportDirectory` and publishes a copy of that folder. So the ARM run must
+run on the same runner, or `deployment.pre_cluster_verification_report_directory` must be a folder both runs reach.
+
 ## ARM Validate and Deploy (schema 5, one script)
 
 The Terraform and Ansible pipelines above do not call the schema 5 deployment script. These do, with an approval between Validate and
@@ -78,6 +141,17 @@ Deploy. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
 - **Azure DevOps**: `azure-devops/cicd-infra.yml`
 
 The first run uses the hosted image, because the self-hosted runners do not exist yet; afterwards choose the self-hosted runner.
+
+## The GitHub folder and the Ansible tree
+
+- **One GitHub pipeline folder.** `github-actions/` holds the deployment pipelines. The old `archive/github-actions` folder is gone: its seven
+  workflows (`add-to-project`, `deploy-docs`, `drift-check`, `release-please`, `validate-config`, `validate-repo-structure`, `validate`) were
+  repository CI, not deployment pipelines, and each called a reusable workflow of an organisation this repository no longer adopts
+  (`.azurelocal-platform.yml` has `reusableWorkflows: []`) or a script that no longer exists. The repository CI is `azure-pipelines.yml`; the one
+  live GitHub workflow is `.github/workflows/deploy-docs.yml`. The files are in git history (last at commit `182484a5`).
+- **One Ansible tree.** `src/ansible` holds everything: the role `azurelocal_os_configuration` (the front end of
+  `Invoke-AzureLocalOsConfiguration.ps1`) is in `src/ansible/roles`, and `playbooks/02-os-configuration.yml` runs it. The former top-level `ansible`
+  folder is gone (its README is `src/ansible/roles/azurelocal_os_configuration/README.md`).
 
 ## Where every value comes from
 

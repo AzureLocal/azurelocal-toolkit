@@ -4,12 +4,13 @@
 # Part 4 — Cluster Deployment, Phase 3: OS Configuration
 # Run on: the controller (localhost). The nodes are not Ansible hosts here.
 #
-# One route only: this play runs the role of ansible/os-configuration, the Ansible front end of
+# One route only: this play runs the role azurelocal_os_configuration (src/ansible/roles), the Ansible front end of
 # scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1. The wrapper reads
 # infrastructure.yml itself (domain join account, local administrators, join options, the management VLAN, the transport)
 # and does Plan, the approval pause and Apply. Pass the file at run time:
 #   ansible-playbook playbooks/02-os-configuration.yml -e azurelocal_os_configuration_infrastructure_file=/path/infrastructure.yml
-# The settings of the role (azurelocal_os_configuration_*) are documented in ansible/os-configuration/README.md.
+# The settings of the role (azurelocal_os_configuration_*) are documented in src/ansible/roles/azurelocal_os_configuration/README.md; vars/os-configuration.yml.example
+# is a vars file for -e @file (AWX: the extra variables of the job template).
 # =============================================================================
 ---
 - name: "Part 4 | Phase 3 — OS Configuration (Invoke-AzureLocalOsConfiguration.ps1)"
@@ -20,10 +21,6 @@
   tags:
     - os-configuration
     - cluster-deployment
-  vars:
-    # The repository checkout this playbook is in: src/ansible/playbooks is three folders below it.
-    azurelocal_os_configuration_toolkit_root: "{{ playbook_dir | dirname | dirname | dirname }}"
-
   pre_tasks:
     - name: Check that the infrastructure file is given
       ansible.builtin.assert:
@@ -34,4 +31,4 @@
         quiet: true
 
   roles:
-    - role: ../../../ansible/os-configuration/roles/azurelocal_os_configuration
+    - role: azurelocal_os_configuration

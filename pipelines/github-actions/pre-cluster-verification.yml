@@ -1,0 +1,272 @@
+# Azure Local pre-cluster verification (the gate before the ARM Validate), GitHub Actions.
+#
+# Copy to .github/workflows/pre-cluster-verification.yml. It runs the command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1 ...
+# and nothing else; the logic (the checks, the report, the verdict) is in the script, not here. Guide: docs/pre-cluster-verification.md.
+#
+# The run FAILS when the verdict is not Pass (exit code 1: a Failed or Skipped check blocks; 3: a partial run). The Invoke-AzureLocalArmDeployment.ps1
+# run (workflow arm-deployment) refuses to go on without a passing, current result of this gate for the same master file, so this workflow runs
+# after the OS configuration and before the ARM Validate.
+#
+# Jobs (exactly one of them runs)
+#   verify               Read only. Plan (what would be checked, offline) or Verify (every check, against Azure, Active Directory and the nodes).
+#   verify-with-changes  Runs instead of `verify` when the input fix or install_environment_checker is set, and only after a reviewer of the
+#                        GitHub environment named by the repository variable AZL_ENVIRONMENT_ARM_DEPLOYMENT approved it: fix registers the
+#                        mandatory resource providers that are not registered (Azure side only); install_environment_checker puts the Environment
+#                        Checker on the nodes for this run and removes it again at the end.
+#
+# Where the result goes. The script writes report.json, summary.md and the event feed where the ARM run reads them: the folder of
+# deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder of the master file.
+# This workflow publishes a copy as the artifact `pre-cluster-verification` and in the job summary. The ARM run reads the folder, not the
+# artifact: run it on the same runner (or set the report directory of the master file to a folder both runs reach).
+#
+# Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets
+# every variable below from infrastructure.yml. GitHub reads runs-on, the environment name and env from the vars context
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  the app registration of azure.automation_identity, azure.tenant_id, azure.subscription_id
+#                                     (Reader for the checks; Owner or Contributor for fix)
+#   AZL_AUTH_METHOD                   devops.authentication.method: oidc (a federated credential, no secret) or client_secret (the secret
+#                                     ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_OS, AZL_RUNNER_LABEL   devops.runners[].os_type of the general runner and devops.pipelines.runner_label
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT    devops.pipelines.environments.arm_deployment (the approval environment of verify-with-changes)
+#   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# The local administrator and LCM passwords are read from the Key Vaults named by the keyvault:// references in the master file; the identity
+# needs Get on those secrets. No password is stored here.
+# Runner: the general self-hosted runner with pwsh 7 and a route to the nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389)
+# and to the DNS servers of the file. A check the runner cannot ask is Skipped with its reason, and a Skipped check blocks the verdict: give its
+# id in accept_skipped to accept it (the report records that you did), or run from a runner that can ask.
+#
+# Where the files come from: the master file is a path in this repository (AZL_INFRASTRUCTURE_FILE). The OS configuration report is the artifact
+# `os-configuration-report` of the OS configuration workflow (os_configuration_run_id) or a repository path (os_configuration_report). The ZTP
+# handoff is optional (handoff_file).
+name: Azure Local pre-cluster verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Plan: what would be checked (offline). Verify: run every check and write the result the ARM run reads'
+        type: choice
+        options:
+          - Plan
+          - Verify
+        default: Plan
+      os_configuration_run_id:
+        description: 'Run ID of the OS configuration workflow whose artifact os-configuration-report holds the report (leave empty to use os_configuration_report)'
+        required: false
+        default: ''
+      os_configuration_report:
+        description: 'Repository path of an OS configuration report directory or report.json (used when no run ID is given; may stay empty)'
+        required: false
+        default: ''
+      handoff_file:
+        description: 'Repository path of the ZTP handoff file (optional)'
+        required: false
+        default: ''
+      accept_skipped:
+        description: 'Ids of checks that may stay Skipped, comma separated (for example IDN-002,IDN-003). The report records that you accepted them. Leave empty normally.'
+        required: false
+        default: ''
+      allow_revalidate:
+        description: 'Accept that the Validate runs again on an instance whose deployment failed (give the same switch to the ARM run)'
+        type: boolean
+        default: false
+      fix:
+        description: 'Verify only: register the mandatory resource providers that are not registered (Azure side only; needs the approval of the environment)'
+        type: boolean
+        default: false
+      install_environment_checker:
+        description: 'Verify only: install the Environment Checker on the nodes for this run and remove it again (needs the approval of the environment)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+# One gate run at a time per repository (GitLab: resource_group; Azure DevOps: lockBehavior): the result of a run replaces the one before.
+concurrency:
+  group: azure-local-pre-cluster-verification
+  cancel-in-progress: false
+
+# Every run step is PowerShell 7.
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  GATE_SCRIPT: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1
+  AZL_INFRASTRUCTURE_FILE: ${{ vars.AZL_INFRASTRUCTURE_FILE }}
+  AZL_POWERSHELL_YAML_VERSION: ${{ vars.AZL_POWERSHELL_YAML_VERSION }}
+  AZL_AZ_POWERSHELL_VERSION: ${{ vars.AZL_AZ_POWERSHELL_VERSION }}
+  AZL_AZ_KEYVAULT_VERSION: ${{ vars.AZL_AZ_KEYVAULT_VERSION }}
+  GATE_MODE: ${{ inputs.mode }}
+  HANDOFF_FILE: ${{ inputs.handoff_file }}
+  OS_REPORT: ${{ inputs.os_configuration_report }}
+  ACCEPT_SKIPPED: ${{ inputs.accept_skipped }}
+  ALLOW_REVALIDATE: ${{ inputs.allow_revalidate }}
+  GATE_FIX: ${{ inputs.fix }}
+  GATE_INSTALL_ENVIRONMENT_CHECKER: ${{ inputs.install_environment_checker }}
+
+jobs:
+  verify:
+    name: Verify (read only)
+    if: ${{ !inputs.fix && !inputs.install_environment_checker }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the OS configuration report
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/os-configuration-report
+          run-id: ${{ inputs.os_configuration_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point OS_REPORT at the downloaded artifact
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "OS_REPORT=$env:RUNNER_TEMP/os-configuration-report"
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
+
+      - name: Verify
+        shell: pwsh
+        run: |
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:GATE_MODE; PassThru = $true }
+          if ($env:OS_REPORT) { $p.OsConfigurationReport = $env:OS_REPORT }
+          if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+          if ($env:ACCEPT_SKIPPED) { $p.AcceptSkipped = @($env:ACCEPT_SKIPPED -split '[,;\s]+' | Where-Object { $_ }) }
+          if ($env:ALLOW_REVALIDATE -eq 'true') { $p.AllowRevalidate = $true }
+          $result = @(& $env:GATE_SCRIPT @p) | Where-Object { $_ -and $_.PSObject.Properties['ReportDirectory'] } | Select-Object -Last 1
+          $code = $LASTEXITCODE
+          # a copy of what the script wrote, where it wrote it, for the artifact and the job summary
+          $copy = "$env:RUNNER_TEMP/pre-cluster-verification"
+          New-Item -ItemType Directory -Path $copy -Force | Out-Null
+          if ($result -and (Test-Path -LiteralPath $result.ReportDirectory -PathType Container)) { Get-ChildItem -LiteralPath $result.ReportDirectory -File | Copy-Item -Destination $copy -Force }
+          exit $code
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $summary = "$env:RUNNER_TEMP/pre-cluster-verification/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
+
+      - name: Publish the verification report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-cluster-verification
+          path: ${{ runner.temp }}/pre-cluster-verification
+          # The report the ARM run read the verdict from: 30 days is the toolkit's retention for reports.
+          retention-days: 30
+          if-no-files-found: warn
+
+  verify-with-changes:
+    name: Verify with changes (needs approval)
+    if: ${{ inputs.fix || inputs.install_environment_checker }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Required reviewers on this environment are the approval gate.
+    environment: ${{ vars.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
+    # The checks, and a wait for the resource provider registration: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the OS configuration report
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/os-configuration-report
+          run-id: ${{ inputs.os_configuration_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point OS_REPORT at the downloaded artifact
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "OS_REPORT=$env:RUNNER_TEMP/os-configuration-report"
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
+
+      - name: Verify with changes
+        shell: pwsh
+        run: |
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:GATE_MODE; PassThru = $true }
+          if ($env:OS_REPORT) { $p.OsConfigurationReport = $env:OS_REPORT }
+          if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+          if ($env:ACCEPT_SKIPPED) { $p.AcceptSkipped = @($env:ACCEPT_SKIPPED -split '[,;\s]+' | Where-Object { $_ }) }
+          if ($env:ALLOW_REVALIDATE -eq 'true') { $p.AllowRevalidate = $true }
+          # the two changes the reviewer approved: the resource providers (Azure side), and the Environment Checker on the nodes for this run
+          if ($env:GATE_FIX -eq 'true') { $p.Fix = $true }
+          if ($env:GATE_INSTALL_ENVIRONMENT_CHECKER -eq 'true') { $p.InstallEnvironmentChecker = $true }
+          $result = @(& $env:GATE_SCRIPT @p) | Where-Object { $_ -and $_.PSObject.Properties['ReportDirectory'] } | Select-Object -Last 1
+          $code = $LASTEXITCODE
+          $copy = "$env:RUNNER_TEMP/pre-cluster-verification"
+          New-Item -ItemType Directory -Path $copy -Force | Out-Null
+          if ($result -and (Test-Path -LiteralPath $result.ReportDirectory -PathType Container)) { Get-ChildItem -LiteralPath $result.ReportDirectory -File | Copy-Item -Destination $copy -Force }
+          exit $code
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $summary = "$env:RUNNER_TEMP/pre-cluster-verification/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
+
+      - name: Publish the verification report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-cluster-verification
+          path: ${{ runner.temp }}/pre-cluster-verification
+          # The report the ARM run read the verdict from: 30 days is the toolkit's retention for reports.
+          retention-days: 30
+          if-no-files-found: warn
