@@ -136,7 +136,7 @@ Describe 'Every Ansible variable is registered' {
 
     It 'the registered default of a role default is the default in the file' {
         foreach ($e in @($script:IacEntries | Where-Object { $_.Area -like 'src/ansible/roles/*' -and $_.Node.Contains('default') })) {
-            $doc = ConvertFrom-Yaml ([IO.File]::ReadAllText((Join-Path $script:Repo $e.Area)))
+            $doc = ConvertFrom-Yaml -Ordered ([IO.File]::ReadAllText((Join-Path $script:Repo $e.Area)))
             $v = $doc[$e.Name]
             $text = if ($v -is [bool]) { $v.ToString().ToLowerInvariant() } elseif ($v -is [System.Collections.IDictionary] -or $v -is [System.Collections.IList]) { ConvertTo-Json -InputObject $v -Compress -Depth 8 } else { [string]$v }
             (ConvertTo-ComparableDefault $e.Node['default']) | Should -BeExactly (ConvertTo-ComparableDefault $text) -Because "$($e.Name) in $($e.Area)"
