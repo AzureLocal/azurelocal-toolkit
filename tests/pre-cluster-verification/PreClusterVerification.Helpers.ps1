@@ -18,7 +18,7 @@ function Get-PclFakeModuleText {
     <# A verification module with one check per category (FK-<category>) and an AZ-004 that reads the 13 providers the way the real one does. #>
     $checks = foreach ($category in 'azure', 'identity', 'nodes', 'network', 'storage', 'readiness') {
         @"
-        @{ Id = 'FK-$category'; Category = '$category'; Title = 'A fake $category check'; Source = 'https://learn.microsoft.com/fake?view=azloc-2610'; Blocking = `$true
+        @{ Id = 'FK-$category'; Category = '$category'; Title = 'A fake $category check'; Source = 'https://learn.microsoft.com/fake?view=azloc-2611'; Blocking = `$true
            Applies = { param(`$Context) `$true }
            Run = {
                param(`$Context)

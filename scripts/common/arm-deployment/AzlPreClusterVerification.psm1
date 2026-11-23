@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    The pre-cluster verification gate: everything Microsoft Learn (view azloc-2610) and the azurelocal.cloud documentation list as a
+    The pre-cluster verification gate: everything Microsoft Learn (view azloc-2611) and the azurelocal.cloud documentation list as a
     prerequisite of an Azure Local deployment, checked read only before the ARM Validate, so that an ARM Validate never fails for
     something the toolkit could have caught.
 
@@ -41,7 +41,7 @@ Import-Module ([IO.Path]::Combine($script:Common, 'node-configuration', 'AzlNode
 Import-Module ([IO.Path]::Combine($script:Common, 'node-configuration', 'AzlRemoting.psm1'))
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
-$script:View = 'view=azloc-2610'
+$script:View = 'view=azloc-2611'
 $script:Docs = 'https://azurelocal.cloud/docs/implementation'
 $script:Secrets = [System.Collections.Generic.List[string]]::new()
 $script:Catalog = [System.Collections.Generic.List[object]]::new()

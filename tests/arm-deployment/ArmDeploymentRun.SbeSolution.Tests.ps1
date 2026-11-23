@@ -102,6 +102,25 @@ Describe 'ConvertFrom-AzlArmOsBuild (solution version from the OS build)' {
     ) {
         ConvertFrom-AzlArmOsBuild -OsBuild $Build | Should -BeNullOrEmpty
     }
+    It 'does not derive a line from 10.0.26100.33822 (D135: Learn ships it with 12.2611.1004.9 and with 12.2610.1004.54/.55), and the table lists both' {
+        ConvertFrom-AzlArmOsBuild -OsBuild '10.0.26100.33822' | Should -BeNullOrEmpty
+        @(Get-AzlArmSolutionOsBuild | Where-Object OsBuild -EQ '10.0.26100.33822' | ForEach-Object Solution) | Should -Be @('12.2611.1004', '12.2610.1004')
+        @(Get-AzlArmSolutionOsBuild | Where-Object OsBuild -EQ '10.0.26100.33822' | ForEach-Object Evidence) | Should -Match 'azloc-2611'
+    }
+}
+
+Describe 'Azure Local 2611 (D135): the Dell family patterns validate 12.2611.1004.9' {
+    BeforeAll { $script:Entries2611 = @(Read-AzlArmSbeCatalog -Path $script:Catalog) }
+    It 'an SBE validated for 12.*.1004.* (5.0.2609.1611, 16G-45n0c-Intel; 5.0.2609.1715, 17G-Intel) is validated with 12.2611.1004.9' {
+        (Test-AzlArmSbeSolution -Catalog $script:Entries2611 -Family '16G-45n0c-Intel' -Version '5.0.2609.1611' -Solution '12.2611.1004.9').Status | Should -Be 'Validated'
+        $r = Test-AzlArmSbeSolution -Catalog $script:Entries2611 -Family '17G-Intel' -Version '5.0.2609.1715' -Solution '12.2611.1004.9'
+        $r.Status | Should -Be 'Validated'; $r.MatchedPattern | Should -Be '12.*.1004.*'
+    }
+    It 'an SBE validated only for 12.*.1003.* and 12.*.1002.* (5.0.2606.1616) is not, and the family''s validated versions are named' {
+        $r = Test-AzlArmSbeSolution -Catalog $script:Entries2611 -Family '16G-45n0c-Intel' -Version '5.0.2606.1616' -Solution '12.2611.1004.9'
+        $r.Status | Should -Be 'NotValidated'
+        $r.ValidatedVersions | Should -Be @('5.0.2609.1611')
+    }
 }
 
 Describe 'Test-AzlArmSbeSolution (pure)' {

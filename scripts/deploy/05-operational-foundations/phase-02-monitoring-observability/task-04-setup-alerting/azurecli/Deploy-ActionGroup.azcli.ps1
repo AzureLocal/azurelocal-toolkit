@@ -15,6 +15,11 @@
     the group (az monitor action-group update --add-action email; the receivers it already has, of any kind, are kept); a second run with the same file
     changes nothing. -WhatIf changes nothing.
 
+    A group that exists but is disabled sends nothing to any receiver (az monitor action-group update --enabled: "If an action group is not enabled,
+    then none of its receivers will receive communications"). Such a group is reported as Disabled (a warning), never as existing and fine. It is
+    enabled only when operations.monitoring.action_group_enable_if_disabled is true (default false: a person may have disabled it on purpose); then the
+    run enables it (az monitor action-group update --enabled true) and reports Enabled. Adding receivers does not change the enabled state.
+
     The short name of an action group (at most 12 characters, shown in SMS and email subjects) is made from the group name: its letters and digits, cut
     to 12. An email receiver is named 'email-' and its address with each character that is not a letter or a digit made a hyphen; when that name is
     already taken (by another receiver of the group, or by another address that gives the same name), the first 8 hex digits of the SHA-256 of the
@@ -29,6 +34,7 @@
         operations.monitoring.workspace_resource_group   the resource group of the action group
         operations.monitoring.action_group               the name of the action group
         operations.monitoring.alert_email                an address that receives alerts
+        operations.monitoring.action_group_enable_if_disabled   true: enable the group when it exists disabled (default false: report only)
         operations.notifications.emails                  the addresses that receive notifications
 
     Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
@@ -37,8 +43,8 @@
     an e-mail address ...) that holds one of & | < > ^ % " or a line break. Every az call is checked again, in the one function that starts az; the check
     names the position of the argument, never the value.
 
-    Exit codes: 0 the action group exists with every listed address (created now, already there, receivers added, or planned under -WhatIf) or monitoring
-    is switched off in the file; 1 an Azure call failed or a precondition failed (az missing, not signed in, wrong tenant, the creation or the update
+    Exit codes: 0 the action group exists with every listed address (created now, already there, receivers added, enabled, or planned under -WhatIf; a
+    group left disabled is reported with a warning and Action Disabled) or monitoring is switched off in the file; 1 an Azure call failed or a precondition failed (az missing, not signed in, wrong tenant, the creation or the update
     failed); 2 a value in the file is missing or not usable, or no email address is listed.
 
 .PARAMETER InfrastructureFile
@@ -114,6 +120,9 @@ if ((Get-Field 'enabled').ToLowerInvariant() -eq 'false') {
 }
 $groupName = Get-Field 'action_group'
 $resourceGroup = Get-Field 'workspace_resource_group'
+$enableIfDisabledRaw = (Get-Field 'action_group_enable_if_disabled').ToLowerInvariant()
+if ($enableIfDisabledRaw -notin '', 'true', 'false') { Exit-InputProblem "operations.monitoring.action_group_enable_if_disabled must be true or false, not '$enableIfDisabledRaw'." }
+$enableIfDisabled = ($enableIfDisabledRaw -eq 'true')
 if (-not $groupName) { Exit-InputProblem 'operations.monitoring.action_group is missing. Name the action group to create.' }
 if ($groupName -notmatch '^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,258}[A-Za-z0-9_()-]$|^[A-Za-z0-9]$') { Exit-InputProblem "operations.monitoring.action_group '$groupName' is not a valid action group name (1 to 260 characters; letters, digits, space, . _ - ( ); starts with a letter or digit)." }
 if (-not $resourceGroup) { Exit-InputProblem 'operations.monitoring.workspace_resource_group is missing. It is the resource group of the action group.' }
@@ -161,7 +170,7 @@ function Get-ReceiverArgument([string]$Option, [string]$Address) { @($Option, 'e
 
 Write-Line "Action group '$groupName' in '$resourceGroup', $($addresses.Count) email address(es)"
 
-$row = [ordered]@{ ActionGroup = $groupName; Action = ''; Receivers = @($addresses); Added = @(); Detail = '' }
+$row = [ordered]@{ ActionGroup = $groupName; Action = ''; Receivers = @($addresses); Added = @(); Enabled = $null; Detail = '' }
 try {
     $existing = $null
     try { $existing = Invoke-Az monitor action-group show --subscription $subscriptionId --resource-group $resourceGroup --name $groupName --output json | ConvertFrom-Json }
@@ -173,7 +182,7 @@ try {
             foreach ($address in $addresses) { $arguments += Get-ReceiverArgument '--action' $address }
             if ($tagArguments.Count) { $arguments += @('--tags') + $tagArguments }
             $null = Invoke-Az ($arguments + @('--output', 'none'))
-            $row.Action = 'Created'
+            $row.Action = 'Created'; $row.Enabled = $true
             Write-Line "[created] '$groupName' with $($addresses -join ', ')."
         }
         else {
@@ -186,23 +195,45 @@ try {
         if ($existing.PSObject.Properties['emailReceivers'] -and $existing.emailReceivers) { $haveReceivers = @($existing.emailReceivers) }
         $haveAddresses = @($haveReceivers | ForEach-Object { [string]$_.emailAddress })
         $missing = @($addresses | Where-Object { $a = $_; -not @($haveAddresses | Where-Object { $_ -ieq $a }) })
-        if ($missing.Count -eq 0) {
-            $row.Action = 'AlreadyExists'
-            Write-Line "[exists]  '$groupName' is already there with every listed address, nothing changed."
+        # A disabled group sends nothing. enabled is read from the group; a group that does not report it is taken as enabled (Azure's default) and never called disabled.
+        $isEnabled = $true
+        if ($existing.PSObject.Properties['enabled'] -and $null -ne $existing.enabled) { $isEnabled = [bool]$existing.enabled }
+        $enable = (-not $isEnabled) -and $enableIfDisabled
+        $disabledNote = "'$groupName' exists but is DISABLED: none of its receivers gets an alert. Enable it in Azure, or set operations.monitoring.action_group_enable_if_disabled to true and run again."
+        if ($missing.Count -eq 0 -and $isEnabled) {
+            $row.Action = 'AlreadyExists'; $row.Enabled = $true
+            Write-Line "[exists]  '$groupName' is already there, enabled, with every listed address, nothing changed."
         }
-        elseif ($PSCmdlet.ShouldProcess("action group '$groupName'", "Add the email receiver(s) $($missing -join ', ') (the receivers it has are kept)")) {
-            foreach ($property in @($existing.PSObject.Properties | Where-Object Name -Like '*Receivers')) {
-                foreach ($receiver in @($property.Value)) { if ($receiver -and $receiver.PSObject.Properties['name'] -and $receiver.name) { $null = $takenNames.Add([string]$receiver.name) } }
-            }
-            $arguments = @('monitor', 'action-group', 'update', '--subscription', $subscriptionId, '--resource-group', $resourceGroup, '--name', $groupName)
-            foreach ($address in $missing) { $arguments += Get-ReceiverArgument '--add-action' $address }
-            $null = Invoke-Az ($arguments + @('--output', 'none'))
-            $row.Action = 'Updated'; $row.Added = @($missing)
-            Write-Line "[updated] '$groupName': added $($missing -join ', ')."
+        elseif ($missing.Count -eq 0 -and -not $enable) {
+            $row.Action = 'Disabled'; $row.Enabled = $false; $row.Detail = $disabledNote
+            Write-Line "[disabled] '$groupName' has every listed address but is disabled; not enabled (operations.monitoring.action_group_enable_if_disabled is not true)."
+            Write-Warning $disabledNote
         }
         else {
-            $row.Action = 'WouldUpdate'; $row.Added = @($missing)
-            Write-Line "[plan]    '$groupName': would add $($missing -join ', ')."
+            $what = @()
+            if ($missing.Count) { $what += "add the email receiver(s) $($missing -join ', ') (the receivers it has are kept)" }
+            if ($enable) { $what += 'enable the disabled group (operations.monitoring.action_group_enable_if_disabled is true)' }
+            if ($PSCmdlet.ShouldProcess("action group '$groupName'", ($what -join '; '))) {
+                foreach ($property in @($existing.PSObject.Properties | Where-Object Name -Like '*Receivers')) {
+                    foreach ($receiver in @($property.Value)) { if ($receiver -and $receiver.PSObject.Properties['name'] -and $receiver.name) { $null = $takenNames.Add([string]$receiver.name) } }
+                }
+                $arguments = @('monitor', 'action-group', 'update', '--subscription', $subscriptionId, '--resource-group', $resourceGroup, '--name', $groupName)
+                foreach ($address in $missing) { $arguments += Get-ReceiverArgument '--add-action' $address }
+                if ($enable) { $arguments += @('--enabled', 'true') }
+                $null = Invoke-Az ($arguments + @('--output', 'none'))
+                $row.Added = @($missing); $row.Enabled = ($isEnabled -or $enable)
+                $row.Action = if ($missing.Count) { 'Updated' } else { 'Enabled' }
+                if ($missing.Count) { Write-Line "[updated] '$groupName': added $($missing -join ', ')." }
+                if ($enable) { Write-Line "[enabled] '$groupName' was disabled and is enabled now (operations.monitoring.action_group_enable_if_disabled is true)." }
+                elseif (-not $isEnabled) { $row.Detail = $disabledNote; Write-Warning $disabledNote }
+            }
+            else {
+                $row.Added = @($missing); $row.Enabled = $isEnabled
+                $row.Action = if ($missing.Count) { 'WouldUpdate' } else { 'WouldEnable' }
+                if ($missing.Count) { Write-Line "[plan]    '$groupName': would add $($missing -join ', ')." }
+                if ($enable) { Write-Line "[plan]    '$groupName' is disabled and would be enabled." }
+                elseif (-not $isEnabled) { $row.Detail = $disabledNote; Write-Warning $disabledNote }
+            }
         }
     }
 }

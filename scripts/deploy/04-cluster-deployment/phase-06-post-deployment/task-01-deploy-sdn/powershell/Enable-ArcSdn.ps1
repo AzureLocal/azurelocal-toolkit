@@ -3,7 +3,7 @@
     Turns on SDN enabled by Azure Arc (Network Controller as a Failover Cluster service) when sdn.enabled of infrastructure.yml is true. THIS CANNOT BE UNDONE.
 
 .DESCRIPTION
-    Phase 06 (post-deployment), Task 01 (SDN). Microsoft Learn (Enable SDN integration on Azure Local using PowerShell, view azloc-2610) enables SDN on
+    Phase 06 (post-deployment), Task 01 (SDN). Microsoft Learn (Enable SDN integration on Azure Local using PowerShell, view azloc-2611) enables SDN on
     an instance that is already deployed with one orchestrator action plan, run on a machine of the instance:
 
         Add-EceFeature -Name NC -SDNPrefix <prefix> -AcknowledgeMaintenanceWindow [-AcknowledgeDNSRecordCreation]

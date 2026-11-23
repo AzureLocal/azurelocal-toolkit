@@ -27,10 +27,10 @@ BeforeAll {
 function Get-AzlVerificationAdapterDefault { @{ GetFakeFact = { 'real-fact' }; GetContext = { throw 'a module default must never replace a built-in adapter member' } } }
 function Get-AzlVerificationCheckDefinition {
     @(
-        @{ Id = 'FAKE-001'; Category = 'azure'; Title = 'A fake check that passes'; Source = 'https://learn.microsoft.com/fake?view=azloc-2610'; Blocking = $true
+        @{ Id = 'FAKE-001'; Category = 'azure'; Title = 'A fake check that passes'; Source = 'https://learn.microsoft.com/fake?view=azloc-2611'; Blocking = $true
            Applies = { param($Context) $true }
            Run = { param($Context) @{ Status = 'Passed'; Node = '*'; Message = "fact: $(& $Context.Adapters.GetFakeFact) account: $((& $Context.Adapters.GetContext).Account) cluster: $($Context.Infrastructure.cluster.name)"; Remedy = ''; Evidence = 'seen by the fake' } } }
-        @{ Id = 'FAKE-002'; Category = 'nodes'; Title = 'A fake check that fails per node'; Source = 'https://learn.microsoft.com/fake?view=azloc-2610'; Blocking = $true
+        @{ Id = 'FAKE-002'; Category = 'nodes'; Title = 'A fake check that fails per node'; Source = 'https://learn.microsoft.com/fake?view=azloc-2611'; Blocking = $true
            Applies = { param($Context) $true }
            Run = { param($Context) foreach ($n in $Context.Nodes) { @{ Status = 'Failed'; Node = [string]$n['name']; Message = 'broken'; Remedy = 'fix it'; Evidence = @('a', 'b') } } } }
         @{ Id = 'FAKE-003'; Category = 'network'; Title = 'A fake check that throws'; Source = 'x'; Blocking = $true; Applies = { param($Context) $true }; Run = { param($Context) throw 'the fake exploded' } }

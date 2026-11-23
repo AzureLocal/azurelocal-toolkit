@@ -21,6 +21,7 @@ BeforeDiscovery {
 
 BeforeAll {
     $script:Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
     Import-Module (Join-Path $script:Repo 'config\variables\scripts\VariableRegistry.psm1') -Force
     $script:Registry = @(Get-RegistryVariable -Path (Join-Path $script:Repo 'config\variables\schema\master-registry.yaml'))
     $byPath = @{}
@@ -70,7 +71,7 @@ BeforeAll {
 
     $script:Checks = [ordered]@{
         'an IPv4 address outside the documentation ranges' = { param($Line) foreach ($m in [regex]::Matches($Line, '(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\d.])')) { $a = $m.Value; if ($a -notmatch '^(192\.0\.2|198\.51\.100|203\.0\.113)\.') { return $a } } }
-        'a distinguished name or the name of an organization' = { param($Line) if ($Line -match '(?i)\b(OU|DC|CN)=[A-Za-z0-9]|improbability|contoso|fabrikam|tierpoint|\biic\b') { return $Matches[0] } }
+        'a distinguished name or the name of an organization' = { param($Line) if ($Line -match '(?i)\b(OU|DC|CN)=[A-Za-z0-9]|improbability|contoso|fabrikam|\biic\b') { return $Matches[0] }; $hit = @(Find-AzlForbiddenToken $Line); if ($hit.Count) { return ($hit -join ', ') } }
         'a cloud DNS suffix or endpoint' = { param($Line) if ($Line -match '(?i)vault\.azure\.net|vault\.usgovcloudapi\.net|management\.(azure\.com|usgovcloudapi\.net)|login\.microsoftonline\.(com|us)|\.azure\.(com|us)\b|\.windows\.net\b|usgovcloudapi\.net|168\.63\.129\.16|\bAzure(Cloud|USGovernment)\b') { return $Matches[0] } }
         'a version pin or latest' = { param($Line) if ($Line -match '(?i)(version["'']?\s*[:=]\s*["'']?(>=|==)?\s*\d+\.\d+|==\s*\d+\.\d+|-(Required)?Version\s+\d+\.\d+|\blatest\b)') { return $Matches[0] } }
         'a URL to a host that is not a vendor download address' = { param($Line) foreach ($m in [regex]::Matches($Line, 'https?://([^/\s''"`)\]}]+)')) { $h = $m.Groups[1].Value; if ($h -match '\{\{|\$|<') { continue }; if (($h -replace ':\d+$', '') -notin $script:VendorHosts) { return $m.Value } } }

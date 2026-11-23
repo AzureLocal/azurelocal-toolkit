@@ -30,7 +30,7 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'AzlArmDeploymentRun.psm1
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'config'))
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
-$script:View = 'view=azloc-2610'
+$script:View = 'view=azloc-2611'
 $script:Docs = 'https://azurelocal.cloud/docs/implementation'
 $script:Src = @{
     Prereq     = "$script:Learn/deploy/deployment-prerequisites?$script:View"
@@ -290,17 +290,18 @@ function Get-AzlVerTargetSolution {
 function ConvertFrom-AzlVerOsBuild {
     <#
     .SYNOPSIS
-        The solution line (three parts) an OS build ships with, from the table of builds seen on a real deployment; $null for any other.
-        Accepts 10.0.26100.33650 and 26100.33650.
+        The solution line (three parts) an OS build ships with, from the table of builds seen on a real deployment or listed by Learn's
+        release information; $null for any other. Version is the first line of the table, Versions every line the build ships with
+        (26100.33822 ships with 12.2611.1004 and 12.2610.1004). Accepts 10.0.26100.33822 and 26100.33822.
     #>
     [CmdletBinding()]
     param([AllowNull()][AllowEmptyString()][string]$OsBuild)
     if (-not $OsBuild) { return $null }
     $b = $OsBuild.Trim()
     if ($b -match '^\d+\.\d+$') { $b = "10.0.$b" }
-    $row = Get-AzlArmSolutionOsBuild | Where-Object { $_.OsBuild -eq $b } | Select-Object -First 1
-    if (-not $row) { return $null }
-    [pscustomobject]@{ Version = $row.Solution; OsBuild = $row.OsBuild; Evidence = $row.Evidence }
+    $rows = @(Get-AzlArmSolutionOsBuild | Where-Object { $_.OsBuild -eq $b })
+    if (-not $rows.Count) { return $null }
+    [pscustomobject]@{ Version = $rows[0].Solution; Versions = @($rows | ForEach-Object { $_.Solution } | Select-Object -Unique); OsBuild = $rows[0].OsBuild; Evidence = (@($rows | ForEach-Object { $_.Evidence }) -join '; ') }
 }
 
 function Get-AzlVerSanVendor {

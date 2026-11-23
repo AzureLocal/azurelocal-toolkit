@@ -147,7 +147,7 @@ networking:
   # configuration and the deployment (full file); the site's time setting is provisioning.simplified.ntp.
 
 provisioning:
-  os_version: "12.2610.1004.50" # pin a version
+  os_version: "12.2611.1004.9" # pin a version
   simplified:
     site_name: "iic-site-01" # resource name of the Microsoft.Edge site
     maintenance_iso: "2610" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL

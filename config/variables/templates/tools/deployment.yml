@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.30.
+# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.31.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -186,9 +186,9 @@ deployment:
   # Patch the deploymentSettings api-version in Microsoft's template (for example 2026-10-01) when the template's own preview version is retire...
   # used by: deployment
   deployment_settings_api_version: ""
-  # The solution version the nodes run (four numeric parts, for example 12.2610.1004.50).
+  # The solution version the nodes run (four numeric parts, for example 12.2611.1004.9).
   # used by: deployment, os_configuration, trailwright
-  solution_version: "12.2610.1004.50"
+  solution_version: "12.2611.1004.9"
   # The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds...
   # used by: deployment
   sbe_catalog_path: "D:\\sbe\\dell\\SBE_Discovery_Dell.xml"
@@ -895,6 +895,11 @@ operations:
     # The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.26...
     # default: "latest"; used by: deployment
     target_version: "latest"
+  # Azure Monitor for the instance.
+  monitoring:
+    # (since 5.6.31) 
+    # default: false; used by: deployment
+    action_group_enable_if_disabled: false
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
 # when scenario.os_install is simplified

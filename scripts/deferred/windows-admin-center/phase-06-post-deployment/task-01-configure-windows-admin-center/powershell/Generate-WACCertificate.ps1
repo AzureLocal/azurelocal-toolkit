@@ -36,15 +36,15 @@ Write-Host ""
 
 # Get server info
 $computerName = $env:COMPUTERNAME
-$fqdn = \"$computerName.hybrid.mgmt\"
+$fqdn = \"$computerName.iic.improbability.cloud\"
 
 # Define all DNS names for the certificate
 $dnsNames = @(
     $fqdn,
     $computerName,
-    \"WAC01.hybrid.mgmt\",
+    \"WAC01.iic.improbability.cloud\",
     \"WAC01\",
-    \"10.1.0.25\",
+    \"192.0.2.25\",
     \"localhost\"
 )
 

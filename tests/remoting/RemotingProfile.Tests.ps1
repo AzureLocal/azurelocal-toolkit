@@ -48,7 +48,9 @@ Describe 'The profile table' {
     It 'holds no network, subscription, host or lab name' {
         $text = Get-Content -LiteralPath $script:Table -Raw
         $text | Should -Not -Match '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
-        $text | Should -Not -Match '(?i)tplabs|tierpoint|hybridsolutions|inthefog|subscriptions/'
+        . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
+        Find-AzlForbiddenToken $text | Should -BeNullOrEmpty
+        $text | Should -Not -Match '(?i)hybridsolutions|subscriptions/'
     }
 }
 

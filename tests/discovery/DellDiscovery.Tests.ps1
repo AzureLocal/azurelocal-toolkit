@@ -418,7 +418,9 @@ Describe 'Scripts end to end (fake iDRAC)' {
 Describe 'Standards' {
     It '<Relative> has no tenant or company name, no IPv4 address and no plain-text secret' -ForEach $script:Shipped {
         $text = Get-Content -LiteralPath $Full -Raw
-        $text | Should -Not -Match '(?i)tierpoint|tplabs|prodtech|product technology|hybrid cloud solutions'
+        . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
+        Find-AzlForbiddenToken $text | Should -BeNullOrEmpty -Because $Relative
+        $text | Should -Not -Match '(?i)product technology|hybrid cloud solutions'
         $text | Should -Not -Match '\b(?:\d{1,3}\.){3}\d{1,3}\b'
         $text | Should -Not -Match '(?i)ConvertTo-SecureString\s+.*-AsPlainText'
         $text | Should -Not -Match '(?i)password\s*[:=]\s*["''][^"''<$]'

@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    The pre-cluster verification gate: checks, read only, everything Microsoft Learn (view azloc-2610) and the azurelocal.cloud documentation
+    The pre-cluster verification gate: checks, read only, everything Microsoft Learn (view azloc-2611) and the azurelocal.cloud documentation
     list as a prerequisite, so that the ARM Validate never fails for something the toolkit could have caught.
 
 .DESCRIPTION

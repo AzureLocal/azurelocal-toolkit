@@ -34,8 +34,8 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'AzlArmDeploymentRun.psm1
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'sbe', 'AzlSbePackage.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.NodeCommon.psm1'))
 
-$script:SbeDoc = 'https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610'
-$script:ImportDoc = 'https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates'
+$script:SbeDoc = 'https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2611'
+$script:ImportDoc = 'https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2611#step-3-import-and-rediscover-updates'
 
 function Protect-AzlVerSbeText {
     # Takes the share password out of a text, so an error from a library can never carry it.
@@ -363,7 +363,7 @@ function Get-AzlVerificationCheckDefinition {
                 if ($scan.DiscoveryError) { return (New-AzlVerResult Skipped "The discovery manifest could not be read, so the version was not compared with the solution version: $($scan.DiscoveryError)" 'Download SBE_Discovery_<Vendor>.xml again from the vendor.') }
                 if (-not $scan.Entry) { return (New-AzlVerResult Skipped "$($p.BaseName) is not listed in $($scan.DiscoveryName), so its validated solution versions are not known (SB-004)." 'Fix SB-004 first.') }
                 $solution = Get-AzlVerTargetSolution $Context
-                if (-not $solution) { return (New-AzlVerResult Skipped "The target solution version is not known (neither the run setting solutionVersion, the ZTP handoff nor provisioning.os_version gives one), so SBE $($p.Version) was not compared with it." 'Set deployment.solution_version (run setting solutionVersion), for example 12.2610.1004.50.') }
+                if (-not $solution) { return (New-AzlVerResult Skipped "The target solution version is not known (neither the run setting solutionVersion, the ZTP handoff nor provisioning.os_version gives one), so SBE $($p.Version) was not compared with it." 'Set deployment.solution_version (run setting solutionVersion), for example 12.2611.1004.9.') }
                 $r = Test-AzlArmSbeSolution -Catalog $scan.Entries -Family $p.Family -Version $p.Version -Solution $solution
                 if ($r.Status -eq 'NotListed') { return (New-AzlVerResult Skipped "SBE $($p.Version) (family $($p.Family)) is not listed in $($scan.DiscoveryName), so it was not compared with solution $solution (SB-004)." 'Fix SB-004 first.') }
                 if ($r.Status -eq 'Validated') {

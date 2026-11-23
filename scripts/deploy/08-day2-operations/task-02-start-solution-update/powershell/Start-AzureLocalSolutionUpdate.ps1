@@ -48,7 +48,7 @@
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         operations.updates.install_after_deployment   the switch of the AfterDeployment mode; false when missing
-        operations.updates.target_version             latest (default) or a solution version of four numbers, for example 12.2610.1004.50
+        operations.updates.target_version             latest (default) or a solution version of four numbers, for example 12.2611.1004.9
         cluster.name                                  the cluster to connect to (unless -ComputerName is given)
 
     Exit codes: 0 the update was started, or there is nothing to start (reported), or planned under -WhatIf; 1 the cluster could not be reached, the
@@ -191,7 +191,7 @@ if (-not $targetRaw) { $targetRaw = 'latest' }
 $wantLatest = $targetRaw -ieq 'latest'
 $targetVersion = $null
 if (-not $wantLatest) {
-    if ($targetRaw -notmatch '^\d+\.\d+\.\d+\.\d+$') { Exit-InputProblem "operations.updates.target_version must be latest or a solution version of four numbers, for example 12.2610.1004.50; found '$targetRaw'." }
+    if ($targetRaw -notmatch '^\d+\.\d+\.\d+\.\d+$') { Exit-InputProblem "operations.updates.target_version must be latest or a solution version of four numbers, for example 12.2611.1004.9; found '$targetRaw'." }
     $targetVersion = ConvertTo-UpdateVersion $targetRaw
     if (-not $targetVersion) { Exit-InputProblem "operations.updates.target_version '$targetRaw' is not a version number." }
 }

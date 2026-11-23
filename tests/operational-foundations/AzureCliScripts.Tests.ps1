@@ -690,6 +690,33 @@ Describe 'the monitoring scripts' {
             $r.Rows[0].Action | Should -Be 'AlreadyExists'
             Get-K6Change | Should -BeNullOrEmpty
         }
+        It 'reports a disabled group as Disabled with a warning, and changes nothing by default' {
+            $global:K6Handlers['monitor action-group show'] = { param($o, $a) '{"name":"ag-example-01","enabled":false,"emailReceivers":[{"emailAddress":"team@improbability.cloud"},{"emailAddress":"alerts@improbability.cloud"}]}' }
+            $r = Invoke-K6 $script:Alerting (New-K6Infra)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Disabled'
+            $r.Rows[0].Enabled | Should -BeFalse
+            $r.Text | Should -Match 'DISABLED: none of its receivers gets an alert'
+            Get-K6Change | Should -BeNullOrEmpty
+        }
+        It 'enables a disabled group with --enabled true when operations.monitoring.action_group_enable_if_disabled is true' {
+            $global:K6Handlers['monitor action-group show'] = { param($o, $a) '{"name":"ag-example-01","enabled":false,"emailReceivers":[{"emailAddress":"team@improbability.cloud"},{"emailAddress":"alerts@improbability.cloud"}]}' }
+            $r = Invoke-K6 $script:Alerting (New-K6Infra @{ 'operations.monitoring.action_group_enable_if_disabled' = $true })
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Enabled'
+            $u = @(Get-K6Call 'monitor action-group update')
+            $u.Count | Should -Be 1
+            @($u[0].Options['--enabled']) | Should -Be @('true')
+            $u[0].Options.ContainsKey('--add-action') | Should -BeFalse
+        }
+        It 'adds a missing receiver to a disabled group without enabling it, and warns' {
+            $global:K6Handlers['monitor action-group show'] = { param($o, $a) '{"name":"ag-example-01","enabled":false,"emailReceivers":[{"emailAddress":"team@improbability.cloud"}]}' }
+            $r = Invoke-K6 $script:Alerting (New-K6Infra)
+            $r.Rows[0].Action | Should -Be 'Updated'
+            $r.Rows[0].Enabled | Should -BeFalse
+            $r.Text | Should -Match 'DISABLED'
+            (Get-K6Call 'monitor action-group update')[0].Options.ContainsKey('--enabled') | Should -BeFalse
+        }
         It 'ends with exit code 2 for no address, a bad address or a missing group name' {
             foreach ($set in @{ 'operations.notifications.emails' = $null; 'operations.monitoring.alert_email' = $null }, @{ 'operations.monitoring.alert_email' = 'not-an-address' }, @{ 'operations.monitoring.action_group' = $null }) {
                 (Invoke-K6 $script:Alerting (New-K6Infra $set)).ExitCode | Should -Be 2 -Because ($set.Keys -join ',')

@@ -166,7 +166,7 @@ $targetRaw = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path '
 if (-not $targetRaw) { $targetRaw = 'latest' }
 $targetVersion = $null
 if ($targetRaw -ine 'latest') {
-    if ($targetRaw -notmatch '^\d+\.\d+\.\d+\.\d+$') { Exit-InputProblem "operations.updates.target_version must be latest or a solution version of four numbers, for example 12.2610.1004.50; found '$targetRaw'." }
+    if ($targetRaw -notmatch '^\d+\.\d+\.\d+\.\d+$') { Exit-InputProblem "operations.updates.target_version must be latest or a solution version of four numbers, for example 12.2611.1004.9; found '$targetRaw'." }
     $targetVersion = ConvertTo-UpdateVersion $targetRaw
     if (-not $targetVersion) { Exit-InputProblem "operations.updates.target_version '$targetRaw' is not a version number." }
 }

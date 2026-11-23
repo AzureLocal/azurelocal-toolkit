@@ -10,7 +10,7 @@
       phase-03-os-configuration task-06 Test-DnsClientConfig / Test-DnsConfiguration (removed), task-07 NTP, task-10 hostname,
       task-16 (was task-13) Invoke-Phase03Verification-Orchestrated.ps1 (removed; now a placeholder) (the per node verification block), phase-04-arc-registration
       Invoke-ArcPrerequisites-Orchestrated.ps1 (removed) (Environment Checker run), the node payload of the OS configuration
-      (AzlNodePayload.psm1) for the shape of the reads, Microsoft Learn (azloc-2610) deployment-prerequisites,
+      (AzlNodePayload.psm1) for the shape of the reads, Microsoft Learn (azloc-2611) deployment-prerequisites,
       system-requirements-23h2, deployment-install-os and manage/use-environment-checker.
 
     Contract with the engine: Get-AzlVerificationCheckDefinition and Get-AzlVerificationAdapterDefault (see AzlVerification.NodeCommon.psm1).
@@ -85,7 +85,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-003' -Category nodes -Title 'All nodes run exactly the same OS build' `
-                -Source "https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2610; $($script:Src.EnvChecker) (software validator: same OS version)" -Run {
+                -Source "https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-azure-resource-manager-template?view=azloc-2611; $($script:Src.EnvChecker) (software validator: same OS version)" -Run {
                 param($Context)
                 $all = Get-AzlVerAllNodeData -Context $Context -Section 'GetOsBuild'
                 if (-not $all.Data.Count) { Stop-AzlVerSkip "No node could be read (ND-001): $(Join-AzlVerList @($all.Unread.Keys))." 'Make the nodes reachable, then run the verification again.' }
@@ -99,7 +99,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-004' -Category nodes -Title 'The OS build is the one the target solution version ships with' `
-                -Source "https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2610; config/known-issues/arm-deployment.json (unsupported-os-version)" -Run {
+                -Source "https://learn.microsoft.com/en-us/azure/azure-local/whats-new?view=azloc-2611; config/known-issues/arm-deployment.json (unsupported-os-version)" -Run {
                 param($Context)
                 $target = Get-AzlVerTargetSolution $Context
                 if (-not $target) { return New-AzlVerResult NotApplicable 'No target solution version is declared (Settings.solutionVersion, the ZTP handoff or provisioning.os_version), so the OS build is not compared with one.' }
@@ -108,9 +108,10 @@ function Get-AzlVerificationCheckDefinition {
                     param($Name, $D, $N)
                     $build = [string](Get-AzlProp $D 'os.build' '')
                     $map = ConvertFrom-AzlVerOsBuild $build
-                    if (-not $map) { New-AzlVerResult Skipped "$Name runs OS build $build, which is not in the table of builds seen with a solution version, so it cannot be compared with the target $target. Azure refuses an OS build it does not accept for new deployments (Unsupported OS version)." "Install the OS build of solution $target (the lab: solution 12.2610.1004.50 is OS build 26100.33650)." -Node $Name -Evidence "os.build=$build" }
-                    elseif ($map.Version -eq $line) { New-AzlVerResult Passed "$Name's OS build $build ships with solution $($map.Version), the line of the target $target." -Node $Name -Evidence "os.build=$build target=$target" }
-                    else { New-AzlVerResult Failed "$Name's OS build $build ships with solution $($map.Version), but the deployment targets $target." "Install the OS build of solution $target on $Name, or change provisioning.os_version." -Node $Name -Evidence "os.build=$build target=$target" }
+                    $lines = @($map | Where-Object { $_ } | ForEach-Object { if ($_.PSObject.Properties['Versions'] -and @($_.Versions).Count) { $_.Versions } else { $_.Version } })
+                    if (-not $map) { New-AzlVerResult Skipped "$Name runs OS build $build, which is not in the table of builds seen with a solution version, so it cannot be compared with the target $target. Azure refuses an OS build it does not accept for new deployments (Unsupported OS version)." "Install the OS build of solution $target (Learn, Azure Local release information: 12.2611.1004.9 is OS build 26100.33822)." -Node $Name -Evidence "os.build=$build" }
+                    elseif ($line -in $lines) { New-AzlVerResult Passed "$Name's OS build $build ships with solution $($lines -join ' or '), the line of the target $target." -Node $Name -Evidence "os.build=$build target=$target" }
+                    else { New-AzlVerResult Failed "$Name's OS build $build ships with solution $($lines -join ' or '), but the deployment targets $target." "Install the OS build of solution $target on $Name, or change provisioning.os_version." -Node $Name -Evidence "os.build=$build target=$target" }
                 }
             }))
 

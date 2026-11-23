@@ -4,7 +4,7 @@
     The one list of outbound endpoints the pre-cluster verification tests (AZ-023, NW-005, ID-DNS-003). A library module: it exports no check and no adapter.
 
 .DESCRIPTION
-    Every entry comes from Microsoft Learn, view azloc-2610:
+    Every entry comes from Microsoft Learn, view azloc-2611:
       - Firewall requirements for Azure Local, "Required firewall URLs": the consolidated endpoint lists (East US, West Europe, Australia East, Canada Central, India
         Central, Southeast Asia, Japan East, South Central US) in github.com/Azure/AzureStack-Tools/tree/master/HCI, which Learn names as the list to allow.
       - Azure Arc-enabled servers, Connected Machine agent network requirements (regional token endpoint <region>.login.microsoft.com, the service tags).

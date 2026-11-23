@@ -121,7 +121,7 @@ Write-Host ""
 Write-Host "=== Windows Admin Center Installation Complete ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "Access URL: https://$(hostname):$WACPort" -ForegroundColor Cyan
-Write-Host "  (Use https://10.1.0.25:$WACPort from other VMs)" -ForegroundColor Gray
+Write-Host "  (Use https://192.0.2.25:$WACPort from other VMs)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Access WAC via Azure Bastion or VPN" -ForegroundColor Gray

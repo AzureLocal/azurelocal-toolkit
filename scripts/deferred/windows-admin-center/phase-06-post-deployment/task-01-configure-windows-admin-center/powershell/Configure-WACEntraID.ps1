@@ -13,7 +13,7 @@
     Azure subscription ID for app registration
 
 .PARAMETER WACUrl
-    The URL where WAC will be accessed (e.g., https://wac.corp.hybrid.mgmt)
+    The URL where WAC will be accessed (e.g., https://wac.corp.iic.improbability.cloud)
 
 .PARAMETER CertificatePath
     Path to certificate file for token signing (optional)

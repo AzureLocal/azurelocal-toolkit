@@ -543,6 +543,7 @@ Describe 'Fixtures are synthetic and scrubbed' {
         foreach ($m in [regex]::Matches($text, '(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b')) { $m.Value | Should -Match '^00:00:5E:00:53:' }
         foreach ($m in [regex]::Matches($text, '"(?:Address|Gateway|SubnetMask)":\s*"([\d.]+)"')) { $m.Groups[1].Value | Should -Match '^(192\.0\.2\.|255\.255\.255\.)' }
         foreach ($m in [regex]::Matches($text, '"(?:SerialNumber|SKU)":\s*"([^"]+)"')) { $m.Groups[1].Value | Should -Match '^(DOC|0DOC)' }
-        $text | Should -Not -Match '(?i)9W7N704|BW7N704|8W7N704|MXWSJ|C4:CB|58:A2:E1|SJC5T|NDC5N|tplabs|tierpoint'
+        . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
+        Find-AzlForbiddenToken $text | Should -BeNullOrEmpty
     }
 }

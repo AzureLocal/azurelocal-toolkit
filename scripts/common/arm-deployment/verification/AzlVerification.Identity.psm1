@@ -34,7 +34,7 @@
 
     Harvested from the azl-toolkit scripts (03-onprem-readiness/phase-01-active-directory Test-ADConfiguration.ps1 and Invoke-ADValidation-Arc.ps1,
     04-cluster-deployment/phase-05 Invoke-VerifyADPrerequisites-Orchestrated.ps1 (removed) and Test-LocalIdentityConfig.ps1 (removed), phase-03 task-06 Test-DnsClientConfig.ps1)
-    and checked against Learn view=azloc-2610.
+    and checked against Learn view=azloc-2611.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -47,7 +47,7 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1
 Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -ErrorAction Stop
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
-$script:View = 'view=azloc-2610'
+$script:View = 'view=azloc-2611'
 $script:Docs = 'https://azurelocal.cloud/docs/implementation'
 $script:Src = @{
     PrepAd   = "$script:Learn/deploy/deployment-prep-active-directory?$script:View"
@@ -901,11 +901,11 @@ Add-VfIdCheck -Id 'ID-AD-011' -Title 'Disjoint namespace: the primary DNS suffix
     }
 }
 
-Add-VfIdCheck -Id 'ID-AD-012' -Title 'KDS root key (Learn 2610 does not require it for Azure Local; only for gMSA)' -Source "$($script:Src.PrepAd); azl-toolkit Test-ADConfiguration.ps1 (KDS Root Key, not a Learn requirement)" -Applies $script:IsAd -Blocking $false -Run {
+Add-VfIdCheck -Id 'ID-AD-012' -Title 'KDS root key (Learn 2611 does not require it for Azure Local; only for gMSA)' -Source "$($script:Src.PrepAd); azl-toolkit Test-ADConfiguration.ps1 (KDS Root Key, not a Learn requirement)" -Applies $script:IsAd -Blocking $false -Run {
     param($Context)
     Invoke-VfIdCheck $Context {
         $gmsa = Get-AzlProp (Get-VfIdInfra $Context) $script:UnregisteredSetting.UseGmsa $false
-        if (-not [bool]$gmsa) { return New-VfIdResult NotApplicable "Learn 2610 does not list a KDS root key among the Active Directory requirements for Azure Local: the preparation article names a dedicated OU, blocked GPO inheritance and a user with rights on the OU. A KDS root key is needed only for group managed service accounts, and the file does not ask for gMSA ($($script:UnregisteredSetting.UseGmsa) is not true), so it is not checked." }
+        if (-not [bool]$gmsa) { return New-VfIdResult NotApplicable "Learn 2611 does not list a KDS root key among the Active Directory requirements for Azure Local: the preparation article names a dedicated OU, blocked GPO inheritance and a user with rights on the OU. A KDS root key is needed only for group managed service accounts, and the file does not ask for gMSA ($($script:UnregisteredSetting.UseGmsa) is not true), so it is not checked." }
         $lcm = Get-VfIdLcm $Context
         $a = Get-VfIdLdapChecked -Context $Context -Filter '(objectClass=msKds-ProvRootKey)' -Property @('distinguishedname', 'mskds-domainid') -SearchRoot "CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,CN=Configuration,$(Get-VfIdDomainDn $lcm.Domain)"
         if (@($a.Entries).Count) { New-VfIdResult Passed "A KDS root key exists ($(@($a.Entries).Count)); the file asks for gMSA." -Evidence "keys=$(@($a.Entries).Count)" }

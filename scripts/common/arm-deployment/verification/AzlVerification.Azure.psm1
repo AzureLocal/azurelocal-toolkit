@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Pre-cluster verification gate, category azure: the Azure side of everything Microsoft Learn (view azloc-2610) and the azurelocal.cloud
+    Pre-cluster verification gate, category azure: the Azure side of everything Microsoft Learn (view azloc-2611) and the azurelocal.cloud
     documentation list as a prerequisite of an Azure Local deployment. Read only.
 
 .DESCRIPTION
@@ -60,7 +60,7 @@ Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeplo
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
-$script:View = 'view=azloc-2610'
+$script:View = 'view=azloc-2611'
 $script:Docs = 'https://azurelocal.cloud/docs/implementation'
 $script:Src = @{
     Perm      = "$script:Learn/deploy/deployment-arc-register-server-permissions?$script:View"

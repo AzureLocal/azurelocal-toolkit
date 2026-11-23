@@ -314,7 +314,7 @@ function Get-AzlArmRunSetting {
     $s.preClusterVerificationMaxAgeHours = [int]$s.preClusterVerificationMaxAgeHours
     $s.preClusterVerificationReportDirectory = ([string]$s.preClusterVerificationReportDirectory).Trim()
     $s.solutionVersion = ([string]$s.solutionVersion).Trim()
-    if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2610.1004.50, not '$($s.solutionVersion)'." }
+    if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2611.1004.9, not '$($s.solutionVersion)'." }
     $s.sbeCatalogPath = ([string]$s.sbeCatalogPath).Trim()
     $s.deploymentNamePrefix = ([string]$s.deploymentNamePrefix).Trim().ToLowerInvariant()
     if ($s.deploymentNamePrefix -notmatch '^[a-z][a-z0-9-]{0,29}$') { Stop-AzlArmInput "Setting deploymentNamePrefix must start with a letter and hold only letters, digits and hyphens (at most 30 characters), not '$($s.deploymentNamePrefix)'." }
@@ -1113,10 +1113,15 @@ function Get-AzlArmArcMachineCached {
 # ---------------------------------------------------------------------------------------------------------------------
 
 # OS build -> the solution line it ships with (first three parts of the solution version; the last part is the build of the
-# solution package and is not known from the OS build). Add a row only when both were seen together on a real deployment.
+# solution package and is not known from the OS build). Add a row only when both were seen together on a real deployment, or Microsoft
+# Learn's release information table (Azure Local release information, view azloc-2611) lists them together. One OS build can ship with
+# more than one solution line (26100.33822 ships with 12.2611.1004.9 and with 12.2610.1004.54 and .55): it then has a row per line, and the
+# solution version is not derived from it (ConvertFrom-AzlArmOsBuild returns nothing; nothing is guessed), while ND-004 accepts any of its lines.
 # This is the one table: the node checks of the pre-cluster verification read it through Get-AzlArmSolutionOsBuild (they used to keep a copy).
 $script:SolutionOsBuilds = @(
     [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'lab run 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
+    [pscustomobject]@{ OsBuild = '10.0.26100.33822'; Solution = '12.2611.1004'; Evidence = 'Microsoft Learn, Azure Local release information (view azloc-2611): 12.2611.1004.9 (2026-11-20, the default of new deployments) is OS build 26100.33822' }
+    [pscustomobject]@{ OsBuild = '10.0.26100.33822'; Solution = '12.2610.1004'; Evidence = 'Microsoft Learn, Azure Local release information (view azloc-2611): 12.2610.1004.54 (2026-11-14) and 12.2610.1004.55 (2026-11-20) are OS build 26100.33822' }
 )
 
 function Get-AzlArmSolutionOsBuild {
@@ -1188,16 +1193,19 @@ function Test-AzlArmSolutionVersionMatch {
 function ConvertFrom-AzlArmOsBuild {
     <#
     .SYNOPSIS
-        The solution line (three parts, for example 12.2610.1004) a node's OS build ships with, or $null. Conservative: only a
-        build in the table that was seen on a real deployment maps; any other build is unknown. The result is always derived.
+        The solution line (three parts, for example 12.2611.1004) a node's OS build ships with, or $null. Conservative: only a
+        build in the table (seen on a real deployment or listed together by Learn's release information) maps, and only when it
+        ships with one solution line; any other build, and a build that ships with several lines (26100.33822), is not derived.
+        The result is always derived.
     .OUTPUTS
         Version (three parts), OsBuild, Derived ($true), Note.
     #>
     [CmdletBinding()]
     param([AllowEmptyString()][AllowNull()][string]$OsBuild)
     if (-not $OsBuild) { return $null }
-    $row = $script:SolutionOsBuilds | Where-Object { $_.OsBuild -eq $OsBuild.Trim() } | Select-Object -First 1
-    if (-not $row) { return $null }
+    $rows = @($script:SolutionOsBuilds | Where-Object { $_.OsBuild -eq $OsBuild.Trim() })
+    if (@($rows | ForEach-Object { $_.Solution } | Select-Object -Unique).Count -ne 1) { return $null }
+    $row = $rows[0]
     [pscustomobject]@{ Version = $row.Solution; OsBuild = $row.OsBuild; Derived = $true; Note = "derived from OS build $($row.OsBuild) ($($row.Evidence))" }
 }
 
@@ -1281,7 +1289,10 @@ function Resolve-AzlArmSolutionVersion {
     if ($mapped.Count -eq $known.Count -and @($mapped | ForEach-Object { $_.Version } | Select-Object -Unique).Count -eq 1) {
         return [pscustomobject]@{ Version = $mapped[0].Version; Derived = $true; Source = $mapped[0].Note }
     }
-    [pscustomobject]@{ Version = $null; Derived = $false; Source = "OS build $($known -join ', ') does not map unambiguously to a solution version (nothing is guessed).$problem" }
+    # A build that ships with several solution lines (Learn: 26100.33822 is 12.2611.1004.9 and 12.2610.1004.54/.55) is named with its lines, so the person knows what to pin.
+    $several = @(foreach ($b in $known) { $lines = @($script:SolutionOsBuilds | Where-Object { $_.OsBuild -eq $b.Trim() } | ForEach-Object { $_.Solution } | Select-Object -Unique); if ($lines.Count -gt 1) { "$b ships with $($lines -join ' and ')" } })
+    $why = if ($several.Count) { " ($($several -join '; '); set deployment.solution_version to the one the nodes run)" } else { '' }
+    [pscustomobject]@{ Version = $null; Derived = $false; Source = "OS build $($known -join ', ') does not map unambiguously to a solution version (nothing is guessed)$why.$problem" }
 }
 
 $script:Checks = [ordered]@{}
@@ -1538,7 +1549,7 @@ $script:Checks['SbeValidatedWithSolution'] = {
     catch { return New-AzlArmCheckResult $check Warning "The SBE discovery catalog $($source.File) could not be read ($($_.Exception.Message)), so SBE $version was not compared with the solution version." 'Copy SBE_Discovery_*.xml again from the Dell download (hardware.sbe.bundle_path) or point the run setting sbeCatalogPath at a good copy.' }
     $solution = Resolve-AzlArmSolutionVersion $Ctx
     if (-not $solution.Version) {
-        return New-AzlArmCheckResult $check Warning "The solution version could not be determined, so SBE $version was not compared with the catalog. $($solution.Source)" 'Set the run setting solutionVersion (deployment.solution_version), for example 12.2610.1004.50, to the solution version this deployment installs. Azure refuses an SBE that is not validated with it (ErrorUnvalidatedSolutionAndSbeCombination) only after 10 to 15 minutes of Validate.'
+        return New-AzlArmCheckResult $check Warning "The solution version could not be determined, so SBE $version was not compared with the catalog. $($solution.Source)" 'Set the run setting solutionVersion (deployment.solution_version), for example 12.2611.1004.9, to the solution version this deployment installs. Azure refuses an SBE that is not validated with it (ErrorUnvalidatedSolutionAndSbeCombination) only after 10 to 15 minutes of Validate.'
     }
     $shown = if ($solution.Derived) { "$($solution.Version).x" } else { $solution.Version }
     $how = if ($solution.Derived) { $solution.Source } else { "from $($solution.Source)" }

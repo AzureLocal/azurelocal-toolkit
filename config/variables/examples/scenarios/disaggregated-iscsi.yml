@@ -108,5 +108,5 @@ storage:
       - { name: "lun-workloads-01", size_gib: 4096, lun_id: "2" }
 
 provisioning:
-  os_version: "12.2610.1004.50"
+  os_version: "12.2611.1004.9"
   iso: { image_source: oem }

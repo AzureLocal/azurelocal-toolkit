@@ -185,7 +185,7 @@ az network nsg rule create `
     --nsg-name $nsgName `
     --name "Allow-Syslog-UDP" `
     --priority 100 `
-    --source-address-prefixes "192.168.100.0/24" "192.168.150.0/24" "192.168.200.0/24" "10.1.0.0/24" `
+    --source-address-prefixes "198.51.100.0/24" "203.0.113.0/25" "203.0.113.128/25" "192.0.2.0/24" `
     --destination-port-ranges 514 `
     --protocol Udp `
     --access Allow `
@@ -198,7 +198,7 @@ az network nsg rule create `
     --nsg-name $nsgName `
     --name "Allow-SNMP-Traps-UDP" `
     --priority 110 `
-    --source-address-prefixes "192.168.100.0/24" "192.168.150.0/24" "192.168.200.0/24" "10.1.0.0/24" `
+    --source-address-prefixes "198.51.100.0/24" "203.0.113.0/25" "203.0.113.128/25" "192.0.2.0/24" `
     --destination-port-ranges 162 `
     --protocol Udp `
     --access Allow `
@@ -211,7 +211,7 @@ az network nsg rule create `
     --nsg-name $nsgName `
     --name "Allow-SSH-TCP" `
     --priority 120 `
-    --source-address-prefixes "10.1.0.0/24" `
+    --source-address-prefixes "192.0.2.0/24" `
     --destination-port-ranges 22 `
     --protocol Tcp `
     --access Allow `
@@ -224,7 +224,7 @@ az network nsg rule create `
     --nsg-name $nsgName `
     --name "Allow-Syslog-TLS-TCP" `
     --priority 130 `
-    --source-address-prefixes "10.1.0.0/24" `
+    --source-address-prefixes "192.0.2.0/24" `
     --destination-port-ranges 601 `
     --protocol Tcp `
     --access Allow `
@@ -330,5 +330,5 @@ Write-Host "  2. Configure data disk (partition, format, mount to /var/log/remot
 Write-Host "  3. Install rsyslog/syslog-ng and snmptrapd" -ForegroundColor White
 Write-Host "  4. Install Azure Monitor Agent (AMA)" -ForegroundColor White
 Write-Host "  5. Configure syslog sources (UDM, Opengear, iDRACs, etc.)" -ForegroundColor White
-Write-Host "  6. Update hosts file: Add '10.1.0.40 vm-local-syslog-eastus2-001 local-syslog01'" -ForegroundColor White
+Write-Host "  6. Update hosts file: Add '192.0.2.40 vm-local-syslog-eastus2-001 local-syslog01'" -ForegroundColor White
 Write-Host ""

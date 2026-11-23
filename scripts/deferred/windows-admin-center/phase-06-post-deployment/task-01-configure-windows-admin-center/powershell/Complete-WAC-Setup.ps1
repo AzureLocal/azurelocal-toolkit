@@ -25,7 +25,7 @@ $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
 if ($computerSystem.PartOfDomain) {
     Write-Host "✓ Domain-joined: $($computerSystem.Domain)" -ForegroundColor Green
 } else {
-    Write-Host "✗ NOT domain-joined - machine must be on hybrid.mgmt domain" -ForegroundColor Red
+    Write-Host "✗ NOT domain-joined - machine must be on iic.improbability.cloud domain" -ForegroundColor Red
     Write-Host "Please join domain first, then re-run this script" -ForegroundColor Yellow
     exit 1
 }
@@ -254,7 +254,7 @@ catch {
 
 # Register SPNs for this computer
 $computerName = $env:COMPUTERNAME
-$fqdn = "$computerName.hybrid.mgmt"
+$fqdn = "$computerName.iic.improbability.cloud"
 
 Write-Host "Registering SPNs..." -ForegroundColor Gray
 try {
@@ -309,8 +309,8 @@ Write-Host "Windows Admin Center is ready!" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Access URLs:" -ForegroundColor Yellow
 Write-Host "  Local:  https://localhost" -ForegroundColor Gray
-Write-Host "  Domain: https://WAC01.hybrid.mgmt" -ForegroundColor Gray
-Write-Host "  IP:     https://10.1.0.25" -ForegroundColor Gray
+Write-Host "  Domain: https://WAC01.iic.improbability.cloud" -ForegroundColor Gray
+Write-Host "  IP:     https://192.0.2.25" -ForegroundColor Gray
 Write-Host ""
 Write-Host "NEXT STEPS:" -ForegroundColor Yellow
 Write-Host ""

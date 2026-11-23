@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.66
+# Version: 5.0.67
 # Schema: infrastructure.schema.json (generated from this file)
 # Last Updated: 2026-11-23
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.67 (2026-11-23):
+#     - Azure Local 2611 and two fixes (infrastructure schema 5.6.31; the new key is optional, so a file of any 5.6 version stays valid). (1) operations.monitoring.action_group_enable_if_disabled (boolean, default false): Deploy-ActionGroup.ps1 and its Azure CLI twin report an action group that exists but is disabled as Disabled, with a warning, never as existing; they enable it only when this key is true, and an update that adds receivers passes the enabled state on. (2) Azure Local 2611 (12.2611.1004.9, OS build 26100.33822, released 2026-11-20): the examples of deployment.solution_version, provisioning.os_version and operations.updates.target_version are 12.2611.1004.9, and the Learn view the descriptions name is azloc-2611. (3) The parameters InfrastructureFile and OutputPath of New-TerraformStateMoveList.ps1 (config/variables/scripts; it lists the terraform state mv commands for a landing zone state written before registry 5.0.62) are registered under tools.arm_deployment.parameters.
 #   v5.0.66 (2026-11-23):
 #     - Cost Management budgets (owner directive D128; infrastructure schema 5.6.30; the new key is optional, so a file of any 5.6 version stays valid). New key landing_zone.budgets[] with name, scope (subscription or resource_group), subscription, resource_group, amount, time_grain (Monthly, Quarterly, Annually), start_date, end_date, thresholds (actual cost, default 80 and 100), forecast_thresholds and contact_emails. New task scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets: Deploy-CostBudgets.ps1 (Az.Accounts, Invoke-AzRestMethod) and Deploy-CostBudgets.azcli.ps1 (az rest) create or update each budget with the Microsoft.Consumption budgets REST API (Microsoft Learn: Budgets - Create Or Update); a budget that matches the file is left alone. Budgets are free.
 #   v5.0.65 (2026-11-23):
@@ -247,15 +249,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.66"
+  version: "5.0.67"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.30"
+  infrastructure_schema_version: "5.6.31"
   last_updated: "2026-11-23"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-23"
+      version: "5.0.67"
+      change: "Azure Local 2611 and two fixes (infrastructure schema 5.6.31; the new key is optional, so a file of any 5.6 version stays valid). (1) operations.monitoring.action_group_enable_if_disabled (boolean, default false): Deploy-ActionGroup.ps1 and its Azure CLI twin report an action group that exists but is disabled as Disabled, with a warning, never as existing; they enable it only when this key is true, and an update that adds receivers passes the enabled state on. (2) Azure Local 2611 (12.2611.1004.9, OS build 26100.33822, released 2026-11-20): the examples of deployment.solution_version, provisioning.os_version and operations.updates.target_version are 12.2611.1004.9, and the Learn view the descriptions name is azloc-2611. (3) The parameters InfrastructureFile and OutputPath of New-TerraformStateMoveList.ps1 (config/variables/scripts; it lists the terraform state mv commands for a landing zone state written before registry 5.0.62) are registered under tools.arm_deployment.parameters."
+      reason: "K2 review note: a disabled action group was reported as existing. Owner directive D135: Azure Local 2611 is out (Microsoft Learn, Azure Local release information, view azloc-2611). D121 leftover: an existing landing zone state needs a scripted state move."
     - date: "2026-11-23"
       version: "5.0.66"
       change: "Cost Management budgets (owner directive D128; infrastructure schema 5.6.30; the new key is optional, so a file of any 5.6 version stays valid). New key landing_zone.budgets[] with name, scope (subscription or resource_group), subscription, resource_group, amount, time_grain (Monthly, Quarterly, Annually), start_date, end_date, thresholds (actual cost, default 80 and 100), forecast_thresholds and contact_emails. New task scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets: Deploy-CostBudgets.ps1 (Az.Accounts, Invoke-AzRestMethod) and Deploy-CostBudgets.azcli.ps1 (az rest) create or update each budget with the Microsoft.Consumption budgets REST API (Microsoft Learn: Budgets - Create Or Update); a budget that matches the file is left alone. Budgets are free."
@@ -2377,7 +2383,7 @@ identity:
         items:
           {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
       use_gmsa:
-        description: "Whether the instance uses group managed service accounts. Default false. Learn 2610 does not require a KDS root key for Azure Local (the Active Directory preparation never mentions one); a KDS root key matters only for gMSA, so the pre-cluster verification (ID-AD-012) checks it only when this is true. (since 5.6)"
+        description: "Whether the instance uses group managed service accounts. Default false. Learn 2611 does not require a KDS root key for Azure Local (the Active Directory preparation never mentions one); a KDS root key matters only for gMSA, so the pre-cluster verification (ID-AD-012) checks it only when this is true. (since 5.6)"
         type: boolean
         required: false
         default: false
@@ -4850,11 +4856,11 @@ networking:
         example:
         - vlan_id: 712
           name: "storage-1"
-          cidr: "10.71.212.0/24"
+          cidr: "198.51.100.0/26"
           routable: false
         - vlan_id: 713
           name: "storage-2"
-          cidr: "10.71.213.0/24"
+          cidr: "198.51.100.64/26"
           routable: false
 
       vlan_storage_1_id:
@@ -4876,7 +4882,7 @@ networking:
         description: "Storage VLAN 1 CIDR (non-routable, east/west only)"
         required: false
         format: cidr
-        example: "10.71.212.0/24"
+        example: "198.51.100.0/26"
 
       vlan_storage_2_id:
         type: integer
@@ -4897,7 +4903,7 @@ networking:
         description: "Storage VLAN 2 CIDR (non-routable, east/west only)"
         required: false
         format: cidr
-        example: "10.71.213.0/24"
+        example: "198.51.100.64/26"
 
       vlan_storage_3_id:
         type: integer
@@ -4918,7 +4924,7 @@ networking:
         description: "Storage VLAN 3 CIDR (non-routable, east/west only)"
         required: false
         format: cidr
-        example: "10.71.214.0/24"
+        example: "198.51.100.128/26"
 
       vlan_storage_4_id:
         type: integer
@@ -4939,7 +4945,7 @@ networking:
         description: "Storage VLAN 4 CIDR (non-routable, east/west only)"
         required: false
         format: cidr
-        example: "10.71.215.0/24"
+        example: "198.51.100.192/26"
 
       # WORKLOAD NETWORKS (Customer Workloads, Up to 6 Networks)
       # ---------------------------------------------------------------------------
@@ -5853,7 +5859,7 @@ networking:
                   type: string
                   description: "Storage network subnet (CIDR)"
                   format: cidr
-                  example: "10.71.212.0/24"
+                  example: "198.51.100.0/26"
                 vlan_id:
                   type: integer
                   description: "Storage VLAN ID"
@@ -5863,9 +5869,9 @@ networking:
             minItems: 1
             maxItems: 4
             example:
-              - subnet: "10.71.212.0/24"
+              - subnet: "198.51.100.0/26"
                 vlan_id: 712
-              - subnet: "10.71.213.0/24"
+              - subnet: "198.51.100.64/26"
                 vlan_id: 713
       
           # Storage Configuration (Microsoft ARM parameters)
@@ -5901,7 +5907,7 @@ networking:
                   type: string
                   description: "IPv4 address for this adapter"
                   format: ipv4
-                  example: "10.71.212.1"
+                  example: "198.51.100.1"
                 subnet_mask:
                   type: string
                   description: "Subnet mask"
@@ -5910,7 +5916,7 @@ networking:
             example:
               - node_name: "azlc-node01"
                 adapter_name: "Slot 6 Port 1"
-                ipv4_address: "10.71.212.1"
+                ipv4_address: "198.51.100.1"
                 subnet_mask: "255.255.255.0"
       
           # Adapter Property Overrides (Microsoft ARM parameter: adapterPropertyOverrides)
@@ -5958,7 +5964,7 @@ networking:
             vlan_id: 711
             dns_servers: ["192.0.2.10"]
             storage_networks:
-              - subnet: "10.71.212.0/24"
+              - subnet: "198.51.100.0/26"
                 vlan_id: 712
             enable_storage_auto_ip: true
     
@@ -5977,9 +5983,9 @@ networking:
             traffic_types: ["Storage"]
             adapter_names: ["Slot 6 Port 1", "Slot 6 Port 2"]
             storage_networks:
-              - subnet: "10.71.212.0/24"
+              - subnet: "198.51.100.0/26"
                 vlan_id: 712
-              - subnet: "10.71.213.0/24"
+              - subnet: "198.51.100.64/26"
                 vlan_id: 713
             enable_storage_auto_ip: true
             jumbo_packet_size: 9014
@@ -6002,9 +6008,9 @@ networking:
             traffic_types: ["Storage"]
             adapter_names: ["Slot 6 Port 1", "Slot 6 Port 2", "Slot 6 Port 3", "Slot 6 Port 4"]
             storage_networks:
-              - subnet: "10.71.212.0/24"
+              - subnet: "198.51.100.0/26"
                 vlan_id: 712
-              - subnet: "10.71.213.0/24"
+              - subnet: "198.51.100.64/26"
                 vlan_id: 713
             enable_storage_auto_ip: false  # Required for switchless
             storage_connectivity_switchless: true
@@ -6014,19 +6020,19 @@ networking:
             storage_adapter_ips:
               - node_name: "azlc-node01"
                 adapter_name: "Slot 6 Port 1"
-                ipv4_address: "10.71.212.1"
+                ipv4_address: "198.51.100.1"
                 subnet_mask: "255.255.255.0"
               - node_name: "azlc-node01"
                 adapter_name: "Slot 6 Port 2"
-                ipv4_address: "10.71.212.2"
+                ipv4_address: "198.51.100.2"
                 subnet_mask: "255.255.255.0"
               - node_name: "azlc-node02"
                 adapter_name: "Slot 6 Port 1"
-                ipv4_address: "10.71.212.3"
+                ipv4_address: "198.51.100.3"
                 subnet_mask: "255.255.255.0"
               - node_name: "azlc-node02"
                 adapter_name: "Slot 6 Port 2"
-                ipv4_address: "10.71.212.4"
+                ipv4_address: "198.51.100.4"
                 subnet_mask: "255.255.255.0"
 
     # =============================================================================
@@ -13029,6 +13035,14 @@ operations:
         since: "5.6.6"
         example: "ag-iic-azl-01"
         used_by: [terraform]
+      action_group_enable_if_disabled:
+        description: "Schema 5.6.31. What Deploy-ActionGroup.ps1 (and its Azure CLI twin) does with an action group that exists but is disabled (a disabled group sends nothing to any receiver). false (default): the group is reported as Disabled with a warning and left disabled, because a person may have disabled it on purpose. true: the run enables it (Update-AzActionGroup -Enabled, az monitor action-group update --enabled true) and reports Enabled. Adding a receiver never changes the enabled state."
+        type: boolean
+        required: false
+        default: false
+        since: "5.6.31"
+        example: false
+        used_by: [deployment]
       alert_email:
         description: "Address that receives the alerts (a team mailbox). Deploy-ActionGroup.ps1 makes it an email receiver of the action group, next to the addresses of operations.notifications.emails."
         type: string
@@ -13735,7 +13749,7 @@ operations:
           example: true
           used_by: [deployment]
         target_version:
-          description: "The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.2610.1004.50, which the update service must list (Get-SolutionUpdate). Standalone Solution Builder Extension updates are not chosen."
+          description: "The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.2611.1004.9, which the update service must list (Get-SolutionUpdate). Standalone Solution Builder Extension updates are not chosen."
           type: string
           required: false
           default: "latest"
@@ -15570,11 +15584,11 @@ deployment:
       required: false
       used_by: [deployment]
     solution_version:
-      description: "The solution version the nodes run (four numeric parts, for example 12.2610.1004.50). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously). The OS configuration also passes it to the Arc registration of a machine installed from an ISO as -TargetSolutionVersion, the version the first deployment uses; without it the registration cmdlet asks which version to use, which an unattended run cannot answer."
+      description: "The solution version the nodes run (four numeric parts, for example 12.2611.1004.9). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously). The OS configuration also passes it to the Arc registration of a machine installed from an ISO as -TargetSolutionVersion, the version the first deployment uses; without it the registration cmdlet asks which version to use, which an unattended run cannot answer."
       type: string
       required: false
       pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
-      example: "12.2610.1004.50"
+      example: "12.2611.1004.9"
       used_by: [deployment, os_configuration, trailwright]
     sbe_catalog_path:
       description: "The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds SBE_Discovery_*.xml. Default: the SBE_Discovery_*.xml in hardware.sbe.source_path, else hardware.sbe.bundle_path. Nothing is downloaded."
@@ -17138,11 +17152,11 @@ provisioning:
   additionalProperties: false
   properties:
     os_version:
-      description: "The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it."
+      description: "The solution version the machines run: latest, latest-preview, or a version such as 12.2611.1004.9. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it."
       type: string
       required: true
       pattern: "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
-      example: "12.2610.1004.50"
+      example: "12.2611.1004.9"
       used_by: [ztp, os_configuration, trailwright]
     iso:
       description: "OS installed from an ISO. There is no unattended install: the OS is installed, then the tools take over."
@@ -19149,7 +19163,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.20 adds operations.updates.install_after_deployment and operations.updates.target_version (read by Start-SolutionUpdateAfterDeployment.ps1) and removes keys that no tool read (see MIGRATION, To 5.6.20). 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). 5.6.23 adds landing_zone.networks[].allow_forwarded_traffic, allow_gateway_transit and use_remote_gateways (the options of the virtual network peerings Deploy-VirtualNetworks.ps1 makes) and identity.active_directory.precreate_computer_objects (Set-ADConfiguration.ps1 pre-creates the computer objects of the machines and the cluster). 5.6.24 adds hardware.sbe.partner_properties[] (name and value pairs that the hardware vendor's SBE asks for; ARM partnerProperties) and hardware.sbe.partner_credentials[] (secret_name and secret: the secret that the SBE needs, which the deployment template writes into the cluster Key Vault under secret_name; secret is a reference, never the value; ARM partnerCredentiallist). 5.6.25 adds devops.pipelines.runner_label and devops.pipelines.environments.* (the runner label and the approval environment of each of the toolkit's pipelines; task 05 sets them as pipeline variables). 5.6.26 removes registry entries that only the old variables.yml layout had (environment.env_name, env_type, env_owner and env_description, site.env_name and identity.active_directory.security_groups_by_role); a file never accepted them, so a file of any 5.6 version stays valid. 5.6.27 adds devops.pipelines.service_connection and devops.pipelines.variable_group (Azure DevOps: the names of the service connection and the variable group task 05 creates and the pipelines take as run parameters); a file without them stays valid. 5.6.28 adds the keys every pipeline, Ansible role, Terraform module and config template reads instead of a value of its own (devops.pipelines.infrastructure_file, handoff_path and tool_versions, devops.state.*, devops.runners[].*, devops.runner_network.*, devops.runner_access, identity.active_directory functional levels and DNS forwarders, landing_zone connectivity, virtual machine, policy and key vault keys, security.defender_for_cloud alert keys, network_devices[] ports, MTU and HA, hardware.sbe.requirement vendor); every key is optional, so a file of any 5.6 version stays valid. 5.6.29 adds deployment.events_directory (the one folder where the toolkit runs write their event feeds and Sonar reads them); a file without it stays valid. 5.6.30 adds landing_zone.budgets[] (the Cost Management budgets that Deploy-CostBudgets.ps1 creates: name, scope, subscription, resource_group, amount, time_grain, start_date, end_date, thresholds, forecast_thresholds, contact_emails); a file without it stays valid. The current version is 5.6.30."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.20 adds operations.updates.install_after_deployment and operations.updates.target_version (read by Start-SolutionUpdateAfterDeployment.ps1) and removes keys that no tool read (see MIGRATION, To 5.6.20). 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). 5.6.23 adds landing_zone.networks[].allow_forwarded_traffic, allow_gateway_transit and use_remote_gateways (the options of the virtual network peerings Deploy-VirtualNetworks.ps1 makes) and identity.active_directory.precreate_computer_objects (Set-ADConfiguration.ps1 pre-creates the computer objects of the machines and the cluster). 5.6.24 adds hardware.sbe.partner_properties[] (name and value pairs that the hardware vendor's SBE asks for; ARM partnerProperties) and hardware.sbe.partner_credentials[] (secret_name and secret: the secret that the SBE needs, which the deployment template writes into the cluster Key Vault under secret_name; secret is a reference, never the value; ARM partnerCredentiallist). 5.6.25 adds devops.pipelines.runner_label and devops.pipelines.environments.* (the runner label and the approval environment of each of the toolkit's pipelines; task 05 sets them as pipeline variables). 5.6.26 removes registry entries that only the old variables.yml layout had (environment.env_name, env_type, env_owner and env_description, site.env_name and identity.active_directory.security_groups_by_role); a file never accepted them, so a file of any 5.6 version stays valid. 5.6.27 adds devops.pipelines.service_connection and devops.pipelines.variable_group (Azure DevOps: the names of the service connection and the variable group task 05 creates and the pipelines take as run parameters); a file without them stays valid. 5.6.28 adds the keys every pipeline, Ansible role, Terraform module and config template reads instead of a value of its own (devops.pipelines.infrastructure_file, handoff_path and tool_versions, devops.state.*, devops.runners[].*, devops.runner_network.*, devops.runner_access, identity.active_directory functional levels and DNS forwarders, landing_zone connectivity, virtual machine, policy and key vault keys, security.defender_for_cloud alert keys, network_devices[] ports, MTU and HA, hardware.sbe.requirement vendor); every key is optional, so a file of any 5.6 version stays valid. 5.6.29 adds deployment.events_directory (the one folder where the toolkit runs write their event feeds and Sonar reads them); a file without it stays valid. 5.6.30 adds landing_zone.budgets[] (the Cost Management budgets that Deploy-CostBudgets.ps1 creates: name, scope, subscription, resource_group, amount, time_grain, start_date, end_date, thresholds, forecast_thresholds, contact_emails); a file without it stays valid. 5.6.31 adds operations.monitoring.action_group_enable_if_disabled (whether the alerting task enables an action group that exists but is disabled; default false, report only); a file without it stays valid. The current version is 5.6.31."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -21244,6 +21258,12 @@ tools:
                 Root: {"name":"Root","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../../..')","required":"N","read_at":"config/variables/scripts/New-ScriptParameterRegistry.ps1","description":"New-ScriptParameterRegistry.ps1. Root (no help text for this parameter)."}
                 Check: {"name":"Check","type":"boolean","declared_type":"switch","required":"N","read_at":"config/variables/scripts/New-ScriptParameterRegistry.ps1","description":"New-ScriptParameterRegistry.ps1. Check switch (no help text for this parameter)."}
                 PassThru: {"name":"PassThru","type":"boolean","declared_type":"switch","required":"N","read_at":"config/variables/scripts/New-ScriptParameterRegistry.ps1","description":"New-ScriptParameterRegistry.ps1. Pass thru switch (no help text for this parameter)."}
+            config_variables_scripts_New_TerraformStateMoveList_ps1_generated:
+              type: object
+              area: "config/variables/scripts/New-TerraformStateMoveList.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"config/variables/scripts/New-TerraformStateMoveList.ps1","description":"New-TerraformStateMoveList.ps1. Infrastructure file (no help text for this parameter)."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"config/variables/scripts/New-TerraformStateMoveList.ps1","description":"New-TerraformStateMoveList.ps1. Output path (no help text for this parameter)."}
             config_variables_scripts_New_ToolMapping_ps1_generated:
               type: object
               area: "config/variables/scripts/New-ToolMapping.ps1"
@@ -21588,7 +21608,7 @@ tools:
               properties:
                 TenantId: {"name":"TenantId","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deferred/windows-admin-center/phase-06-post-deployment/task-01-configure-windows-admin-center/powershell/Configure-WACEntraID.ps1","description":"Configure-WACEntraID.ps1. Azure AD tenant ID"}
                 SubscriptionId: {"name":"SubscriptionId","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deferred/windows-admin-center/phase-06-post-deployment/task-01-configure-windows-admin-center/powershell/Configure-WACEntraID.ps1","description":"Configure-WACEntraID.ps1. Azure subscription ID for app registration"}
-                WACUrl: {"name":"WACUrl","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deferred/windows-admin-center/phase-06-post-deployment/task-01-configure-windows-admin-center/powershell/Configure-WACEntraID.ps1","description":"Configure-WACEntraID.ps1. The URL where WAC will be accessed (e.g., https://wac.corp.hybrid.mgmt)"}
+                WACUrl: {"name":"WACUrl","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deferred/windows-admin-center/phase-06-post-deployment/task-01-configure-windows-admin-center/powershell/Configure-WACEntraID.ps1","description":"Configure-WACEntraID.ps1. The URL where WAC will be accessed (e.g., https://wac.corp.iic.improbability.cloud)"}
                 CertificatePath: {"name":"CertificatePath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deferred/windows-admin-center/phase-06-post-deployment/task-01-configure-windows-admin-center/powershell/Configure-WACEntraID.ps1","description":"Configure-WACEntraID.ps1. Path to certificate file for token signing (optional)"}
             scripts_deferred_windows_admin_center_phase_06_post_deployment_task_01_configure_windows_admin_center_powershell_Configure_WACKerberosDelegation_ps1_generated:
               type: object
@@ -22910,7 +22930,7 @@ tools:
                 node: {"name":"node","type":"string","declared_type":"string","enum":["node name, or '*' for a check that is not about one node"],"required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"The node the line is about."}
                 message: {"name":"message","type":"string","declared_type":"string","required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"The evidence. Never truncated, never holds a secret."}
                 remedy: {"name":"remedy","type":"string","declared_type":"string","required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"What to do, with the exact command. Empty when nothing is to be done."}
-                source: {"name":"source","type":"string","declared_type":"string","required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"The Microsoft Learn page (view azloc-2610) or azurelocal.cloud page the check comes from."}
+                source: {"name":"source","type":"string","declared_type":"string","required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"The Microsoft Learn page (view azloc-2611) or azurelocal.cloud page the check comes from."}
                 blocking: {"name":"blocking","type":"boolean","declared_type":"bool","enum":["true","false"],"required":"yes (every line)","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"true when this result keeps the verdict at Fail: a Failed blocking check, or a blocking Skipped check that was not accepted."}
                 verdict: {"name":"verdict","type":"string","declared_type":"string","enum":["Pass","Fail"],"required":"RunCompleted only","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"Pass only when no result blocks."}
                 counts: {"name":"counts","type":"object","declared_type":"hashtable","enum":["Passed, Failed, Warning, Skipped, NotApplicable, Fixed (integers)"],"required":"RunCompleted only","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclEvent","description":"Number of checks per status."}
@@ -22991,7 +23011,7 @@ tools:
                 requireValidatedParameterHash: {"name":"requireValidatedParameterHash","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:173","description":"Get-AzlArmRunSetting. Precondition ValidatedBeforeDeploy fails (instead of warns) when this tool did not validate these parameters. No infrastructure.yml key."}
                 osReportMaxAgeHours: {"name":"osReportMaxAgeHours","type":"integer","declared_type":"int","default":"48","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Age in hours after which an OS configuration report is called old. No infrastructure.yml key."}
                 staleSkewMinutes: {"name":"staleSkewMinutes","type":"integer","declared_type":"int","default":"5","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Clock skew tolerated when deciding whether a step snapshot belongs to this submit. No infrastructure.yml key."}
-                solutionVersion: {"name":"solutionVersion","type":"string","declared_type":"string","enum":["four numeric parts, for example 12.2610.1004.50"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. The solution version the nodes run, for the precondition SbeValidatedWithSolution. Empty: the ZTP handoff's solution version, else derived from the nodes' OS build. Master-file key: deployment.solution_version (same value, snake_case)."}
+                solutionVersion: {"name":"solutionVersion","type":"string","declared_type":"string","enum":["four numeric parts, for example 12.2611.1004.9"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. The solution version the nodes run, for the precondition SbeValidatedWithSolution. Empty: the ZTP handoff's solution version, else derived from the nodes' OS build. Master-file key: deployment.solution_version (same value, snake_case)."}
                 sbeCatalogPath: {"name":"sbeCatalogPath","type":"string","declared_type":"string","enum":["path to SBE_Discovery_*.xml, or a folder that holds it"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. The OEM's SBE discovery catalog the precondition SbeValidatedWithSolution reads. Empty: SBE_Discovery_*.xml in hardware.sbe.bundle_path. Nothing is downloaded. Master-file key: deployment.sbe_catalog_path (same value, snake_case)."}
                 knownIssuesFile: {"name":"knownIssuesFile","type":"string","declared_type":"string","enum":["path to a known-issues JSON file"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Use this file instead of config/known-issues/arm-deployment.json. No infrastructure.yml key."}
         secret_names:

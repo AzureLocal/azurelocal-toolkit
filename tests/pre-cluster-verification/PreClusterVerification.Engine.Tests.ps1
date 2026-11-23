@@ -30,10 +30,10 @@ Describe 'The catalog' {
         $script:Catalog.Id | Should -Contain 'ARM-001'
         foreach ($prefix in 'AZ-', 'ID-', 'ND-', 'NW-', 'ST-', 'RD-', 'SB-') { @($script:Catalog | Where-Object { $_.Id -like "$prefix*" }).Count | Should -BeGreaterThan 0 -Because $prefix }
     }
-    It 'has a unique id, a title and a source for every check, and the Learn pages at view azloc-2610' {
+    It 'has a unique id, a title and a source for every check, and the Learn pages at view azloc-2611' {
         @($script:Catalog.Id | Select-Object -Unique).Count | Should -Be $script:Catalog.Count
         foreach ($check in $script:Catalog) { $check.Title | Should -Not -BeNullOrEmpty -Because $check.Id; $check.Source | Should -Not -BeNullOrEmpty -Because $check.Id }
-        @($script:Catalog | Where-Object { $_.Source -match 'learn\.microsoft\.com' -and $_.Source -notmatch 'view=azloc-2610' }) | Should -BeNullOrEmpty
+        @($script:Catalog | Where-Object { $_.Source -match 'learn\.microsoft\.com' -and $_.Source -notmatch 'view=azloc-2611' }) | Should -BeNullOrEmpty
     }
     It 'marks only the resource provider check as fixable (-Fix is Azure side only)' {
         @($script:Catalog | Where-Object { $_.Fixable } | ForEach-Object { $_.Id }) | Should -Be @('AZ-004')

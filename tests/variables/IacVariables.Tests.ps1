@@ -521,7 +521,9 @@ Describe 'The generator script follows the script standard' {
         $code = $code.Replace($help, '')
         $code | Should -Not -Match '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
         $code | Should -Not -Match '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
-        $code | Should -Not -Match '(?i)improbability|contoso|tierpoint|\biic\b'
+        $code | Should -Not -Match '(?i)improbability|contoso|\biic\b'
+        . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
+        Find-AzlForbiddenToken $code | Should -BeNullOrEmpty
     }
 
     It 'has every parameter registered' {

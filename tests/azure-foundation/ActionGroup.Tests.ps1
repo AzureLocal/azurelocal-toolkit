@@ -19,7 +19,7 @@ BeforeAll {
     function Get-AzContext { [CmdletBinding()] param() }
     function Get-AzActionGroup { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId) }
     function New-AzActionGroup { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId, [string]$Location, [string]$GroupShortName, [object[]]$EmailReceiver, [bool]$Enabled, [hashtable]$Tag) }
-    function Update-AzActionGroup { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId, [object[]]$EmailReceiver) }
+    function Update-AzActionGroup { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId, [object[]]$EmailReceiver, [switch]$Enabled) }
     function New-AzActionGroupEmailReceiverObject { [CmdletBinding()] param([string]$EmailAddress, [string]$Name) }
 
     $global:AzlAgTestTenant = [guid]::NewGuid().ToString()
@@ -176,6 +176,55 @@ Describe 'Deploy-ActionGroup.ps1' {
             $r.Result.Action | Should -Be 'WouldUpdate'
             Should -Invoke Update-AzActionGroup -Times 0 -Exactly
             $r.Text | Should -Match 'would add ops@example.test'
+        }
+    }
+
+    Context 'the group exists but is disabled (K2 review: never reported as existing and fine)' {
+        It 'reports Disabled with a warning, enables nothing and changes nothing by default' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; Enabled = $false; EmailReceiver = @((New-Receiver 'noc@example.test'), (New-Receiver 'ops@example.test')) } }
+            $r = Invoke-Group (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Result.Action | Should -Be 'Disabled'
+            $r.Result.Enabled | Should -BeFalse
+            $r.Text | Should -Match 'DISABLED: none of its receivers gets an alert'
+            $r.Text | Should -Match 'action_group_enable_if_disabled'
+            $r.Text | Should -Not -Match 'nothing changed'
+            Should -Invoke Update-AzActionGroup -Times 0 -Exactly
+        }
+        It 'enables it when operations.monitoring.action_group_enable_if_disabled is true, and reports Enabled' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; Enabled = $false; EmailReceiver = @((New-Receiver 'noc@example.test'), (New-Receiver 'ops@example.test')) } }
+            $r = Invoke-Group (New-InfraFile -Monitoring (New-Monitoring @{ action_group_enable_if_disabled = $true }))
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Result.Action | Should -Be 'Enabled'
+            $r.Result.Enabled | Should -BeTrue
+            Should -Invoke Update-AzActionGroup -Times 1 -Exactly -ParameterFilter { $Name -eq 'ag-azl-01' -and $Enabled.ToBool() -and -not $PSBoundParameters.ContainsKey('EmailReceiver') }
+        }
+        It 'adds a missing receiver to a disabled group without enabling it, and still warns' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; Enabled = $false; EmailReceiver = @((New-Receiver 'noc@example.test')) } }
+            $r = Invoke-Group (New-InfraFile)
+            $r.Result.Action | Should -Be 'Updated'
+            $r.Result.Enabled | Should -BeFalse
+            $r.Text | Should -Match 'DISABLED'
+            Should -Invoke Update-AzActionGroup -Times 1 -Exactly -ParameterFilter { -not $Enabled.ToBool() -and @($EmailReceiver).Count -eq 2 }
+        }
+        It 'passes the enabled state on when it adds a receiver to an enabled group, so the update never switches it off' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; Enabled = $true; EmailReceiver = @((New-Receiver 'noc@example.test')) } }
+            $r = Invoke-Group (New-InfraFile)
+            $r.Result.Action | Should -Be 'Updated'
+            Should -Invoke Update-AzActionGroup -Times 1 -Exactly -ParameterFilter { $Enabled.ToBool() }
+        }
+        It 'plans the enabling under -WhatIf and changes nothing' {
+            Mock Get-AzActionGroup { [pscustomobject]@{ Name = $Name; Enabled = $false; EmailReceiver = @((New-Receiver 'noc@example.test'), (New-Receiver 'ops@example.test')) } }
+            $r = Invoke-Group (New-InfraFile -Monitoring (New-Monitoring @{ action_group_enable_if_disabled = $true })) -DryRun
+            $r.Result.Action | Should -Be 'WouldEnable'
+            $r.Text | Should -Match 'would be enabled'
+            Should -Invoke Update-AzActionGroup -Times 0 -Exactly
+        }
+        It 'refuses a value of action_group_enable_if_disabled that is not true or false (exit 2)' {
+            $r = Invoke-Group (New-InfraFile -Monitoring (New-Monitoring @{ action_group_enable_if_disabled = 'sometimes' }))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'must be true or false'
+            Should -Invoke Get-AzContext -Times 0 -Exactly
         }
     }
 
@@ -340,6 +389,9 @@ Describe 'Deploy-ActionGroup.ps1' {
             }
             @($registry | Where-Object Path -EQ 'tags').Count | Should -BeGreaterOrEqual 1
             ($registry | Where-Object Path -EQ 'operations.monitoring.action_group').Since | Should -Be '5.6.6'
+            $enableKey = @($registry | Where-Object Path -EQ 'operations.monitoring.action_group_enable_if_disabled')
+            $enableKey.Count | Should -Be 1
+            $enableKey[0].Since | Should -Be '5.6.31'
         }
     }
 }

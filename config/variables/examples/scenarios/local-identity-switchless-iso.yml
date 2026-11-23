@@ -66,5 +66,5 @@ identity:
     dns_zone: "br01.improbability.cloud"
 
 provisioning:
-  os_version: "12.2610.1004.50"
+  os_version: "12.2611.1004.9"
   iso: { image_source: microsoft }

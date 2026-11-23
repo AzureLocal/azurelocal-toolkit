@@ -398,7 +398,7 @@ operations:
 # How the OS gets onto the machines, and which OS.
 # -----------------------------------------------------------------------------
 provisioning:
-  os_version: "12.2610.1004.50" # pin a version
+  os_version: "12.2611.1004.9" # pin a version
   simplified: # azurelocal-ztp
     site_name: "iic-site-01"
     maintenance_iso: "latest" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL

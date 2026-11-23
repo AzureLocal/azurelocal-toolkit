@@ -95,7 +95,9 @@ Describe 'the discovery scripts take the infrastructure file' {
         foreach ($c in 'Read-Host', 'Get-Credential', 'Connect-AzAccount', 'Disconnect-AzAccount', 'Install-Module') { $commands | Should -Not -Contain $c }
         $tokens = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$null)
         $code = (($tokens | Where-Object { $_.Kind -ne 'Comment' } | ForEach-Object { $_.Text }) -join ' ')
-        $code | Should -Not -Match '\$Host\.UI\.Prompt|\[Console\]::ReadLine|\$env:|variables\.yml|config-loader|hybrid\.mgmt|haas\.mgmt'
+        $code | Should -Not -Match '\$Host\.UI\.Prompt|\[Console\]::ReadLine|\$env:|variables\.yml|config-loader'
+        . ([System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'ForbiddenTokens.ps1'))
+        Find-AzlForbiddenToken $code | Should -BeNullOrEmpty
         $code | Should -Match 'Import-AzlInfrastructure -Path \$InfrastructureFile'
     }
 
