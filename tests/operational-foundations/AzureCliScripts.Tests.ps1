@@ -120,6 +120,11 @@ BeforeAll {
             'extension show' = { param($o, $a) if (-not $global:K6State.Extension) { return (New-K6Error 'The extension is not installed.') }; '{"name":"x"}' }
         }
     }
+    # The policy assignments as the ARM list of a subscription returns them (az rest), from the flat list the tests write: name, scope, policyDefinitionId.
+    function New-K6PolicyList([string]$Flat) {
+        $items = @(@($Flat | ConvertFrom-Json) | Where-Object { $null -ne $_ } | ForEach-Object { [ordered]@{ name = $_.name; properties = [ordered]@{ scope = $_.scope; policyDefinitionId = $_.policyDefinitionId } } })
+        ConvertTo-Json -InputObject ([ordered]@{ value = $items }) -Depth 6 -Compress
+    }
     # The Insights rule as az monitor data-collection rule show returns it: what Learn lists for Insights unless the test takes something out.
     function New-K6InsightsRule([string[]]$Counters = @('\Memory(*)\Available Bytes', '\Network Interface(*)\Bytes Total/sec', '\Processor(_Total)\% Processor Time', '\RDMA Activity(*)\RDMA Inbound Bytes/sec', '\RDMA Activity(*)\RDMA Outbound Bytes/sec'),
         [string[]]$Queries = @('Microsoft-Windows-SDDC-Management/Operational!*[System[(EventID=3000)]]', 'Microsoft-Windows-Health/Operational!*'),
@@ -171,7 +176,7 @@ BeforeAll {
             'Enable-DefenderForCloud' {
                 $h['provider show'] = { param($o, $a) 'NotRegistered' }
                 $h['provider register'] = $quiet
-                $h['policy assignment list'] = { param($o, $a) '[]' }
+                $h['rest'] = { param($o, $a) New-K6PolicyList ('[]') }
                 $h['policy set-definition show'] = { param($o, $a) '{"name":"x"}' }
                 $h['policy assignment create'] = $quiet
                 $h['security contact show'] = $none
@@ -531,6 +536,13 @@ Describe 'the monitoring scripts' {
         It 'ends with exit code 2 for a missing endpoint name' {
             (Invoke-K6 $script:Endpoint (New-K6Infra @{ 'operations.monitoring.data_collection_endpoint' = $null })).ExitCode | Should -Be 2
         }
+        It 'stops with exit code 1, before any data-collection call, when the extension monitor-control-service is missing (lab run 2026-11-23: az asked to install it)' {
+            $global:K6Handlers['extension show'] = { param($o, $a) if ("$($o['--name'])" -eq 'monitor-control-service') { return (New-K6Error 'The extension monitor-control-service is not installed.') }; '{"name":"x"}' }
+            $r = Invoke-K6 $script:Endpoint (New-K6Infra)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match 'az extension add --name monitor-control-service'
+            @($global:K6Calls | Where-Object { $_.Command -like 'monitor data-collection*' }) | Should -BeNullOrEmpty
+        }
     }
 
     Context 'Install-AzureMonitorAgent.azcli.ps1' {
@@ -626,6 +638,13 @@ Describe 'the monitoring scripts' {
             (Invoke-K6 $script:Insights (New-K6Infra @{ 'operations.monitoring.data_collection_rule' = $null })).ExitCode | Should -Be 2
             (Invoke-K6 $script:Insights (New-K6Infra @{ nodes = $null })).ExitCode | Should -Be 2
         }
+        It 'stops with exit code 1, before any data-collection call, when the extension monitor-control-service is missing' {
+            $global:K6Handlers['extension show'] = { param($o, $a) if ("$($o['--name'])" -eq 'monitor-control-service') { return (New-K6Error 'The extension monitor-control-service is not installed.') }; '{"name":"x"}' }
+            $r = Invoke-K6 $script:Insights (New-K6Infra)
+            $r.ExitCode | Should -Be 1
+            $r.Text | Should -Match 'az extension add --name monitor-control-service'
+            @($global:K6Calls | Where-Object { $_.Command -like 'monitor data-collection*' }) | Should -BeNullOrEmpty
+        }
     }
 
     Context 'Deploy-ActionGroup.azcli.ps1' {
@@ -710,29 +729,44 @@ Describe 'the security and licensing scripts' {
         }
         It 'changes nothing when every item is in place, and never replaces a contact that exists' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-            $global:K6Handlers['policy assignment list'] = { param($o, $a) ('[{"name":"other","scope":"/providers/Microsoft.Management/managementGroups/mg-example","policyDefinitionId":"' + $global:K6Benchmark + '"}]') }
+            $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList (('[{"name":"other","scope":"/providers/Microsoft.Management/managementGroups/mg-example","policyDefinitionId":"' + $global:K6Benchmark + '"}]')) }
             $global:K6Handlers['security contact show'] = { param($o, $a) '{"name":"default"}' }
             $r = Invoke-K6 $script:Defender (New-K6Infra)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             @($r.Rows.Action) | Should -Be @('Exists', 'Exists', 'Exists')
             Get-K6Change | Should -BeNullOrEmpty
+            # Lab run 2026-11-23: az policy assignment list missed the benchmark assigned at a management group; the ARM list of the subscription has it.
+            $list = @(Get-K6Call 'rest')
+            $list.Count | Should -Be 1
+            "$($list[0].Options['--method'])" | Should -Be 'get'
+            "$($list[0].Options['--url'])" | Should -Be "/subscriptions/$($global:K6Sub)/providers/Microsoft.Authorization/policyAssignments?api-version=2023-04-01"
+            $global:K6Calls.Command | Should -Not -Contain 'policy assignment list'
+        }
+        It 'stops the benchmark item, assigning nothing, when the list of assignments has a second page' {
+            $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
+            $global:K6Handlers['rest'] = { param($o, $a) '{"value":[],"nextLink":"https://example.invalid/next"}' }
+            $global:K6Handlers['security contact show'] = { param($o, $a) '{"name":"default"}' }
+            $r = Invoke-K6 $script:Defender (New-K6Infra)
+            $r.ExitCode | Should -Be 1
+            ($r.Rows | Where-Object Item -EQ 'Cloud security benchmark').Action | Should -Be 'Failed'
+            (Get-K6Call 'policy assignment create').Count | Should -Be 0
         }
         It 'does not count the assignment of a resource group of the subscription' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-            $global:K6Handlers['policy assignment list'] = { param($o, $a) ('[{"name":"rgonly","scope":"/subscriptions/' + $global:K6Sub + '/resourceGroups/rg-example-01","policyDefinitionId":"' + $global:K6Benchmark + '"}]') }
+            $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList (('[{"name":"rgonly","scope":"/subscriptions/' + $global:K6Sub + '/resourceGroups/rg-example-01","policyDefinitionId":"' + $global:K6Benchmark + '"}]')) }
             $r = Invoke-K6 $script:Defender (New-K6Infra)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             (Get-K6Call 'policy assignment create').Count | Should -Be 1
         }
         It 'ends with exit code 2 and never overwrites an assignment with the name of Defender for Cloud that points elsewhere' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-            $global:K6Handlers['policy assignment list'] = { param($o, $a) ('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/' + $global:K6Sub + '","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]') }
+            $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList (('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/' + $global:K6Sub + '","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]')) }
             (Invoke-K6 $script:Defender (New-K6Infra)).ExitCode | Should -Be 2
             Get-K6Change | Should -BeNullOrEmpty
         }
         It 'stops with exit code 2 on a name conflict before it registers the provider or changes anything, when the provider is not registered' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'NotRegistered' }
-            $global:K6Handlers['policy assignment list'] = { param($o, $a) ('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/' + $global:K6Sub + '","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]') }
+            $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList (('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/' + $global:K6Sub + '","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]')) }
             (Invoke-K6 $script:Defender (New-K6Infra)).ExitCode | Should -Be 2
             Get-K6Change | Should -BeNullOrEmpty
             (Get-K6Call 'provider register').Count | Should -Be 0
@@ -740,7 +774,7 @@ Describe 'the security and licensing scripts' {
         }
         It 'does not count an assignment of the same name at a management group above as a conflict: it is another scope' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-            $global:K6Handlers['policy assignment list'] = { param($o, $a) '[{"name":"SecurityCenterBuiltIn","scope":"/providers/Microsoft.Management/managementGroups/mg-example","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]' }
+            $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList ('[{"name":"SecurityCenterBuiltIn","scope":"/providers/Microsoft.Management/managementGroups/mg-example","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/other"}]') }
             $r = Invoke-K6 $script:Defender (New-K6Infra)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             (Get-K6Call 'policy assignment create').Count | Should -Be 1
@@ -865,7 +899,7 @@ Describe 'Test-SecurityCompliance.azcli.ps1' {
         Reset-K6
         Mock az { & $global:K6AzBody @($args) }
         $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-        $global:K6Handlers['policy assignment list'] = { param($o, $a) '[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/x","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"}]' }
+        $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList ('[{"name":"SecurityCenterBuiltIn","scope":"/subscriptions/x","policyDefinitionId":"/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8"}]') }
         $global:K6Handlers['role assignment list'] = { param($o, $a) '[{"roleDefinitionName":"Owner"},{"roleDefinitionName":"Contributor"},{"roleDefinitionName":"Contributor"}]' }
         $global:K6Handlers['policy state list'] = { param($o, $a) "Compliant`nCompliant`nNonCompliant" }
     }
@@ -884,7 +918,7 @@ Describe 'Test-SecurityCompliance.azcli.ps1' {
         $global:K6Handlers['provider show'] = { param($o, $a) 'NotRegistered' }
         (Invoke-K6 $script:S (New-K6Infra)).ExitCode | Should -Be 1
         $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
-        $global:K6Handlers['policy assignment list'] = { param($o, $a) '[]' }
+        $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList ('[]') }
         (Invoke-K6 $script:S (New-K6Infra)).ExitCode | Should -Be 1
     }
 
@@ -892,7 +926,7 @@ Describe 'Test-SecurityCompliance.azcli.ps1' {
         $global:K6Handlers['provider show'] = { param($o, $a) 'NotRegistered' }
         (Invoke-K6 $script:S (New-K6Infra @{ 'security.defender_for_cloud.enabled' = $false })).ExitCode | Should -Be 0
         $global:K6Calls.Command | Should -Not -Contain 'provider show'
-        $global:K6Handlers['policy assignment list'] = { param($o, $a) '[]' }
+        $global:K6Handlers['rest'] = { param($o, $a) New-K6PolicyList ('[]') }
         $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
         (Invoke-K6 $script:S (New-K6Infra @{ 'security.defender_for_cloud.apply_cloud_security_benchmark' = $false })).ExitCode | Should -Be 0
     }

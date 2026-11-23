@@ -31,7 +31,8 @@
     Idempotent. An association that exists is reported as AlreadyExists and left alone. An association with the right name that points to another rule is
     reported as Conflict, never changed, and the script ends with exit code 1. -WhatIf changes nothing.
 
-    The script needs the Azure CLI extension stack-hci (az extension add --name stack-hci); it does not install it. It does not sign in: run az login to
+    The script needs the Azure CLI extensions stack-hci and monitor-control-service (az monitor data-collection); it installs neither (az extension add
+    --name stack-hci, az extension add --name monitor-control-service). It does not sign in: run az login to
     the tenant in azure.tenant_id first. It does not change the Azure CLI default subscription. You need Monitoring Contributor (or Contributor) on the
     resource group.
 
@@ -49,7 +50,8 @@
     names the position of the argument, never the value.
 
     Exit codes: 0 every node is associated (created now, already there, planned under -WhatIf) or monitoring is switched off in the file; 1 an Azure call
-    failed or a precondition failed (az missing, not signed in, wrong tenant, extension stack-hci missing, no Azure Monitor Agent on the instance, the rule
+    failed or a precondition failed (az missing, not signed in, wrong tenant, extension stack-hci or monitor-control-service missing, no Azure Monitor
+    Agent on the instance, the rule
     does not exist or lacks what Insights needs, an association failed or is in conflict); 2 a value in the file is missing or not usable.
 
 .PARAMETER InfrastructureFile
@@ -180,6 +182,9 @@ catch { Exit-Failed "Not signed in to Azure for subscription $subscriptionId. Ru
 if ($signedInTenant -ne $tenantId) { Exit-Failed "Signed in to tenant $signedInTenant, but azure.tenant_id is $tenantId. Sign in to the right tenant." }
 try { $null = Invoke-Az extension show --name stack-hci --output none }
 catch { Exit-Failed 'The Azure CLI extension stack-hci is not installed. This script does not install it. Run: az extension add --name stack-hci' }
+# az monitor data-collection is in the extension monitor-control-service; without it az asks to install it and an unattended run stops there.
+try { $null = Invoke-Az extension show --name monitor-control-service --output none }
+catch { Exit-Failed 'The Azure CLI extension monitor-control-service is not installed. This script does not install it. Run: az extension add --name monitor-control-service' }
 
 $rows = [System.Collections.Generic.List[object]]::new()
 try {

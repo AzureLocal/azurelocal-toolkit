@@ -70,12 +70,13 @@ Describe 'Deploy-DataCollectionEndpoint.ps1' {
     }
 
     Context 'creating the endpoint (happy path)' {
-        It 'creates the endpoint in the resource group and in the region of the workspace, and leaves the network access at the Azure default' {
+        It 'creates the endpoint in the resource group and in the region of the workspace, with the Azure default network access sent explicitly' {
+            # Lab run 2026-11-23: without a property the service refuses the create ("'properties' are missing").
             $r = Invoke-Endpoint (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Result.Action | Should -Be 'Created'
             $r.Result.Location | Should -Be 'westus2'
-            Should -Invoke New-AzDataCollectionEndpoint -Times 1 -Exactly -ParameterFilter { $Name -eq 'dce-azl-01' -and $ResourceGroupName -eq 'rg-mgmt-01' -and $SubscriptionId -eq $global:AzlDceTestSub -and $Location -eq 'westus2' -and -not $NetworkAclsPublicNetworkAccess }
+            Should -Invoke New-AzDataCollectionEndpoint -Times 1 -Exactly -ParameterFilter { $Name -eq 'dce-azl-01' -and $ResourceGroupName -eq 'rg-mgmt-01' -and $SubscriptionId -eq $global:AzlDceTestSub -and $Location -eq 'westus2' -and $NetworkAclsPublicNetworkAccess -eq 'Enabled' }
         }
 
         It 'looks the workspace up in the resource group and the subscription of the file, and puts the original subscription back' {

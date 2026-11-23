@@ -67,6 +67,8 @@ $BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinition
 $SecurityProvider = 'Microsoft.Security'
 # The built-in role name Azure RBAC uses for full access.
 $OwnerRoleName = 'Owner'
+# The Microsoft.Authorization policy assignments API version the list is read with (Microsoft Learn, Policy Assignments - List).
+$PolicyApiVersion = '2023-04-01'
 
 function Write-Report([string]$Message, [string]$Level = 'INFO') {
     Write-Information -MessageData ('[{0:yyyy-MM-dd HH:mm:ss}] [{1}] {2}' -f (Get-Date), $Level, $Message) -InformationAction Continue
@@ -84,6 +86,22 @@ function Invoke-Az {
     $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
     if ($code -ne 0) { throw $(if ($err) { $err.Trim() } else { $out.Trim() }) }
     $out.Trim()
+}
+# The policy assignments that apply to a subscription: its own and those of the management groups above it, not those of its resource groups.
+# Read from the ARM list of the subscription (az rest), because az policy assignment list leaves out the inherited ones (Azure CLI 2.90, lab run
+# 2026-11-23: a benchmark assigned at the tenant root group was not seen, even with --disable-scope-strict-match). One page of up to 1000; a second
+# page stops the check rather than report on part of the list.
+function Get-AssignmentThatApplies([string]$Scope) {
+    $page = Invoke-Az rest --method get --url "$Scope/providers/Microsoft.Authorization/policyAssignments?api-version=$PolicyApiVersion" --url-parameters '$top=1000' --output json | ConvertFrom-Json
+    if ($page.PSObject.Properties['nextLink'] -and $page.nextLink) { throw 'More than 1000 policy assignments apply to the subscription; the check reads one page and does not report on part of the list.' }
+    $values = if ($page.PSObject.Properties['value']) { @($page.value) } else { @() }
+    @(foreach ($v in $values) {
+            if ($null -eq $v) { continue }
+            $p = if ($v.PSObject.Properties['properties']) { $v.properties } else { $null }
+            $at = if ($p -and $p.PSObject.Properties['scope']) { [string]$p.scope } else { '' }
+            if ($at.StartsWith("$Scope/", [StringComparison]::OrdinalIgnoreCase)) { continue }
+            [pscustomobject]@{ name = [string]$v.name; scope = $at; policyDefinitionId = $(if ($p -and $p.PSObject.Properties['policyDefinitionId']) { [string]$p.policyDefinitionId } else { '' }) }
+        })
 }
 
 # ---- the values, from infrastructure.yml only
@@ -129,8 +147,7 @@ if ($defenderEnabled) {
         Write-Report "  Foundational CSPM ($SecurityProvider provider): $state" $(if ($ok) { 'SUCCESS' } else { 'WARN' })
         $defenderResults += [pscustomobject]@{ Plan = 'FoundationalCspm'; Tier = $state; Status = $(if ($ok) { 'PASS' } else { 'FAIL' }) }
         if ($checkBenchmark) {
-            $assignments = @(@(Invoke-Az policy assignment list --subscription $subscriptionId --scope $subscriptionScope --disable-scope-strict-match --output json | ConvertFrom-Json) |
-                    Where-Object { $null -ne $_ -and -not ([string]$_.scope).StartsWith("$subscriptionScope/", [StringComparison]::OrdinalIgnoreCase) })
+            $assignments = @(Get-AssignmentThatApplies -Scope $subscriptionScope)
             $assigned = @($assignments | Where-Object { [string]$_.policyDefinitionId -eq $BenchmarkDefinitionId }).Count -gt 0
             Write-Report "  Microsoft cloud security benchmark: $(if ($assigned) { 'Assigned' } else { 'NotAssigned' })" $(if ($assigned) { 'SUCCESS' } else { 'WARN' })
             $defenderResults += [pscustomobject]@{ Plan = 'CloudSecurityBenchmark'; Tier = $(if ($assigned) { 'Assigned' } else { 'NotAssigned' }); Status = $(if ($assigned) { 'PASS' } else { 'FAIL' }) }

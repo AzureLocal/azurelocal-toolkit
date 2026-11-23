@@ -81,6 +81,8 @@ $ContactAlertState = 'On'
 $ContactMinimalSeverity = 'High'
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
+# The Microsoft.Authorization policy assignments API version the list is read with (Microsoft Learn, Policy Assignments - List).
+$PolicyApiVersion = '2023-04-01'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -112,6 +114,22 @@ function Invoke-Az {
     $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
     if ($code -ne 0) { throw $(if ($err) { $err.Trim() } else { $out.Trim() }) }
     $out.Trim()
+}
+# The policy assignments that apply to a subscription: its own and those of the management groups above it, not those of its resource groups.
+# Read from the ARM list of the subscription (az rest), because az policy assignment list leaves out the inherited ones (Azure CLI 2.90, lab run
+# 2026-11-23: a benchmark assigned at the tenant root group was not seen, even with --disable-scope-strict-match). One page of up to 1000; a second
+# page stops the read rather than decide on part of the list.
+function Get-AssignmentThatApplies([string]$Scope) {
+    $page = Invoke-Az rest --method get --url "$Scope/providers/Microsoft.Authorization/policyAssignments?api-version=$PolicyApiVersion" --url-parameters '$top=1000' --output json | ConvertFrom-Json
+    if ($page.PSObject.Properties['nextLink'] -and $page.nextLink) { throw 'More than 1000 policy assignments apply to the subscription; the script reads one page and does not decide on part of the list.' }
+    $values = if ($page.PSObject.Properties['value']) { @($page.value) } else { @() }
+    @(foreach ($v in $values) {
+            if ($null -eq $v) { continue }
+            $p = if ($v.PSObject.Properties['properties']) { $v.properties } else { $null }
+            $at = if ($p -and $p.PSObject.Properties['scope']) { [string]$p.scope } else { '' }
+            if ($at.StartsWith("$Scope/", [StringComparison]::OrdinalIgnoreCase)) { continue }
+            [pscustomobject]@{ name = [string]$v.name; scope = $at; policyDefinitionId = $(if ($p -and $p.PSObject.Properties['policyDefinitionId']) { [string]$p.policyDefinitionId } else { '' }) }
+        })
 }
 
 # ---- the values, from infrastructure.yml only
@@ -153,8 +171,7 @@ $benchmarkReadError = ''
 if ($applyBenchmark) {
     try {
         # The assignments that apply to the subscription: its own and those of the management groups above it, not those of its resource groups.
-        $assignments = @(@(Invoke-Az policy assignment list --subscription $subscriptionId --scope $scope --disable-scope-strict-match --output json | ConvertFrom-Json) |
-                Where-Object { $null -ne $_ -and -not ([string]$_.scope).StartsWith("$scope/", [StringComparison]::OrdinalIgnoreCase) })
+        $assignments = @(Get-AssignmentThatApplies -Scope $scope)
         $benchmarkExists = @($assignments | Where-Object { [string]$_.policyDefinitionId -eq $BenchmarkDefinitionId }).Count -gt 0
         # az policy assignment create would overwrite an assignment of the same name at the same scope (a name is unique within one scope, so the same name at a
         # management group above is no conflict). Never replace an assignment this script did not create.

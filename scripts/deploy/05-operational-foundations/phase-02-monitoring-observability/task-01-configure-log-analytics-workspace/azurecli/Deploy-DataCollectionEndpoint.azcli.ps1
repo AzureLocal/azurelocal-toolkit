@@ -19,8 +19,10 @@
     Idempotent. An endpoint that exists is reported as AlreadyExists and left alone (a region that differs from the workspace is reported), so a second
     run creates nothing. -WhatIf changes nothing.
 
-    The script does not sign in: run az login to the tenant in azure.tenant_id first. It does not change the Azure CLI default subscription: every call
-    carries --subscription. You need Monitoring Contributor (or Contributor) on the resource group. The file-level tags map is put on the endpoint.
+    The script needs the Azure CLI extension monitor-control-service (az extension add --name monitor-control-service), which holds
+    az monitor data-collection; it does not install it. The script does not sign in: run az login to the tenant in azure.tenant_id first. It does not
+    change the Azure CLI default subscription: every call carries --subscription. You need Monitoring Contributor (or Contributor) on the resource
+    group. The file-level tags map is put on the endpoint.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         azure.tenant_id, azure.subscription_id, azure.location (fallback region), tags
@@ -36,7 +38,8 @@
     names the position of the argument, never the value.
 
     Exit codes: 0 the endpoint exists (created now, already there, planned under -WhatIf) or monitoring is switched off in the file; 1 an Azure call
-    failed or a precondition failed (az missing, not signed in, wrong tenant, the workspace does not exist, the creation failed); 2 a value in the file
+    failed or a precondition failed (az missing, not signed in, wrong tenant, extension monitor-control-service missing, the workspace does not exist,
+    the creation failed); 2 a value in the file
     is missing or not usable.
 
 .PARAMETER InfrastructureFile
@@ -68,6 +71,8 @@ $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
 # Fixed by the Azure CLI: az monitor data-collection endpoint create requires --public-network-access. Enabled is the Azure default (public), as in the PowerShell variant.
 $PublicNetworkAccess = 'Enabled'
+# The Azure CLI extension that holds az monitor data-collection.
+$MonitorExtension = 'monitor-control-service'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -127,6 +132,10 @@ if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed '
 try { $signedInTenant = Invoke-Az account show --subscription $subscriptionId --query tenantId --output tsv }
 catch { Exit-Failed "Not signed in to Azure for subscription $subscriptionId. Run az login --tenant <azure.tenant_id>. $($_.Exception.Message)" }
 if ($signedInTenant -ne $tenantId) { Exit-Failed "Signed in to tenant $signedInTenant, but azure.tenant_id is $tenantId. Sign in to the right tenant." }
+# az monitor data-collection is in the extension monitor-control-service. Without it az offers to install it and waits for an answer, which an
+# unattended run cannot give (lab run 2026-11-23: EOFError). Checked here, never installed.
+try { $null = Invoke-Az extension show --name $MonitorExtension --output none }
+catch { Exit-Failed "The Azure CLI extension $MonitorExtension is not installed. This script does not install it. Run: az extension add --name $MonitorExtension" }
 
 $row = [ordered]@{ Endpoint = $endpointName; Action = ''; Location = ''; Detail = '' }
 try {

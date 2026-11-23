@@ -7,8 +7,10 @@
     data collection endpoint (DCE) of operations.monitoring.data_collection_endpoint in the resource group of the workspace
     (operations.monitoring.workspace_resource_group), in the region of the workspace. A DCE is the ingestion address the data collection rules
     and the Azure Monitor Agent send to; it must be in the region of the workspace it feeds, which is why the region is read from the workspace
-    and not assumed. The network access setting is left at the Azure default (public); the script sets no private link, because Microsoft
-    Learn asks for an endpoint only when the agents use private links.
+    and not assumed. The network access is the Azure default (public), sent explicitly: the service refuses a create request without
+    properties ("Invalid resource payload: 'properties' are missing", seen in a lab run on 2026-11-23 with Az.Monitor 8.0.0), and the Azure CLI
+    variant sends the same value. The script sets no private link, because Microsoft Learn asks for an endpoint only when the agents use
+    private links.
 
     It creates only the endpoint. It does not create the workspace (the task's workspace script does), the data collection rule
     (Enable-HciInsights.ps1, task 03), or any association. The action group for alerts is Deploy-ActionGroup.ps1 in the alerting task.
@@ -153,7 +155,8 @@ try {
         }
     }
     elseif ($PSCmdlet.ShouldProcess("data collection endpoint '$endpointName' in '$group'", "Create ($region)")) {
-        $arguments = @{ Name = $endpointName; ResourceGroupName = $group; SubscriptionId = $subscriptionId; Location = $region; ErrorAction = 'Stop' }
+        # NetworkAclsPublicNetworkAccess Enabled is the Azure default; without it the request has no properties and is refused.
+        $arguments = @{ Name = $endpointName; ResourceGroupName = $group; SubscriptionId = $subscriptionId; Location = $region; NetworkAclsPublicNetworkAccess = 'Enabled'; ErrorAction = 'Stop' }
         if ($tags.Count) { $arguments.Tag = $tags }
         $null = New-AzDataCollectionEndpoint @arguments
         $row.Action = 'Created'
