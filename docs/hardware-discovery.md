@@ -50,10 +50,11 @@ Which serial number is the service tag depends on the maker and is not in the st
 
 ### Drive media type and role
 
-- **Media type.** `NVMe` when the Redfish `Protocol` is NVMe. Otherwise the Redfish `MediaType`: `SSD` is SSD; `HDD` and `SMR` are HDD. If the BMC gives neither, `not reported`.
+- **Media type.** `NVMe` when the Redfish `Protocol` is NVMe, or when it is `PCIe` and the `MediaType` is `SSD` (an SSD on PCIe; Dell iDRAC9 reports its NVMe drives this way). Otherwise the Redfish `MediaType`: `SSD` is SSD; `HDD` and `SMR` are HDD. If the BMC gives neither, `not reported`.
 - **Role (cache or capacity).** This is the Storage Spaces Direct default (Microsoft Learn, [Understanding the storage pool cache](https://learn.microsoft.com/windows-server/storage/storage-spaces/cache)): when more than one media type is present, all drives of the fastest type (NVMe, then SSD, then HDD) are cache and the others are capacity. When all drives are one type, no cache is set up and every drive is capacity. Examples: NVMe and SSD, NVMe is cache. SSD and HDD, SSD is cache. NVMe, SSD and HDD, NVMe is cache for both.
 - **Not counted** (role `excluded`, with the reason in `roleReason`): a drive that is not present, and a drive that is a member of a RAID volume of its controller. Azure Local does not support RAID for Storage Spaces Direct drives, and the boot mirror of a boot card is such a volume. A boot drive that is not in a RAID volume cannot be told from a data drive by the standard resources; check `drives[]` for it.
 - The role is what Storage Spaces Direct will do by default. It is not read from a machine, and the file does not judge it (all-HDD is listed as capacity; Microsoft does not support it).
+- A `BlockSizeBytes` of 0 (iDRAC9 answers 0 for its NVMe drives) is written as `not reported`.
 - Sizes are `sizeBytes`, `sizeGiB` and `sizeTB` (decimal terabytes, as drives are sold). `blockSizeBytes` is the Redfish `BlockSizeBytes` (512 or 4096), when the BMC gives it.
 
 ### Network ports
@@ -67,9 +68,11 @@ Which serial number is the service tag depends on the maker and is not in the st
 - Microsoft Learn, Understanding the storage pool cache: [https://learn.microsoft.com/windows-server/storage/storage-spaces/cache](https://learn.microsoft.com/windows-server/storage/storage-spaces/cache): the fastest type is cache; one type means no cache.
 - DMTF Redfish schemas: [https://redfish.dmtf.org/schemas/v1/Drive.v1_20_0.json](https://redfish.dmtf.org/schemas/v1/Drive.v1_20_0.json) (MediaType HDD, SSD, SMR; Protocol; BlockSizeBytes; CapacityBytes; Revision), [Processor](https://redfish.dmtf.org/schemas/v1/Processor.v1_20_0.json) (ProcessorType CPU, GPU, FPGA, DSP, Accelerator; ProcessorMemory), [ComputerSystem](https://redfish.dmtf.org/schemas/v1/ComputerSystem.v1_22_0.json) (BiosVersion, SKU, SerialNumber, TrustedModules deprecated for Links.TrustedComponents), [NetworkAdapter](https://redfish.dmtf.org/schemas/v1/NetworkAdapter.v1_12_0.json) (Controllers, Ports; NetworkPorts deprecated).
 
-### Not verified
+### Verified on, and not verified
 
-Only unit tests exist. They run against made-up Redfish trees in three shapes (iDRAC-like, iLO-like, AMI/ODM-like such as DataON) with every HTTP call mocked. The script has not been run against a real BMC of any maker. Real BMCs differ in details the standard allows (where the adapters are, whether Ports or NetworkPorts, which fields are filled). Expect "not reported" fields on real hardware; they show what a maker leaves out of the standard resources. The `Links.TrustedComponents` read has not been checked against any real BMC.
+**Run against real hardware once:** three Dell AX-760 nodes (iDRAC9 firmware 7.30.30.54, BIOS 2.11.2) on 2026-11-23, read only. Every node read in full; the plan comparison matched vendor, model, cores, memory, drive count and size, BMC type and serial number. That run found three things, now fixed: NVMe drives came back as SSD (iDRAC9 gives `Protocol` `PCIe`), a block size of 0, and the board VGA chip counted as a GPU (the core now leaves out a display controller whose functions are all VGA-compatible, PCI class `0x0300xx`, unless something names it a GPU). Expected `not reported` fields on iDRAC9: the drive bay, the adapter location and the highest port speed, and the asset tag. The generic Dell label `Network Adapter View` is the model of the LOM in this file (the Dell flow rejects it; this script has no vendor table).
+
+Other makers: only unit tests exist. They run against made-up Redfish trees in three shapes (iDRAC-like, iLO-like, AMI/ODM-like such as DataON) with every HTTP call mocked. Real BMCs differ in details the standard allows (where the adapters are, whether Ports or NetworkPorts, which fields are filled). Expect "not reported" fields on real hardware; they show what a maker leaves out of the standard resources. The `Links.TrustedComponents` read has not been checked against any real BMC.
 
 Hardware discovery is the **first stage of the flow**: it runs before azurelocal-ztp and before the OS configuration. It reads
 each node's BMC over Redfish (read only) and writes one JSON file per node with everything the BMC offers. The discovered facts
@@ -181,7 +184,7 @@ A 404 on the path that is not used is not an error.
 
 ## Verified on / not verified
 
-Only Dell iDRAC9 has been seen on real hardware (three AX-760 nodes, BIOS 2.7.5). Everything else is code and tests against **synthetic** fixtures.
+Only Dell iDRAC9 has been seen on real hardware (three AX-760 nodes, BIOS 2.7.5; run again on 2026-11-23 with BIOS 2.11.2 and iDRAC 7.30.30.54: 12 of 12 areas ok on each node, the BOSS-N1 with its virtual disk found on each). Everything else is code and tests against **synthetic** fixtures.
 
 | Vendor / BMC | Status | Seen on real hardware | Not verified |
 |---|---|---|---|

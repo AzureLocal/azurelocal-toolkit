@@ -924,7 +924,14 @@ function Get-AzlRfPcie {
             })
     }
     $gpus = @(foreach ($d in $devices) {
-            $isGpu = (@($d.functions | Where-Object { $_.deviceClass -eq 'DisplayController' -or $_.classCode -match '^0x03' }).Count -gt 0) -or ("$($d.name) $($d.description) $($d.model)" -match '(?i)\bGPU\b|\bNVIDIA\b|Instinct|Accelerator')
+            # A display controller is a GPU, except the board's own VGA controller: every display function is VGA-compatible
+            # (PCI class code 0x0300xx) and nothing names a GPU. iDRAC9 lists that chip (Matrox, named after the server) as a
+            # PCIe device (AX-760 lab run, 2026-11-23). Data-centre GPUs are 3D controllers (0x0302xx) or are named as GPUs.
+            $display = @($d.functions | Where-Object { $_.deviceClass -eq 'DisplayController' -or $_.classCode -match '^0x03' })
+            # Not the manufacturer: network cards now report NVIDIA too (ConnectX), and they are not GPUs.
+            $named = "$($d.name) $($d.description) $($d.model)" -match '(?i)\bGPU\b|\bNVIDIA\b|Instinct|Accelerator'
+            $boardVga = $display.Count -gt 0 -and @($display | Where-Object { $_.classCode -notmatch '^(?i)0x0300' }).Count -eq 0
+            $isGpu = $named -or ($display.Count -gt 0 -and -not $boardVga)
             if ($isGpu) { [ordered]@{ id = $d.id; name = $d.name; model = $(if ($d.model) { $d.model } else { $d.description }); manufacturer = $d.manufacturer; slot = $d.slot; memoryGiB = $null; vendorId = (@($d.functions | ForEach-Object { $_.vendorId }) | Where-Object { $_ } | Select-Object -First 1); firmwareVersion = $d.firmwareVersion } }
         })
     return [pscustomobject]@{ devices = $devices; gpus = $gpus; Variant = $found.Variant }

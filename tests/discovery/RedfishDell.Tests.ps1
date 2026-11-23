@@ -292,6 +292,25 @@ Describe 'Dell scan of the synthetic AX-760 fixture' {
             ($script:Full.pcie | Where-Object id -eq '59-0').lanesInUse | Should -Be 16
             ($script:Full.pcie | Where-Object id -eq '59-0').functions[0].classCode | Should -Be '0x020000'
         }
+        It 'does not count the board VGA controller or an NVIDIA-made NIC as a GPU, but still counts a VGA-class card named as a GPU (lab finding 2026-11-23)' {
+            Use-FakeBmc
+            $ch = '/redfish/v1/Chassis/System.Embedded.1'
+            $collection = Get-FakeResource "$ch/PCIeDevices"
+            $collection.Members = @($collection.Members) + @(@{ '@odata.id' = "$ch/PCIeDevices/3-0" }, @{ '@odata.id' = "$ch/PCIeDevices/9-0" }, @{ '@odata.id' = "$ch/PCIeDevices/5-0" })
+            # A network card whose maker reports itself as NVIDIA is not a GPU (review finding).
+            Set-FakeResource "$ch/PCIeDevices/5-0" @{ Id = '5-0'; Name = 'Slot 5 NIC'; Description = 'DOC 25GbE 2P Adpt'; Manufacturer = 'NVIDIA'; Links = @{ PCIeFunctions = @(@{ '@odata.id' = "$ch/PCIeDevices/5-0/PCIeFunctions/5-0-0" }) } }
+            Set-FakeResource "$ch/PCIeDevices/5-0/PCIeFunctions/5-0-0" @{ Id = '5-0-0'; Name = 'DOC 25GbE'; VendorId = '0x15b3'; DeviceId = '0x101f'; ClassCode = '0x020000'; DeviceClass = 'NetworkController' }
+            Set-FakeResource "$ch/PCIeDevices" $collection
+            # iDRAC9 lists the board's VGA chip under the server's name, class 0x030000, no slot.
+            Set-FakeResource "$ch/PCIeDevices/3-0" @{ Id = '3-0'; Name = 'Example Server'; Description = 'Example Server'; Manufacturer = 'Doc Video'; Links = @{ PCIeFunctions = @(@{ '@odata.id' = "$ch/PCIeDevices/3-0/PCIeFunctions/3-0-0" }) } }
+            Set-FakeResource "$ch/PCIeDevices/3-0/PCIeFunctions/3-0-0" @{ Id = '3-0-0'; Name = 'Example Server'; VendorId = '0x0001'; DeviceId = '0x0536'; ClassCode = '0x030000'; DeviceClass = 'DisplayController' }
+            # A card with display output (VGA class) that names itself as a GPU is still one.
+            Set-FakeResource "$ch/PCIeDevices/9-0" @{ Id = '9-0'; Name = 'Slot 9 GPU'; Description = 'DOC L40 48GB'; Manufacturer = 'Doc Graphics'; Links = @{ PCIeFunctions = @(@{ '@odata.id' = "$ch/PCIeDevices/9-0/PCIeFunctions/9-0-0" }) } }
+            Set-FakeResource "$ch/PCIeDevices/9-0/PCIeFunctions/9-0-0" @{ Id = '9-0-0'; Name = 'DOC L40'; VendorId = '0x10de'; DeviceId = '0x26b5'; ClassCode = '0x030000'; DeviceClass = 'DisplayController' }
+            $r = Invoke-Scan -Detail Full
+            @($r.pcie).Count | Should -Be 6
+            @($r.gpus).name | Should -Be @('Slot 7 GPU', 'Slot 9 GPU')
+        }
         It 'reads PCIe devices from the Chassis path and records that path (lab defect: the Systems path is a 404 on iDRAC9)' {
             Use-FakeBmc
             $global:AzlTestBmc.Status['/redfish/v1/Systems/System.Embedded.1/PCIeDevices'] = 404

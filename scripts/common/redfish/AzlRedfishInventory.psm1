@@ -12,7 +12,8 @@
 
     Fields that need a rule are stated in the file itself (rules):
 
-      Drive media type   NVMe when the drive Protocol is NVMe. Otherwise the Redfish MediaType: SSD is SSD, HDD and SMR are HDD.
+      Drive media type   NVMe when the drive Protocol is NVMe, or when it is PCIe and the MediaType is SSD (how Dell iDRAC9
+                         reports NVMe drives). Otherwise the Redfish MediaType: SSD is SSD, HDD and SMR are HDD.
       Drive role         Storage Spaces Direct rule (Microsoft Learn, "Understanding the storage pool cache"): when more than one
                          media type is present, all drives of the fastest type (NVMe, then SSD, then HDD) are cache and the rest
                          are capacity. When all drives are one type, no cache is set up and every drive is capacity.
@@ -56,7 +57,7 @@ function Get-AzlHardwareInventoryRule {
     param()
     return [ordered]@{
         source      = 'DMTF Redfish standard resources only. No vendor (OEM) path is read. A fact the BMC does not give in a standard resource is "not reported".'
-        mediaType   = 'NVMe when the drive Protocol is NVMe. Otherwise the Redfish MediaType: SSD is SSD; HDD and SMR are HDD. Neither given: not reported.'
+        mediaType   = 'NVMe when the drive Protocol is NVMe, or when the Protocol is PCIe and the MediaType is SSD (an SSD on PCIe; Dell iDRAC9 reports NVMe drives this way). Otherwise the Redfish MediaType: SSD is SSD; HDD and SMR are HDD. Neither given: not reported.'
         driveRole   = 'Storage Spaces Direct default (Microsoft Learn, Understanding the storage pool cache). More than one media type present: every drive of the fastest type (NVMe, then SSD, then HDD) is cache, the others are capacity. One media type only: no cache is set up, every drive is capacity. Not counted (role excluded): a drive that is not present, and a drive that is a member of a RAID volume of its controller.'
         portOrder   = 'The order in which the BMC lists the network adapters, then the port number on the adapter. It is not the PCI bus order.'
         driveSizeTB = 'Decimal terabytes (bytes divided by 10^12), as drives are sold.'
@@ -80,6 +81,9 @@ function Get-AzlDriveMedia {
     [OutputType([string])]
     param([AllowNull()][string]$MediaType, [AllowNull()][string]$Protocol)
     if ($Protocol -and $Protocol -match '^(?i)NVMe') { return 'NVMe' }
+    # An SSD whose Protocol is PCIe is an NVMe drive: Dell iDRAC9 reports its NVMe drives as MediaType SSD, Protocol PCIe
+    # (seen on three AX-760 nodes in a lab run, 2026-11-23), and the DMTF Protocol list names no other way an SSD sits on PCIe.
+    if ($Protocol -and $Protocol -match '^(?i)PCIe$' -and $MediaType -match '^(?i)SSD$') { return 'NVMe' }
     switch -Regex ($MediaType) {
         '^(?i)SSD$' { return 'SSD' }
         '^(?i)(HDD|SMR)$' { return 'HDD' }
@@ -126,7 +130,8 @@ function Get-AzlHardwareDriveList {
                 sizeBytes = ConvertTo-AzlReportedValue $bytes
                 sizeTB = $(if ($null -ne $bytes) { [math]::Round(([double]$bytes) / 1e12, 3) } else { $script:NotReportedText })
                 sizeGiB = $(if ($null -ne $bytes) { [math]::Round(([double]$bytes) / 1GB, 2) } else { $script:NotReportedText })
-                blockSizeBytes = ConvertTo-AzlReportedValue (Get-RfProp $d 'blockSizeBytes')
+                # 0 is not a block size: iDRAC9 answers BlockSizeBytes 0 for its NVMe drives (lab run, 2026-11-23).
+                blockSizeBytes = $(if ("$(Get-RfProp $d 'blockSizeBytes')" -match '^0+$') { $script:NotReportedText } else { ConvertTo-AzlReportedValue (Get-RfProp $d 'blockSizeBytes') })
                 health = ConvertTo-AzlReportedValue (Get-RfText (Get-RfProp $d 'health') 'health')
                 lifeLeftPercent = ConvertTo-AzlReportedValue (Get-RfProp $d 'predictedLifeLeftPercent')
                 role = $role; roleReason = $reason

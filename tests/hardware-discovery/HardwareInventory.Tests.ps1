@@ -222,8 +222,23 @@ Describe 'the drive roles' {
         @{ Media = 'SMR'; Protocol = 'SATA'; Expected = 'HDD' }
         @{ Media = $null; Protocol = 'SATA'; Expected = $null }
         @{ Media = $null; Protocol = $null; Expected = $null }
+        # Dell iDRAC9 reports NVMe drives as SSD on PCIe (AX-760 lab run, 2026-11-23).
+        @{ Media = 'SSD'; Protocol = 'PCIe'; Expected = 'NVMe' }
+        @{ Media = $null; Protocol = 'PCIe'; Expected = $null }
+        @{ Media = 'HDD'; Protocol = 'PCIe'; Expected = 'HDD' }
     ) {
         Get-AzlDriveMedia -MediaType $Media -Protocol $Protocol | Should -Be $Expected
+    }
+
+    It 'writes a block size of 0 as not reported (iDRAC9 answers 0 for its NVMe drives)' {
+        $zero = New-Drive 'z' 'SSD' 'PCIe'
+        $zero['blockSizeBytes'] = 0
+        $real = New-Drive 'r' 'SSD' 'PCIe'
+        $real['blockSizeBytes'] = 4096
+        $r = Get-AzlHardwareDriveList -Storage (New-Storage @($zero, $real))
+        ($r.Drives | Where-Object id -EQ 'z').blockSizeBytes | Should -Be 'not reported'
+        ($r.Drives | Where-Object id -EQ 'r').blockSizeBytes | Should -Be 4096
+        @($r.Drives | Where-Object mediaType -EQ 'NVMe').Count | Should -Be 2
     }
 
     It 'follows the Storage Spaces Direct table: <Name>' -ForEach @(
