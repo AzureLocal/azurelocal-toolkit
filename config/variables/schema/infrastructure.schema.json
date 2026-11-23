@@ -5271,7 +5271,7 @@
           }
         },
         "pipelines": {
-          "description": "Schema 5.6.25. What the toolkit's own pipelines (the files under pipelines/) select: the runner label and the approval environment of each pipeline. Task 05 sets them as repository variables (GitHub) or project CI/CD variables (GitLab); Azure DevOps cannot read a variable there and takes them as run parameters (the task lists the values). The pipeline files hold no runner label, pool or environment name of their own.",
+          "description": "Schema 5.6.25. What the toolkit's own pipelines (the files under pipelines/) select: the runner label and the approval environment of each pipeline. Task 05 sets them as repository variables (GitHub) or project CI/CD variables (GitLab); Azure DevOps cannot read a variable there, so task 05 writes them into pipelines/azure-devops/variables/approval-environments.yml and pipeline-settings.yml, which the pipelines read when they are compiled (D126: no run parameter carries a deployment value). The pipeline files hold no runner label, pool or environment name of their own.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -5323,7 +5323,7 @@
               "additionalProperties": false,
               "properties": {
                 "check_for_updates": {
-                  "description": "Schema 5.6.28. When the day 2 check for updates runs (pipelines/github-actions/day2-check-updates.yml, pipelines/gitlab/stages/day2-check-updates.yml, pipelines/azure-devops/day2-check-updates.yml; owner directive D74: check for updates on a schedule). Five-field cron in UTC; empty means no schedule. The update agent of the cluster checks once a day (Learn: Use Azure Update Manager to update Azure Local), so daily is enough; the minute is not 0 because GitHub delays scheduled runs at the start of an hour, when many start at once. The run fails when the check finds something that needs attention (exit code 1), so the platform's own notification for a failed run is the alert.",
+                  "description": "Schema 5.6.28. When the day 2 check for updates runs (pipelines/github-actions/day2-check-updates.yml, pipelines/gitlab/stages/day2-check-updates.yml, pipelines/azure-devops/day2-check-updates.yml; owner directive D74: check for updates on a schedule). Five-field cron in UTC; empty means no schedule. The update agent of the cluster checks once a day (Learn: Use Azure Update Manager to update Azure Local), so daily is enough; the minute is not 0 because GitHub delays scheduled runs at the start of an hour, when many start at once. The run fails when the check finds something that needs attention (exit code 1), so the platform's own notification for a failed run is the alert. D126: the key works on all three platforms: task 05 writes it into the cron line of the GitHub workflow and of the Azure DevOps pipeline (with devops.repository.default_branch as the branch of the Azure DevOps schedule) and creates or updates the GitLab project schedule (deactivates it when the key is empty).",
                   "type": "string",
                   "default": "17 4 * * *",
                   "pattern": "^$|^\\S+( \\S+){4}$"
@@ -5331,23 +5331,23 @@
               }
             },
             "service_connection": {
-              "description": "Schema 5.6.27. Azure DevOps only. The name of the Azure Resource Manager service connection (workload identity federation) that task 05 creates and that the Azure DevOps pipelines sign in through; task 01 puts the same name in the subject of the federated credential. The pipelines (pipelines/azure-devops/*.yml) take it as a run parameter with no default, and task 05 lists the value to enter. Required when devops.platform is azure_devops; GitHub and GitLab ignore it.",
+              "description": "Schema 5.6.27. Azure DevOps only. The name of the Azure Resource Manager service connection (workload identity federation) that task 05 creates and that the Azure DevOps pipelines sign in through; task 01 puts the same name in the subject of the federated credential. The pipelines (pipelines/azure-devops/*.yml) read it as AZL_SERVICE_CONNECTION, a compile-time variable of pipelines/azure-devops/variables/pipeline-settings.yml that task 05 writes (D126: not a run parameter). Required when devops.platform is azure_devops; GitHub and GitLab ignore it.",
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]*$"
             },
             "variable_group": {
-              "description": "Schema 5.6.27. Azure DevOps only. The name of the variable group (Pipelines > Library) task 05 writes the sign-in values (ARM_*) and the state settings (TF_BACKEND_*) to. With entries in devops.environments[] there is one group per environment, named <variable_group>-<environment>. The Azure DevOps pipelines that link a group (azure-local-deploy.yml, os-configuration.yml) take its name as a run parameter with no default, and task 05 lists the value to enter. Required when devops.platform is azure_devops; GitHub and GitLab ignore it.",
+              "description": "Schema 5.6.27. Azure DevOps only. The name of the variable group (Pipelines > Library) task 05 writes the sign-in values (ARM_*) and the state settings (TF_BACKEND_*) to. With entries in devops.environments[] there is one group per environment, named <variable_group>-<environment>. The Azure DevOps pipelines that link a group (azure-local-deploy.yml, os-configuration.yml) read its name as AZL_VARIABLE_GROUP of pipelines/azure-devops/variables/pipeline-settings.yml, which task 05 writes with a group entry (D126: not a run parameter); task 05 also writes the group <name> for the repository, which the pipelines read. Required when devops.platform is azure_devops; GitHub and GitLab ignore it.",
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]*$"
             },
             "infrastructure_file": {
-              "description": "Schema 5.6.28. The path, in the deployment repository, of the infrastructure file the toolkit's pipelines pass to the scripts (-InfrastructureFile). Task 05 sets it as AZL_INFRASTRUCTURE_FILE (GitHub repository variable, GitLab project variable); the Azure DevOps pipelines take it as a run parameter with no default, and task 05 lists the value to enter. The pipeline files hold no path of their own.",
+              "description": "Schema 5.6.28. The path, in the deployment repository, of the infrastructure file the toolkit's pipelines pass to the scripts (-InfrastructureFile). Task 05 sets it as AZL_INFRASTRUCTURE_FILE (GitHub repository variable, GitLab project variable); the Azure DevOps pipelines read it as AZL_INFRASTRUCTURE_FILE of pipelines/azure-devops/variables/pipeline-settings.yml, which task 05 writes (D126: not a run parameter). The pipeline files hold no path of their own.",
               "type": "string",
               "default": "config/infrastructure.yml",
               "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*\\.ya?ml$"
             },
             "handoff_path": {
-              "description": "Schema 5.6.28. The repository path of the ZTP handoff files (a handoff file or a directory of *.ztp-handoff.json) the OS configuration pipelines pass to the script (-HandoffPath). A path that does not exist (a cluster installed from ISO) is not passed. Task 05 sets it as AZL_HANDOFF_PATH (GitHub, GitLab); the Azure DevOps pipeline takes it as a run parameter with no default (none for no handoff), and task 05 lists the value to enter. A run can instead take the artifact of a ZTP run (its run ID).",
+              "description": "Schema 5.6.28. The repository path of the ZTP handoff files (a handoff file or a directory of *.ztp-handoff.json) the OS configuration pipelines pass to the script (-HandoffPath). A path that does not exist (a cluster installed from ISO) is not passed. Task 05 sets it as AZL_HANDOFF_PATH (GitHub, GitLab); the Azure DevOps pipeline reads it as AZL_HANDOFF_PATH of pipelines/azure-devops/variables/pipeline-settings.yml (none for no handoff), which task 05 writes (D126: not a run parameter). A run can instead take the artifact of a ZTP run (its run ID).",
               "type": "string",
               "default": "ztp-state",
               "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*$"
@@ -5500,7 +5500,7 @@
                 "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here."
               },
               "pool": {
-                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines take the pool of the general runner as their agent pool parameter.",
+                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines read the pool of the general runner as AZL_AGENT_POOL of pipelines/azure-devops/variables/pipeline-settings.yml, which task 05 writes (D126).",
                 "type": "string"
               },
               "private_ips": {

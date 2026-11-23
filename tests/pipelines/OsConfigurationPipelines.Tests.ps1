@@ -125,8 +125,9 @@ Describe 'GitHub Actions workflow' {
 }
 
 Describe 'GitLab CI pipeline' {
-    It 'parses and has the stages plan then apply' {
-        @($script:GitLab['stages']) | Should -Be @('plan', 'apply')
+    It 'parses and has the stages plan, confirm and apply' {
+        # D126: the confirm stage holds the second approval of a storage wipe, as on GitHub and Azure DevOps
+        @($script:GitLab['stages']) | Should -Be @('plan', 'confirm', 'apply')
     }
     It 'has a plan job and a manual apply job that cannot run at the same time as another run' {
         $plan = $script:GitLab['os-configuration-plan']

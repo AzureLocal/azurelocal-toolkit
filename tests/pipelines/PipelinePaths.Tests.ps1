@@ -42,19 +42,10 @@ Describe 'Every path a pipeline names exists' {
     }
 }
 
-Describe 'The GitLab validate-deployment stage' {
-    It 'holds jobs that check something: no job that only prints a hint' {
-        $doc = ConvertFrom-Yaml (Get-Text 'pipelines/gitlab/stages/validate-deployment.yml') -Ordered
-        $jobs = @($doc.Keys | Where-Object { $doc[$_] -is [System.Collections.IDictionary] -and $doc[$_].Contains('stage') })
-        $jobs | Should -Be @('validate:compliance')
-        $doc.Contains('validate:connectivity') | Should -BeFalse
-        foreach ($j in $jobs) {
-            $code = (@($doc[$j]['script']) -join "`n")
-            $code | Should -Match 'az policy state summarize'
-            # signs in by devops.authentication.method, with the values task 05 sets
-            $code | Should -Match 'AZL_AUTH_METHOD'
-            $doc[$j]['allow_failure'] | Should -BeTrue
-        }
+Describe 'The GitLab-only validate-deployment stage is gone (D126: no logic of one platform only)' {
+    It 'the file, its include and its stage are removed' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'gitlab', 'stages', 'validate-deployment.yml')) | Should -BeFalse
+        (Get-Text 'pipelines/gitlab/.gitlab-ci.yml') | Should -Not -Match 'validate-deployment'
     }
 }
 
@@ -64,7 +55,7 @@ Describe 'The README and the removed folders' {
         $relative = $File -replace '^pipelines/', ''
         $leaf = Split-Path -Leaf $relative
         # the files of the Terraform and Ansible chain are named through the chain's entry file
-        if ($relative -match '^gitlab/stages/(validate|deploy-foundation|configure-onprem|configure-operations|validate-deployment)\.yml$') { $readme | Should -Match 'gitlab/stages/\*\.yml|stages/\*\.yml'; return }
+        if ($relative -match '^gitlab/stages/(validate|deploy-foundation|configure-onprem|configure-operations)\.yml$') { $readme | Should -Match 'gitlab/stages/\*\.yml|stages/\*\.yml'; return }
         $readme | Should -Match ([regex]::Escape($leaf)) -Because "$File is not in pipelines/README.md"
     }
     It 'no file of the toolkit names the removed archive of GitHub workflows or the second Ansible tree as a place' {

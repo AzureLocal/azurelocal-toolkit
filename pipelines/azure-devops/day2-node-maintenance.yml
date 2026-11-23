@@ -23,27 +23,25 @@
 # One change at a time. The update, the node maintenance, the changing operations and the storage performance test deploy to the same environment, and the
 # Exclusive lock check of that environment keeps two of them from running on the cluster together; each Apply stage also sets lockBehavior: sequential.
 #
-# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the value of every
-# run parameter to enter.
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the node
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup writes every value below into variables/pipeline-settings.yml and variables/approval-environments.yml (Set-CicdVariables.ps1, from infrastructure.yml; commit both in a pull request).
+#   Agent pool      a self-hosted pool (AZL_AGENT_POOL: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the node
 #                   (WinRM, TCP 5985 or 5986, and ping).
-#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#   Service conn.   the Azure Resource Manager service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05
 #                   creates it), workload identity federation, with Key Vault Secrets User on the vaults of the local administrator and the LCM user (the
 #                   secret references identity.local_admin and identity.active_directory.lcm_user of the master file). The node login is never in this file.
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#   Variable group  AZL_VARIABLE_GROUP (Pipelines > Library; devops.pipelines.variable_group, the repository group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
 #   Environment     the name in variables/approval-environments.yml (AZL_ENVIRONMENT_OPERATIONS: devops.pipelines.environments.operations; task 05
 #                   lists the value to write there): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it from
 #                   devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a run
 #                   parameter (Learn: a template expression sees only the variables of the YAML files).
-#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other keywords take
-#                   template expressions or runtime parameters
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection, the variable
-#                   group and the file path are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 #
-# The run parameter infrastructure_file can name any file on the branch the run starts from, so -RequireNodeInFile trusts the infrastructure files of the
+# AZL_INFRASTRUCTURE_FILE names a file on the branch the run starts from, so -RequireNodeInFile trusts the infrastructure files of the
 # branch the pipeline runs from: keep them under review (a branch policy on the protected default branch) and run changes from that branch.
 name: day2-node-maintenance-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -56,9 +54,6 @@ pr: none
 lockBehavior: sequential
 
 parameters:
-  - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
-    type: string
   - name: node
     displayName: 'The one node to take through maintenance: its name in nodes[] of the master file (a fully qualified name or a management address of that node also works)'
     type: string
@@ -70,18 +65,10 @@ parameters:
       - Plan
       - Reboot
       - Resume
-  - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7, route to the node). Enter devops.runners[].pool of the general runner'
-    type: string
-  - name: service_connection
-    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
-    type: string
-  - name: variable_group
-    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
-    type: string
 
 variables:
-  - group: ${{ parameters.variable_group }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_OPERATIONS: the approval environment, bound at compile time (not a run parameter).
   - template: variables/approval-environments.yml
   - name: maintenanceScript
@@ -95,7 +82,7 @@ stages:
       - job: Plan
         displayName: 'Plan (read only)'
         pool:
-          name: ${{ parameters.agent_pool }}
+          name: ${{ variables.AZL_AGENT_POOL }}
           demands:
             - pwsh
         # The check of the node and a read of the secret references: the toolkit's limit for a read-only check, not a figure from Microsoft.
@@ -112,7 +99,7 @@ stages:
           - task: AzurePowerShell@5
             displayName: 'Plan (nothing is sent to a machine)'
             inputs:
-              azureSubscription: ${{ parameters.service_connection }}
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
               azurePowerShellVersion: OtherVersion
               preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
               pwsh: true
@@ -129,7 +116,7 @@ stages:
                 if ($code -ne 0) { throw "Invoke-NodeMaintenanceReboot.ps1 exited with code $code." }
             env:
               MAINTENANCE_SCRIPT: $(maintenanceScript)
-              MAINTENANCE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              MAINTENANCE_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
               MAINTENANCE_NODE: ${{ parameters.node }}
               MAINTENANCE_ACTION: ${{ parameters.action }}
               MAINTENANCE_LOG_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-node-maintenance
@@ -152,7 +139,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment is set'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -173,7 +160,7 @@ stages:
           - deployment: Apply
             displayName: 'Apply'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Required reviewers on this environment are the approval gate. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
@@ -195,7 +182,7 @@ stages:
                     - task: AzurePowerShell@5
                       displayName: 'Take the node through maintenance'
                       inputs:
-                        azureSubscription: ${{ parameters.service_connection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         azurePowerShellVersion: OtherVersion
                         preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                         pwsh: true
@@ -213,7 +200,7 @@ stages:
                           if ($code -ne 0) { throw "Invoke-NodeMaintenanceReboot.ps1 exited with code $code." }
                       env:
                         MAINTENANCE_SCRIPT: $(maintenanceScript)
-                        MAINTENANCE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        MAINTENANCE_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                         MAINTENANCE_NODE: ${{ parameters.node }}
                         MAINTENANCE_ACTION: ${{ parameters.action }}
                         MAINTENANCE_LOG_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-node-maintenance

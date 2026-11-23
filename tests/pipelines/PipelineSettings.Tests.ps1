@@ -100,40 +100,35 @@ Describe 'GitHub Actions: runner labels and environment names come from the vars
     }
 }
 
-Describe 'Azure DevOps: the pool and the environment of a job are runtime parameters' {
-    It '<File>: every pool name and environment is ${{ parameters.x }}, and x is declared in the file' -ForEach $script:AdoFiles {
+Describe 'Azure DevOps: the pool and the environment of a job are compile-time variables of the YAML files (D126)' {
+    It '<File>: every pool name is ${{ variables.AZL_AGENT_POOL }} (or the hosted image), and every environment is an AZL_ENVIRONMENT_* variable' -ForEach $script:AdoFiles {
         $doc = Get-Yaml $File
-        $declared = @{}
-        foreach ($p in $doc['parameters']) { $declared[[string]$p['name']] = $p }
-        $used = [System.Collections.Generic.List[string]]::new()
+        $text = Get-Text $File
+        $text | Should -Match '(?m)^\s+- template: variables/pipeline-settings\.yml\r?$' -Because 'the pool, the service connection, the variable group and the paths come from the generated settings file'
+        $pools = 0
         foreach ($n in (Get-Node $doc)) {
             if ($n.Node.Contains('pool') -and $n.Node['pool'] -is [System.Collections.IDictionary]) {
                 $pool = $n.Node['pool']
-                if ($pool.Contains('name')) { [string]$pool['name'] | Should -Match '^\$\{\{ parameters\.\w+ \}\}$'; $used.Add(([regex]::Match([string]$pool['name'], 'parameters\.(\w+)').Groups[1].Value)) }
+                if ($pool.Contains('name')) { [string]$pool['name'] | Should -Be '${{ variables.AZL_AGENT_POOL }}'; $pools++ }
                 if ($pool.Contains('vmImage')) { [string]$pool['vmImage'] | Should -Be 'ubuntu-latest' -Because 'the hosted image is the vendor label, not a setting of a deployment' }
             }
             if ($n.Node.Contains('environment') -and $n.Node.Contains('strategy')) {
-                # a run parameter, or the approval environment that is bound at compile time (a variable of variables/approval-environments.yml, which the queuer cannot choose)
-                [string]$n.Node['environment'] | Should -Match '^\$\{\{ (parameters\.\w+|variables\.AZL_ENVIRONMENT_[A-Z_]+) \}\}$'
-                if ([string]$n.Node['environment'] -like '*parameters.*') { $used.Add(([regex]::Match([string]$n.Node['environment'], 'parameters\.(\w+)').Groups[1].Value)) }
+                # the approval environment that is bound at compile time (a variable of variables/approval-environments.yml, which the queuer cannot choose)
+                [string]$n.Node['environment'] | Should -Match '^\$\{\{ variables\.AZL_ENVIRONMENT_[A-Z_]+ \}\}$'
             }
         }
-        $used.Count | Should -BeGreaterThan 0
-        foreach ($u in ($used | Sort-Object -Unique)) { $declared.Keys | Should -Contain $u }
+        $pools | Should -BeGreaterThan 0
     }
-    It '<File>: a pool or environment parameter has no default that names something (empty, hosted or a placeholder at most)' -ForEach $script:AdoFiles {
+    It '<File>: no run parameter names a pool, a service connection, a variable group or a file path' -ForEach $script:AdoFiles {
         $doc = Get-Yaml $File
-        $text = Get-Text $File
-        $names = [regex]::Matches($text, '(?m)^\s+(?:name|environment): \$\{\{ parameters\.(\w+) \}\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
-        foreach ($n in $names) {
-            $p = $doc['parameters'] | Where-Object { $_['name'] -eq $n }
-            if ($p.Contains('default')) { ([string]$p['default']) | Should -BeIn @('', 'hosted') -Because "the default of $n" }
-            $p.Contains('values') | Should -BeFalse -Because "$n is not a list of names"
+        foreach ($p in @($doc['parameters'] | Where-Object { $_ })) {
+            [string]$p['name'] | Should -Not -Match '(?i)pool|connection|group|infrastructure|handoff_path|environment$'
         }
+        (Get-Text $File) | Should -Not -Match '\$\{\{ parameters\.\w*([Pp]ool|[Cc]onnection|[Gg]roup)\b'
     }
-    It 'every file that gates an Apply or Deploy names its environment by a parameter: no literal environment is left' {
+    It 'every file that gates an Apply or Deploy names its environment by a variable of a YAML file: no literal environment is left' {
         foreach ($f in @($script:RtFiles | Where-Object { $_ -like 'pipelines/azure-devops/*' })) {
-            (Get-Text $f) | Should -Not -Match "(?m)^\s+environment:\s+(?!\$\{\{ (parameters|variables\.AZL_ENVIRONMENT_[A-Z_]+)\b)\S" -Because $f
+            (Get-Text $f) | Should -Not -Match "(?m)^\s+environment:\s+(?!\$\{\{ variables\.AZL_ENVIRONMENT_[A-Z_]+\b)\S" -Because $f
         }
     }
 }
@@ -167,13 +162,13 @@ Describe 'Every variable or parameter of a runner label, pool or environment is 
             $e[0].Node['source_key'] | Should -Not -BeNullOrEmpty
         }
     }
-    It '<File>: each pool and environment parameter it uses has a pipeline_inputs entry for this file' -ForEach $script:AdoFiles {
+    It '<File>: each compile-time variable it uses (pool, service connection, paths, approval environment) has a pipeline_inputs entry for this file' -ForEach $script:AdoFiles {
         $text = Get-Text $File
-        $names = @([regex]::Matches($text, '(?m)^\s+(?:name|environment): \$\{\{ parameters\.(\w+) \}\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $names = @([regex]::Matches($text, '(?<![A-Za-z0-9_])variables\.(AZL_[A-Z_]+)\b') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
         $names.Count | Should -BeGreaterThan 0
         foreach ($n in $names) {
             $e = @($script:Inputs | Where-Object { $_.Area -eq $File -and $_.Name -eq $n })
-            $e.Count | Should -Be 1 -Because "$File uses the parameter $n"
+            $e.Count | Should -Be 1 -Because "$File uses the variable $n"
             $e[0].Node['source_key'] | Should -Not -BeNullOrEmpty
         }
     }

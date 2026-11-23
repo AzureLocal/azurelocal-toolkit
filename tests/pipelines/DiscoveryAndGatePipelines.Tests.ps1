@@ -189,7 +189,8 @@ Describe 'The pre-cluster verification pipelines' {
     }
     It 'Azure DevOps: no pipeline run form can name the approval environment of the gate (the only parameters are the ones listed)' {
         $names = @((Get-Yaml 'pipelines/azure-devops/pre-cluster-verification.yml')['parameters'] | ForEach-Object { [string]$_['name'] })
-        $names | Should -Be @('infrastructure_file', 'mode', 'os_configuration_pipeline_id', 'os_configuration_run_id', 'os_configuration_report', 'handoff_file', 'accept_skipped', 'allow_revalidate', 'fix', 'install_environment_checker', 'agent_pool', 'service_connection', 'variable_group')
+        # D126: the pool, the service connection, the variable group and the file path are variables of variables/pipeline-settings.yml, not run parameters
+        $names | Should -Be @('mode', 'os_configuration_pipeline_id', 'os_configuration_run_id', 'os_configuration_report', 'handoff_file', 'accept_skipped', 'allow_revalidate', 'fix', 'install_environment_checker')
     }
     It 'Azure DevOps: lockBehavior is described as what Learn says it is (it governs Exclusive lock checks), and each stage that must not overlap sets it' -ForEach @(
         @{ File = 'pipelines/azure-devops/pre-cluster-verification.yml'; Stages = @('Verify', 'VerifyWithChanges') }

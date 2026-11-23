@@ -26,13 +26,13 @@
 # chosen in the master file (os_configuration.remoting.bootstrap_transport).
 #
 # What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists
-# the value of every run parameter to enter.
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to
+# the value of every setting, and Set-CicdVariables.ps1 writes them into variables/pipeline-settings.yml.
+#   Agent pool      a self-hosted pool (AZL_AGENT_POOL: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to
 #                   the nodes' management subnet. For WinRM from a Linux agent, the PSWSMan module (Negotiate authentication).
-#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05 creates it), workload identity
+#   Service conn.   the Azure Resource Manager service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05 creates it), workload identity
 #                   federation, with Azure Connected Machine Resource Administrator and Reader on the Arc machines' resource group,
 #                   and Key Vault Secrets User on the vault named by identity.local_admin.password in the master file.
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#   Variable group  AZL_VARIABLE_GROUP (Pipelines > Library; devops.pipelines.variable_group, the repository group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*). It
 #                   holds nothing this file needs as a secret: the nodes' local administrator password is read from the Key Vault by the script.
 #   Environments    AZL_ENVIRONMENT_OS_CONFIGURATION          (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
@@ -42,16 +42,15 @@
 #                   Both are variables of variables/approval-environments.yml (task 05 lists the value to write there, once, in a pull request).
 #                   Task 04 of the CI/CD setup creates both environments from devops.environments. A deployment job to an environment
 #                   with no approval check runs without one, so add the checks before use.
-#   Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
-#                   inputs, and that other keywords take template expressions or runtime parameters
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
-#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 #                   environments are not: a value the queuer must not choose is read from a YAML file of the repository.
 #
-# Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
-# The handoff files (<node>.ztp-handoff.json) are a repository path (handoff_path: devops.pipelines.handoff_path, none for an ISO-installed
+# Where the files come from: the master file is a path in this repository (AZL_INFRASTRUCTURE_FILE: devops.pipelines.infrastructure_file).
+# The handoff files (<node>.ztp-handoff.json) are a repository path (AZL_HANDOFF_PATH: devops.pipelines.handoff_path, none for an ISO-installed
 # cluster) or the artifact ztp-handoff of a ZTP pipeline run (handoff_pipeline_id and handoff_run_id). See docs/os-configuration-and-arm-deployment.md.
 name: os-configuration-$(Date:yyyyMMdd)$(Rev:.r)
 
@@ -62,14 +61,8 @@ pr: none
 lockBehavior: sequential
 
 parameters:
-  - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
-    type: string
-  - name: handoff_path
-    displayName: 'Handoff file or directory of *.ztp-handoff.json in the repository. Enter devops.pipelines.handoff_path (none for an ISO-installed cluster)'
-    type: string
   - name: handoff_pipeline_id
-    displayName: 'Optional: ID of the ZTP pipeline whose artifact ztp-handoff holds the handoff files (with handoff_run_id; replaces handoff_path; none to skip)'
+    displayName: 'Optional: ID of the ZTP pipeline whose artifact ztp-handoff holds the handoff files (with handoff_run_id; replaces AZL_HANDOFF_PATH; none to skip)'
     type: string
     default: none
   - name: handoff_run_id
@@ -99,18 +92,10 @@ parameters:
     displayName: 'Let the storage wipe touch a node of a deployed cluster (one run; only when os_configuration.clear_storage is true)'
     type: boolean
     default: false
-  - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
-    type: string
-  - name: service_connection
-    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
-    type: string
-  - name: variable_group
-    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
-    type: string
 
 variables:
-  - group: ${{ parameters.variable_group }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_OS_CONFIGURATION and AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE: the approval environments, bound at compile time (not run parameters).
   - template: variables/approval-environments.yml
   - name: OSCONFIG_SCRIPT
@@ -124,7 +109,7 @@ stages:
       - job: Plan
         displayName: 'Plan (read only)'
         pool:
-          name: ${{ parameters.agent_pool }}
+          name: ${{ variables.AZL_AGENT_POOL }}
           demands:
             - pwsh
         steps:
@@ -151,7 +136,7 @@ stages:
           - task: AzurePowerShell@5
             displayName: 'Plan'
             inputs:
-              azureSubscription: ${{ parameters.service_connection }}
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
               azurePowerShellVersion: OtherVersion
               preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
               pwsh: true
@@ -175,8 +160,8 @@ stages:
                 & $env:OSCONFIG_SCRIPT @p
                 if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
             env:
-              OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
-              OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
+              OSC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+              OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', variables.AZL_HANDOFF_PATH) }}
               OSC_NODES: ${{ parameters.nodes }}
               OSC_STEPS: ${{ parameters.steps }}
               OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-plan
@@ -192,7 +177,7 @@ stages:
             name: storage
             displayName: 'Read os_configuration.clear_storage'
             env:
-              OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              OSC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
 
           - pwsh: |
               $ErrorActionPreference = 'Stop'
@@ -230,7 +215,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment is set'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -253,7 +238,7 @@ stages:
           - deployment: ConfirmStorageWipe
             displayName: 'Confirm storage wipe'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Required reviewers on this environment are the second approval gate.
@@ -284,7 +269,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment of the storage wipe is set'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -307,7 +292,7 @@ stages:
           - deployment: Apply
             displayName: 'Apply'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Required reviewers on this environment are the approval gate.
@@ -344,7 +329,7 @@ stages:
                     - task: AzurePowerShell@5
                       displayName: 'Apply'
                       inputs:
-                        azureSubscription: ${{ parameters.service_connection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         azurePowerShellVersion: OtherVersion
                         preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                         pwsh: true
@@ -373,8 +358,8 @@ stages:
                           & $env:OSCONFIG_SCRIPT @p
                           if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
                       env:
-                        OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
-                        OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
+                        OSC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+                        OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', variables.AZL_HANDOFF_PATH) }}
                         OSC_NODES: ${{ parameters.nodes }}
                         OSC_STEPS: ${{ parameters.steps }}
                         OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}

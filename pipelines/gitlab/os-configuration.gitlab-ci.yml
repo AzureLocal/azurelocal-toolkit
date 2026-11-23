@@ -8,6 +8,12 @@
 # Stage `plan` is read only; it publishes the plan report and the wipe list (which disks on which node would be wiped when
 # os_configuration.clear_storage is true) as artifacts. Stage `apply` is a manual job: someone with permission to run protected
 # jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once.
+# Stage `confirm` is the second, separate approval of a storage wipe (D126: the same two approvals as the stages ConfirmStorageWipe and Apply of
+# Azure DevOps and the jobs of GitHub): the manual job os-configuration-confirm-storage-wipe in the protected environment of
+# AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE. GitLab creates the jobs of a pipeline before the plan runs, so the job exists in every run that
+# can apply; when os_configuration.clear_storage is false it prints that nothing is wiped and ends. While AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE
+# is empty, the job os-configuration-storage-wipe-approval-environment-not-set takes its place and fails when the master file would wipe, so the apply
+# job (which needs it) does not run.
 #
 # Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name
 # expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
@@ -16,6 +22,7 @@
 #                           or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
 #   AZL_RUNNER_LABEL        devops.pipelines.runner_label (the tag of the general runner)
 #   AZL_ENVIRONMENT_OS_CONFIGURATION  devops.pipelines.environments.os_configuration (the approval environment of the apply job)
+#   AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE  devops.pipelines.environments.os_configuration_clear_storage (the second approval of a wipe)
 #   AZL_INFRASTRUCTURE_FILE devops.pipelines.infrastructure_file (the master infrastructure.yml in the repository)
 #   AZL_HANDOFF_PATH        devops.pipelines.handoff_path: a handoff file or a directory of *.ztp-handoff.json in the repository (not used
 #                           when missing), or the artifact of the ZTP pipeline (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]`
@@ -32,8 +39,15 @@
 # variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
 # ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
 stages:
   - plan
+  - confirm
   - apply
 
 variables:
@@ -42,6 +56,8 @@ variables:
   # Set to 'true' when you play the apply job to approve the one-time WinRM bootstrap (bootstrap_transport arc, smb or auto) for this run.
   # Production and dmz do not bootstrap without it. An smb bootstrap needs a Windows runner.
   APPROVED_BOOTSTRAP: 'false'
+  # Set to 'true' to let the storage wipe touch a node of a deployed cluster for this run (only when os_configuration.clear_storage is true).
+  CONFIRM_WIPE_DEPLOYED_CLUSTER: 'false'
 
 .os-configuration:
   tags: [$AZL_RUNNER_LABEL]
@@ -83,11 +99,50 @@ os-configuration-plan:
     paths:
       - $REPORT_DIRECTORY/plan/
 
+# Second, explicit approval for a storage wipe: played by someone allowed to deploy to the environment of AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE,
+# after reading the wipe list it prints. When the master file wipes nothing it says so and ends; the apply job waits for it either way.
+os-configuration-confirm-storage-wipe:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: confirm
+  needs: [os-configuration-plan]
+  when: manual
+  allow_failure: false
+  # Prints one file: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '$AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE != null && $AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE != "" && $AZL_ENVIRONMENT_OS_CONFIGURATION != null && $AZL_ENVIRONMENT_OS_CONFIGURATION != ""'
+      when: manual
+      allow_failure: false
+  environment:
+    name: $AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        # The storage wipe gate follows the master file: os_configuration.clear_storage, the key the script itself reads (as on GitHub and Azure DevOps).
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $env:AZL_INFRASTRUCTURE_FILE -Raw)
+        $clear = ($doc -is [System.Collections.IDictionary]) -and ($doc["os_configuration"] -is [System.Collections.IDictionary]) -and ([string]$doc["os_configuration"]["clear_storage"] -eq "True")
+        if (-not $clear) { Write-Output "os_configuration.clear_storage is false: nothing is wiped and there is nothing to confirm."; exit 0 }
+        $list = "$env:REPORT_DIRECTORY/plan/wipe-list.txt"
+        Write-Warning "Playing this job lets the apply job WIPE the local storage listed below."
+        if (Test-Path -LiteralPath $list -PathType Leaf) { Get-Content -LiteralPath $list }
+        else { Write-Error "The plan artifact has no wipe-list.txt, so there is nothing to approve. Do not play this job." -ErrorAction Continue; exit 1 }
+      '
+
 os-configuration-apply:
   extends: .os-configuration
   stage: apply
   # needs downloads the plan job's artifacts: $REPORT_DIRECTORY/plan/wipe-list.json is the wipe list the person who plays this job approved, and Apply is bound to it.
-  needs: [os-configuration-plan]
+  # It also waits for the second approval of a wipe, or for its refusal while that approval environment is not set (one of the two exists).
+  needs:
+    - os-configuration-plan
+    - job: os-configuration-confirm-storage-wipe
+      optional: true
+      artifacts: false
+    - job: os-configuration-storage-wipe-approval-environment-not-set
+      optional: true
+      artifacts: false
   # The approval gate: the job waits until someone plays it, after reading the plan job's wipe list.
   when: manual
   allow_failure: false
@@ -105,6 +160,7 @@ os-configuration-apply:
         $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = "Apply"; ReportDirectory = "$env:REPORT_DIRECTORY/apply"; ApprovedWipeList = "$env:REPORT_DIRECTORY/plan/wipe-list.json" }
         if ($env:AZL_HANDOFF_PATH -and (Test-Path -LiteralPath $env:AZL_HANDOFF_PATH)) { $p.HandoffPath = $env:AZL_HANDOFF_PATH }
         if ($env:APPROVED_BOOTSTRAP -eq "true") { $p.ApprovedBootstrap = $true }
+        if ($env:CONFIRM_WIPE_DEPLOYED_CLUSTER -eq "true") { $p.ConfirmWipeDeployedCluster = $true }
         & $env:OSCONFIG_SCRIPT @p
         exit $LASTEXITCODE
       '
@@ -130,3 +186,26 @@ os-configuration-approval-environment-not-set:
     - if: '($AZL_ENVIRONMENT_OS_CONFIGURATION == null || $AZL_ENVIRONMENT_OS_CONFIGURATION == "")'
   script:
     - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_OS_CONFIGURATION (devops.pipelines.environments.os_configuration) is empty, and the apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'
+
+# The master file would wipe local storage, but the approval environment of the wipe is not set: the confirm job is not created, so this job takes its
+# place, fails and says why, and the apply job (which needs it) does not run. When the master file wipes nothing it ends at once. Nothing is sent to any
+# machine. Azure DevOps does the same with the refusing variant of the stage ConfirmStorageWipe.
+os-configuration-storage-wipe-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: confirm
+  needs: [os-configuration-plan]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '($AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE == null || $AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE == "") && $AZL_ENVIRONMENT_OS_CONFIGURATION != null && $AZL_ENVIRONMENT_OS_CONFIGURATION != ""'
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $env:AZL_INFRASTRUCTURE_FILE -Raw)
+        $clear = ($doc -is [System.Collections.IDictionary]) -and ($doc["os_configuration"] -is [System.Collections.IDictionary]) -and ([string]$doc["os_configuration"]["clear_storage"] -eq "True")
+        if (-not $clear) { Write-Output "os_configuration.clear_storage is false: nothing is wiped, so no second approval is needed."; exit 0 }
+        Write-Error "AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE (devops.pipelines.environments.os_configuration_clear_storage) is empty, and the plan would wipe local storage, which needs the second approval. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue
+        exit 1
+      '

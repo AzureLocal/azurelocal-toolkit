@@ -3,10 +3,20 @@
 Pipeline definitions for automated Azure Local deployments across three CI/CD platforms. Each pipeline exists once per platform
 (Azure DevOps, GitHub Actions, GitLab CI) and the three copies do the same work with platform-specific syntax.
 
+**One design on every platform (owner directive D126).** Each pipeline is a thin wrapper: it calls the same PowerShell entry scripts with
+the same values on GitHub Actions, GitLab CI and Azure DevOps, binds the same approval environments and refuses to change anything while
+one is not set, starts by hand (GitHub `workflow_dispatch`, GitLab the web form or the API, Azure DevOps `trigger: none`), and the check
+for updates runs on the same schedule. No logic of one platform only is left. [`PARITY.md`](PARITY.md) is the generated table, pipeline by
+platform: `./pipelines/New-PipelineParity.ps1` writes it from the files, and `tests/pipelines/PipelineParity.Tests.ps1` fails when it is out
+of date or a row is not Equal. **No pipeline is run on a platform until every script has been proven by hand (owner directive D124).**
+
 **No value of a deployment is written in a pipeline file.** Every value a pipeline needs (the sign-in, the runner, the approval
-environments, the infrastructure file, the tool versions, the state, the job timeouts) is a key of `infrastructure.yml`. Task 05 of
+environments, the infrastructure file, the tool versions, the state, the job timeouts, the schedule) is a key of `infrastructure.yml`. Task 05 of
 the CI/CD setup (`scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables/powershell/Set-CicdVariables.ps1`)
-reads the file and sets it on the platform; the pipelines only read the variables. `tests/variables/PipelineValues.Tests.ps1` fails
+reads the file and sets it on the platform; the pipelines only read the variables. The values a platform reads before any variable exists
+(on Azure DevOps the pool, the service connection, the variable group, the paths and the approval environments; on GitHub and Azure DevOps the
+cron line of the schedule) are written by the same task into the files of the repository: `azure-devops/variables/pipeline-settings.yml`,
+`azure-devops/variables/approval-environments.yml` and the cron line of `day2-check-updates.yml`. `tests/variables/PipelineValues.Tests.ps1` fails
 when a pipeline file carries a tool version, an infrastructure file path, a runner OS label, a sign-in method of its own, a deploy
 branch or a parameter default that is a choice of a deployment.
 
@@ -39,25 +49,23 @@ the same shape: a read-only job first, and every job that changes the cluster (o
 ## The Terraform and Ansible chain
 
 ```
-validate → plan → deploy-foundation → configure-onprem → configure-operations → validate-deployment
+validate → plan → deploy-foundation → configure-onprem → configure-operations
 ```
 
 | Stage | Tool | Runner |
 | --- | --- | --- |
-| **Validate** | Terraform validate, Ansible lint | Hosted image (validates only: a platform choice) |
+| **Validate** | `Test-InfrastructureFile.ps1` (the master file), Terraform validate, Ansible lint | Self-hosted for the master file; hosted image for Terraform and Ansible (validates only: a platform choice) |
 | **Plan** | Terraform plan | Hosted image (plans only: a platform choice) |
 | **Deploy Foundation** | Terraform apply | Self-hosted |
 | **Configure On-Prem** | Ansible playbooks | Self-hosted (on-prem access) |
 | **Configure Operations** | Ansible playbooks | Self-hosted |
-| **Validate Deployment** | Azure CLI (GitLab only) | Self-hosted |
 
 The Azure Local cluster itself is deployed by the ARM pipelines below (schema 5, one script), not by this chain. This chain is the Azure
 foundation (Terraform) and the Ansible plays of `src/ansible` (domain controllers 05, AD preparation 01, OS configuration 02, Arc registration
 03, monitoring 04). K7 checked every script, playbook and path it names against the toolkit: all exist, and every value comes from the variables
-task 05 sets. GitHub Actions and Azure DevOps end at Configure Operations; only GitLab has the Validate Deployment stage, and it holds one job,
-the read-only policy and Defender for Cloud summary (`validate:compliance`). The no-op `validate:connectivity` job (it ran the same file check as
-`config:validate` and printed a hint) is removed: the post-deployment checks are `Invoke-VerifyPostDeployment.ps1` and the scripts of
-`scripts/deploy/06-testing-validation`, which need a jump server that reaches the cluster.
+task 05 sets. The chain ends at Configure Operations on every platform. D126 removed the GitLab-only Validate Deployment stage (a policy and
+Defender for Cloud summary no other platform had) and gave GitHub (`config-validate`) and Azure DevOps (`CheckInfrastructureFile`) the check of the
+master file GitLab had (`config:validate`). The post-deployment checks are the validation pipeline below.
 
 Every Terraform and Ansible job writes its inputs from the infrastructure file first:
 `config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile <file> -OutputDirectory <the job's temporary directory>`.
@@ -70,6 +78,8 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 - **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`, `gitlab/stages/validation.yml` and `gitlab/stages/day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`
 - **Features**: manual approval gates, protected environments, `resource_group`
+- **Start**: every pipeline file has `workflow: rules:` that create a pipeline only from the web form or the API (and, for the check for updates,
+  the project schedule task 05 creates), never from a push or a merge request
 - **Tools**: `gitlab/Use-AzlGitLabTool.ps1` installs the versions of `devops.pipelines.tool_versions` (GitLab has no installer action or task)
 
 ### GitHub Actions
@@ -80,7 +90,7 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 ### Azure DevOps
 
-- **Location**: `azure-devops/`
+- **Location**: `azure-devops/`, with the compile-time settings `azure-devops/variables/pipeline-settings.yml` and `azure-devops/variables/approval-environments.yml`
 - **Features**: service connections, environment approvals, variable groups
 - **Requirements**: the Terraform extension from the marketplace (`TerraformInstaller@1`, `TerraformTaskV4@4`) for the Terraform pipelines
 
@@ -88,9 +98,15 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 The one-run entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`, runs standalone or unchanged in a pipeline: a read-only plan job (report and wipe list as artifacts), then an apply job behind an approval gate. The transport and the storage wipe come from the master file (`os_configuration.remoting.transport`, `os_configuration.clear_storage`); no pipeline overrides them.
 
-- GitHub Actions: `github-actions/os-configuration.yml` (the environment of `AZL_ENVIRONMENT_OS_CONFIGURATION`, with required reviewers).
-- GitLab CI: `gitlab/os-configuration.gitlab-ci.yml` (manual apply job, `resource_group`).
-- Azure DevOps: `azure-devops/os-configuration.yml` (the environment named by the variable `AZL_ENVIRONMENT_OS_CONFIGURATION` of `azure-devops/variables/approval-environments.yml`, a variable of a YAML file bound when the pipeline is compiled, so whoever queues the run cannot choose an environment with no approval; a second approval, the environment of `AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE`, for a storage wipe when `os_configuration.clear_storage` is true). While the first variable is empty, mode Apply fails in the stage `ApprovalEnvironmentNotSet` and nothing is changed; while the second is empty and the plan would wipe, the stage `ConfirmStorageWipe` fails and Apply does not run.
+Two approvals on every platform (D126): the apply approval (`AZL_ENVIRONMENT_OS_CONFIGURATION`) and, when `os_configuration.clear_storage` is
+true in the master file, a second, separate approval of the storage wipe (`AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE`), given after reading
+the wipe list. While the first is empty, a run with mode Apply refuses and changes nothing; while the second is empty and the master file would
+wipe, the wipe refusal fails and Apply does not run. The run input or variable `confirm_wipe_deployed_cluster` (`CONFIRM_WIPE_DEPLOYED_CLUSTER` on
+GitLab) lets the wipe touch a node of a deployed cluster for one run, on every platform.
+
+- GitHub Actions: `github-actions/os-configuration.yml` (jobs `plan`, `confirm-storage-wipe` in the environment of the wipe, `apply`; the refusals `approval-environment-not-set` and `storage-wipe-approval-environment-not-set`).
+- GitLab CI: `gitlab/os-configuration.gitlab-ci.yml` (stages `plan`, `confirm`, `apply`; the manual jobs `os-configuration-confirm-storage-wipe` and `os-configuration-apply`, `resource_group`. GitLab creates the jobs before the plan runs, so the confirm job exists in every run that can apply and ends at once when nothing is wiped).
+- Azure DevOps: `azure-devops/os-configuration.yml` (stages `Plan`, `ConfirmStorageWipe`, `Apply`; the environments are the variables of `azure-devops/variables/approval-environments.yml`, bound when the pipeline is compiled, so whoever queues the run cannot choose an environment with no approval; the refusals are the stage `ApprovalEnvironmentNotSet` and the refusing variant of `ConfirmStorageWipe`).
 
 Where the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 
@@ -180,8 +196,8 @@ secret reference in the master file (Key Vault), like the discovery reads the BM
   machine. There is no matrix and no loop over nodes: run the pipeline again for the next node after the storage has repaired (exit code 0).
 - **A failed script fails the run.** Exit code 1 (a check failed, the cluster needs attention, a step failed) and 2 (a value of the file is missing)
   fail the job, and the report, plan or log is published as an artifact even then.
-- **GitLab jobs start only from the web form, the API or a schedule**, never from a push or a merge request; the manual job of a change waits in the
-  protected environment. GitHub and Azure DevOps pipelines are started by hand (`workflow_dispatch`, `trigger: none`), apart from the schedule below.
+- **Every pipeline starts by hand**, never from a push or a merge request: GitHub `workflow_dispatch`, GitLab the web form or the API (`workflow: rules:`),
+  Azure DevOps `trigger: none`, apart from the schedule of the check for updates below. The manual job of a change waits in the protected environment.
 
 ### Check for updates on a schedule (owner directive D74)
 
@@ -190,13 +206,14 @@ environment, an update service that has not checked for days). An update that is
 The failed run is the alert: GitHub, GitLab and Azure DevOps each tell people about a failed run (their notification settings), and the report is
 published as the artifact `day2-update-check`. The schedule is the key `devops.pipelines.schedules.check_for_updates` of `infrastructure.yml`: a
 five-field cron expression in UTC, default `17 4 * * *` (every day at 04:17; the update agent of the cluster checks once a day). No platform reads a
-schedule from a variable, so each applies it where it keeps it, and task 05 of the CI/CD setup prints the value to use:
+schedule from a variable, so task 05 of the CI/CD setup applies the key where each platform keeps it (D126: the key works on all three, and an
+empty value means no schedule):
 
-| Platform | Where the schedule is | What to do |
+| Platform | Where the schedule is | What task 05 does |
 | --- | --- | --- |
-| GitHub Actions | the `cron` line of `on.schedule` in `day2-check-updates.yml` (the sample carries the default; a test keeps it equal to the registry default) | change the line in your copy when the key differs. A scheduled run has no inputs, so it takes the Azure view |
-| GitLab CI | the project (CI/CD > Schedules), not the file | create a schedule for the default branch with the value of the key; the Azure view is the default of `UPDATECHECK_SOURCE` |
-| Azure DevOps | not in the sample: a scheduled run cannot supply the run parameters (pool, service connection, variable group and file path have no default, because no value of a deployment is written in a pipeline file), and Learn says a schedule cannot use variables | copy the file, give the four parameters of your deployment as defaults and add the commented `schedules` block with the value of the key |
+| GitHub Actions | the `cron` line of `on.schedule` in `day2-check-updates.yml` (the sample carries the registry default; a test keeps them equal) | writes the value of the key into the cron line (`.github/workflows/` when the workflow is there); commit it. A scheduled run has no inputs, so it takes the Azure view |
+| GitLab CI | the project (a pipeline schedule), not the file | creates or updates the schedule `Azure Local day 2: check for updates` on the default branch, in UTC (deactivates it when the key is empty); the Azure view is the default of `UPDATECHECK_SOURCE` |
+| Azure DevOps | the `schedules` block of `day2-check-updates.yml` (Learn: a schedule cannot use variables and must be in the main YAML file), with the registry defaults of the cron line and of `devops.repository.default_branch` | writes the cron line and the branch; commit them. Every value of the pipeline is a compile-time variable of `variables/pipeline-settings.yml` and its only parameter (`source`) defaults to `azure`, so a scheduled run needs no form. Define no schedule in the pipeline's Triggers settings: those take precedence |
 
 The Azure view (`Get-AvailableSolutionUpdate.azcli.ps1`) needs no access to a node and the Azure CLI on the runner; the identity needs Azure Stack HCI
 Administrator or Reader on the cluster resource. The cluster view (`Get-AvailableSolutionUpdate.ps1`) needs a route to the cluster and signs in to nothing.
@@ -226,7 +243,8 @@ The first run uses the hosted image, because the self-hosted runners do not exis
 
 Task 05 sets each variable below from its key: on GitHub as a repository variable (`vars.NAME`; the sign-in values also per
 environment), on GitLab as a project CI/CD variable (scope `*`; the sign-in values also per environment), on Azure DevOps in the variable
-group `devops.pipelines.variable_group` (one per environment, `<name>-<environment>`). Run it again after you change the file.
+group `devops.pipelines.variable_group` (the repository group the pipelines read, and one per environment, `<name>-<environment>`) or in the
+settings files of the repository (`azure-devops/variables/pipeline-settings.yml` and `approval-environments.yml`). Run it again after you change the file.
 
 | Variable | Key in `infrastructure.yml` | GitHub | GitLab | Azure DevOps |
 | --- | --- | --- | --- | --- |
@@ -236,11 +254,14 @@ group `devops.pipelines.variable_group` (one per environment, `<name>-<environme
 | `ARM_USE_OIDC` (method oidc) or `ARM_CLIENT_SECRET` (method client_secret, a secret read from `devops.authentication.client_secret`) | `devops.authentication.method` | variable / secret | variable / masked | variable group (secret) |
 | `AZL_AUTH_METHOD` | `devops.authentication.method` (`oidc` or `client_secret`) | variable | variable | variable group |
 | `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEND_CONTAINER`, `TF_BACKEND_KEY` | `devops.state.resource_group`, `.storage_account`, `.container`, `.azure_local_key` | variable | variable | variable group |
-| `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) | variable | variable | (the pool, a run parameter) |
+| `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) | variable | variable | (the pool: `AZL_AGENT_POOL`) |
+| `AZL_AGENT_POOL` | `devops.runners[].pool` of the general runner | | | `pipeline-settings.yml` |
+| `AZL_SERVICE_CONNECTION`, `AZL_VARIABLE_GROUP` | `devops.pipelines.service_connection`, `devops.pipelines.variable_group` | | | `pipeline-settings.yml` (the group also as its `- group:` entry) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
-| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE` (Azure DevOps only), `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | the variable of the same name in `azure-devops/variables/approval-environments.yml` (written once in the repository; see below) |
-| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
-| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
+| `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_OS_CONFIGURATION_CLEAR_STORAGE`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT`, `_OPERATIONS` | `devops.pipelines.environments.*` | variable | variable | `approval-environments.yml` (see below) |
+| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | `pipeline-settings.yml` |
+| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | `pipeline-settings.yml` |
+| the schedule of the check for updates | `devops.pipelines.schedules.check_for_updates` | the cron line of the workflow | the project schedule | the cron line and branch of the pipeline |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
 | `AZL_VALIDATE_JOB_TIMEOUT_MINUTES`, `AZL_DEPLOY_JOB_TIMEOUT_MINUTES` | `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, each plus 60 minutes | variable | | |
 | `AZL_DEFAULT_BRANCH` | `devops.repository.default_branch` | | | variable group |
@@ -250,23 +271,26 @@ Each name is registered as a `pipeline_inputs` or `pipeline_variables` entry of 
 the key as `source_key`. The table of names and keys is `$script:AzlPipelineVariable` in `scripts/common/cicd-infra/AzlCicdInfra.psm1`;
 `tests/pipelines/PipelineSettings.Tests.ps1` checks the files, the entries and the setup against each other.
 
-### Azure DevOps run parameters and the approval environments
+### Azure DevOps: the settings files task 05 writes (D126)
 
-Azure DevOps reads the pool, the service connection, the variable group and a parameter path before any
-variable exists (a macro variable is expanded only in task inputs, and `${{ variables.name }}` does not see pipeline or library variables:
+Azure DevOps reads the pool, the service connection and the variable group before any variable of a library or of the pipeline exists (a
+macro variable is expanded only in task inputs, and `${{ variables.name }}` sees only the variables of the YAML files:
 [Define variables](https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax),
-[Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). These are run parameters
-**with no default**: the run form asks for them, and task 05 prints the value to enter for each.
+[Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). So every Azure DevOps pipeline includes
+`- template: variables/pipeline-settings.yml` and reads these values as compile-time variables, the same names GitHub and GitLab read as
+variables. They are **not run parameters**: no run form asks for them, a scheduled run needs none, and whoever queues a run cannot change them.
+Task 05 (`Set-CicdVariables.ps1`) writes the file from `infrastructure.yml`; commit it in a pull request. The toolkit ships it empty, and
+Azure DevOps refuses to compile a pipeline with an empty pool, so nothing runs until the file is written.
 
-| Parameter | Pipelines | Enter |
+| Variable of `pipeline-settings.yml` | Key | Used as |
 | --- | --- | --- |
-| `agentPool`, `agent_pool` | all | `devops.runners[].pool` of the general runner (`hosted` for the first run of `cicd-infra.yml`) |
-| `serviceConnection`, `azureServiceConnection`, `service_connection` | all | `devops.pipelines.service_connection` |
-| `variableGroup`, `variable_group` | all | `devops.pipelines.variable_group`, with environments `<name>-<environment>` |
-| `infrastructureFile`, `infrastructure_file` | all | `devops.pipelines.infrastructure_file` |
-| `handoff_path` | `os-configuration.yml` | `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster) |
+| `AZL_AGENT_POOL` | `devops.runners[].pool` of the general runner | `pool: name:` of every self-hosted job (`cicd-infra.yml` runs Plan and Apply on the hosted image while its `runner` parameter is `hosted`, the first run) |
+| `AZL_SERVICE_CONNECTION` | `devops.pipelines.service_connection` | the service connection of the Azure tasks |
+| `AZL_VARIABLE_GROUP` | `devops.pipelines.variable_group` | the repository group, also written as the `- group:` entry of the file |
+| `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | the master file passed to the scripts |
+| `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | the handoff files of `os-configuration.yml` (`none` for an ISO-installed cluster) |
 
-**The approval environments are not run parameters.** A deployment job that changes a system sits behind an environment with an Approvals check, and a deployment job to an environment with no check runs without one. If the environment were a run parameter, whoever queues the run could type the name of an environment with no check. So the Azure DevOps pipelines bind it when they are compiled: each environment is a variable of a YAML file of the repository, `azure-devops/variables/approval-environments.yml`, which every pipeline includes with `- template: variables/approval-environments.yml` (a template expression sees only the variables of YAML files, not those stored on the pipeline, in a library or given when you start a run: [Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). The variables have the names of the GitHub repository variables and the GitLab project variables of the same purpose, so the three platforms share them. The toolkit ships them empty, because no value of a deployment is written in the toolkit: write the names once, in a pull request, where task 05 lists them. Copy the file with the pipeline when you copy a pipeline to your own repository.
+**The approval environments are not run parameters.** A deployment job that changes a system sits behind an environment with an Approvals check, and a deployment job to an environment with no check runs without one. If the environment were a run parameter, whoever queues the run could type the name of an environment with no check. So the Azure DevOps pipelines bind it when they are compiled: each environment is a variable of a YAML file of the repository, `azure-devops/variables/approval-environments.yml`, which every pipeline includes with `- template: variables/approval-environments.yml` (a template expression sees only the variables of YAML files, not those stored on the pipeline, in a library or given when you start a run: [Template expressions](https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions)). The variables have the names of the GitHub repository variables and the GitLab project variables of the same purpose, so the three platforms share them. The toolkit ships them empty, because no value of a deployment is written in the toolkit: task 05 writes them from `devops.pipelines.environments.*`; commit the file in a pull request. Copy the `variables` folder with the pipeline when you copy a pipeline to your own repository.
 
 | Variable of `approval-environments.yml` | Enter | Pipeline and stage |
 | --- | --- | --- |
@@ -278,15 +302,15 @@ variable exists (a macro variable is expanded only in task inputs, and `${{ vari
 | `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
 
 While a variable is empty and the run would change something, a guard stage (`ApprovalEnvironmentNotSet`; `ConfirmStorageWipe` for the wipe approval) fails with a message that names the file and changes nothing. The stages that only read (`Plan`, `Validate`, `Preconditions`, `Verify`) run as before and have no environment.
-The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`,
-`all`, `false`, `none`). Because these parameters have no default, a run started by a push or a pull request could not supply them: the
-Azure DevOps pipelines are started by hand.
+The parameters left are choices of one run (mode, nodes, steps, resume, an artifact run ID, the node of a day 2 operation) and default to the
+safe choice (`Plan`, `all`, `false`, `none`); only the node has no default. The Azure DevOps pipelines are started by hand, like the same pipelines on
+GitHub and GitLab.
 
 Each environment is an entry of `devops.environments[]` with `approval_required: true`; task 05 stops when a name is not.
 
 **An empty environment variable refuses to run, on every platform.** A job that names an environment through a variable (GitHub: `environment: ${{ vars.AZL_ENVIRONMENT_* }}`, GitLab: `environment:name: $AZL_ENVIRONMENT_*`) runs with no environment, and so with no approval, when the variable is empty. So every job that changes something has the same guard as the Azure DevOps stage `ApprovalEnvironmentNotSet`: on GitHub its `if` carries `&& vars.AZL_ENVIRONMENT_X != ''` and the job `approval-environment-not-set` runs instead (its `if` is the same condition with `== ''`); on GitLab its rule carries `&& $AZL_ENVIRONMENT_X != null && $AZL_ENVIRONMENT_X != ""` and a job named `<pipeline>-approval-environment-not-set` has the opposite rule. The refusal job writes one error that names the variable and its `devops.pipelines.environments.*` key, exits 1 and sends nothing to any machine. `tests/pipelines/ApprovalEnvironmentPipelines.Tests.ps1` checks every GitHub and GitLab job that binds an `AZL_ENVIRONMENT_*` variable.
 
-**The master file comes from the branch.** On Azure DevOps the `infrastructure_file` run parameter can name any file on the branch the run starts from, so `-RequireNodeInFile` (the node of the day 2 pipelines must be a node of the file) trusts the infrastructure files of that branch: keep them under review (a branch policy on the protected default branch) and run the changing pipelines from that branch.
+**The master file comes from the branch.** On Azure DevOps `AZL_INFRASTRUCTURE_FILE` of the settings file on the branch the run starts from names the file, so `-RequireNodeInFile` (the node of the day 2 pipelines must be a node of the file) trusts the infrastructure files of that branch: keep them under review (a branch policy on the protected default branch) and run the changing pipelines from that branch.
 
 ## Sign-in
 
@@ -324,7 +348,11 @@ each with a one-line comment.
 | The OS configuration report for the ARM run | by run ID (`os_configuration_run_id`) | a path; add `needs: pipeline:` (parent-child) or `needs: project:` (Premium) to fetch the artifact | by pipeline and run ID (`osConfigurationPipelineId`, `osConfigurationRunId`) | GitLab fetches another pipeline's artifact only through `needs` |
 | Deploy branch | `github.event.repository.default_branch` | `$CI_DEFAULT_BRANCH` | `AZL_DEFAULT_BRANCH` (`devops.repository.default_branch`) | Azure DevOps has no predefined variable with the default branch |
 | Tool installation | setup actions | `gitlab/Use-AzlGitLabTool.ps1` | installer tasks | GitLab has no installer |
-| Second approval of a storage wipe | the apply approval and the published wipe list | the manual job and the wipe list | a second environment | only Azure DevOps has stage-level approvals by environment |
+| Values read before any variable exists | none | none | `variables/pipeline-settings.yml` and `approval-environments.yml`, written by task 05 | Azure DevOps reads a pool, a service connection and a variable group when it compiles the pipeline |
+| Where the schedule lives | the cron line of the file | the project schedule | the cron line and branch of the file | GitLab keeps schedules in the project; task 05 writes or creates all three |
+| Second approval of a storage wipe | the job `confirm-storage-wipe`, only when the master file wipes | the manual job `os-configuration-confirm-storage-wipe` in every run that can apply (it ends at once when nothing is wiped) | the stage `ConfirmStorageWipe`, only when the master file wipes | GitLab creates the jobs before the plan runs, so it cannot leave the job out |
+
+These are differences of syntax, not of design: the same entry scripts, values, approvals, refusals and schedule ([`PARITY.md`](PARITY.md)).
 
 ## Prerequisites
 
@@ -342,7 +370,8 @@ The on-premises configuration stages require the general self-hosted runner (the
 ## Customization
 
 1. Fill in `devops` in `infrastructure.yml` (the `pipelines`, `authentication`, `runners`, `state` and `repository` keys) and run the
-   CI/CD setup (tasks 01 to 06). Task 05 sets every variable the pipelines read.
-2. Copy the pipeline file for your platform to the appropriate location.
-3. Adjust stage triggers and approval gates per your change management process.
+   CI/CD setup (tasks 01 to 06). Task 05 sets every variable the pipelines read, writes the Azure DevOps settings files and the cron line of the
+   schedule, and creates the GitLab schedule; commit the changed files in a pull request.
+2. Copy the pipeline file for your platform to the appropriate location (on Azure DevOps with the `variables` folder).
+3. Give the approval environments the reviewers of your change process (task 04 creates them from `devops.environments[]`).
 4. Configure the self-hosted runner with on-premises network access.

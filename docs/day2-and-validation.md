@@ -57,6 +57,6 @@ for the files per platform, the inputs, the approval and the lock.
 - **The account.** The scripts connect as the service account of the runner, which must be an administrator of the cluster. No node password is in a
   pipeline; the node maintenance reads the node login from the secret reference of the file (`identity.local_admin`), like every other toolkit script.
 - **A schedule for the check.** `day2-check-updates` runs on the schedule `devops.pipelines.schedules.check_for_updates` (default every day at 04:17
-  UTC) and fails the run when the cluster needs attention, so the platform's notification of a failed run is the alert. GitHub keeps the cron
-  expression in the workflow file, GitLab in the project schedules, and Azure DevOps needs a copy of the file with defaults for its run parameters
-  (a scheduled run cannot ask for them); the README has the table.
+  UTC) and fails the run when the cluster needs attention, so the platform's notification of a failed run is the alert. GitHub and Azure DevOps keep the cron
+  expression in the pipeline file and GitLab in the project; task 05 writes the cron line (and the Azure DevOps branch) and creates the GitLab schedule, so
+  the key works on all three platforms (D126); the README has the table.

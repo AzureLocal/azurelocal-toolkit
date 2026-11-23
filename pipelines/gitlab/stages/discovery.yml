@@ -35,6 +35,12 @@
 # Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7, a route to the BMC addresses (HTTPS, TCP 443) and, for the directory step,
 # the ActiveDirectory module (RSAT) on a domain-joined runner. A step the runner cannot do fails with its reason in the report.
 
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
 stages:
   - discovery
 

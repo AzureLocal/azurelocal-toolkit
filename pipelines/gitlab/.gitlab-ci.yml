@@ -21,13 +21,18 @@
 # infrastructure file, into IAC_DIRECTORY outside the checkout (they hold subscription IDs and names: never an artifact, removed after the job).
 # =============================================================================
 
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
 stages:
   - validate
   - plan
   - deploy-foundation
   - configure-onprem
   - configure-operations
-  - validate-deployment
 
 variables:
   TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/azure-local"
@@ -52,5 +57,4 @@ include:
   - local: 'pipelines/gitlab/stages/deploy-foundation.yml'
   - local: 'pipelines/gitlab/stages/configure-onprem.yml'
   - local: 'pipelines/gitlab/stages/configure-operations.yml'
-  - local: 'pipelines/gitlab/stages/validate-deployment.yml'
   - local: 'pipelines/gitlab/stages/deploy-cicd-infra.yml'

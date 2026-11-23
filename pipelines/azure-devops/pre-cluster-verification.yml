@@ -24,29 +24,27 @@
 # agent (or set the report directory of the master file to a folder both runs reach).
 #
 # What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the
-# value of every run parameter to enter.
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the
+# value of every setting, and Set-CicdVariables.ps1 writes them into variables/pipeline-settings.yml.
+#   Agent pool      a self-hosted pool (AZL_AGENT_POOL: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the
 #                   nodes (WinRM, TCP 5985 or 5986), to a domain controller (LDAP, TCP 389) and to the DNS servers of the file. A check the agent
 #                   cannot ask is Skipped with its reason, and a Skipped check blocks the verdict: give its id in accept_skipped to accept it (the
 #                   report records that you did), or run from an agent that can ask.
-#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#   Service conn.   the Azure Resource Manager service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05
 #                   creates it), workload identity federation, with Reader for the checks (Owner or Contributor for fix) and Key Vault Secrets User on
 #                   the vaults of the local administrator and the LCM user.
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#   Variable group  AZL_VARIABLE_GROUP (Pipelines > Library; devops.pipelines.variable_group, the repository group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
 #   Environment     the name in variables/approval-environments.yml (AZL_ENVIRONMENT_ARM_DEPLOYMENT: devops.pipelines.environments.arm_deployment; task 05
 #                   lists the value to write there): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it from
 #                   devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a
 #                   run parameter (Learn: a template expression sees only the variables of the YAML files).
-#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other
-#                   keywords take template expressions or runtime parameters
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
-#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval environment is
-#                   not one of them: a value the queuer must not choose is read from a YAML file of the repository.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 #
-# Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
+# Where the files come from: the master file is a path in this repository (AZL_INFRASTRUCTURE_FILE: devops.pipelines.infrastructure_file).
 # The OS configuration report is the artifact os-configuration-report of an OS configuration pipeline run (os_configuration_pipeline_id and
 # os_configuration_run_id) or a repository path (os_configuration_report). The ZTP handoff file is optional (handoff_file).
 name: pre-cluster-verification-$(Date:yyyyMMdd)$(Rev:.r)
@@ -61,9 +59,6 @@ pr: none
 lockBehavior: sequential
 
 parameters:
-  - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
-    type: string
   - name: mode
     displayName: 'Plan: what would be checked (offline). Verify: run every check and write the result the ARM run reads'
     type: string
@@ -103,18 +98,10 @@ parameters:
     displayName: 'Verify only: install the Environment Checker on the nodes for this run and remove it again (needs the approval of the environment)'
     type: boolean
     default: false
-  - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
-    type: string
-  - name: service_connection
-    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
-    type: string
-  - name: variable_group
-    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
-    type: string
 
 variables:
-  - group: ${{ parameters.variable_group }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_ARM_DEPLOYMENT: the approval environment, bound at compile time (not a run parameter).
   - template: variables/approval-environments.yml
   - name: preClusterScript
@@ -130,7 +117,7 @@ stages:
           - job: Verify
             displayName: 'Verify (read only)'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Read-only checks that make no long wait: the toolkit's limit, not a figure from Microsoft.
@@ -159,7 +146,7 @@ stages:
               - task: AzurePowerShell@5
                 displayName: 'Verify'
                 inputs:
-                  azureSubscription: ${{ parameters.service_connection }}
+                  azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                   azurePowerShellVersion: OtherVersion
                   preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                   pwsh: true
@@ -183,7 +170,7 @@ stages:
                     if ($code -ne 0) { throw "Invoke-AzureLocalPreClusterVerification.ps1 exited with code $code." }
                 env:
                   GATE_SCRIPT: $(preClusterScript)
-                  GATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                  GATE_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                   GATE_MODE: ${{ parameters.mode }}
                   GATE_OS_REPORT: ${{ iif(and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.os_configuration_report) }}
                   GATE_HANDOFF_FILE: ${{ parameters.handoff_file }}
@@ -208,7 +195,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment is set'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -228,7 +215,7 @@ stages:
           - deployment: VerifyWithChanges
             displayName: 'Verify with changes'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Required reviewers on this environment are the approval gate. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
@@ -262,7 +249,7 @@ stages:
                     - task: AzurePowerShell@5
                       displayName: 'Verify with changes'
                       inputs:
-                        azureSubscription: ${{ parameters.service_connection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         azurePowerShellVersion: OtherVersion
                         preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                         pwsh: true
@@ -288,7 +275,7 @@ stages:
                           if ($code -ne 0) { throw "Invoke-AzureLocalPreClusterVerification.ps1 exited with code $code." }
                       env:
                         GATE_SCRIPT: $(preClusterScript)
-                        GATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        GATE_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                         GATE_MODE: ${{ parameters.mode }}
                         GATE_OS_REPORT: ${{ iif(and(ne(parameters.os_configuration_pipeline_id, 'none'), ne(parameters.os_configuration_run_id, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.os_configuration_report) }}
                         GATE_HANDOFF_FILE: ${{ parameters.handoff_file }}

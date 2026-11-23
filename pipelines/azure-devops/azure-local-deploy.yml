@@ -3,10 +3,10 @@
 # =============================================================================
 # Mirrors the GitLab CI/CD pipeline with Azure Pipelines syntax.
 #
-# Requirements (names only, no value is in this file; task 05 of the CI/CD setup lists the value of every run parameter to enter):
-#   - Service Connection: the parameter serviceConnection (devops.pipelines.service_connection; task 05 creates it, workload identity federation)
-#   - Agent Pool: the parameter agentPool (devops.runners[].pool of the general runner; self-hosted with on-prem access)
-#   - Variable Group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment> per environment). Task 05 writes to it
+# Requirements (names only, no value is in this file; task 05 of the CI/CD setup writes every value below into variables/pipeline-settings.yml and variables/approval-environments.yml (Set-CicdVariables.ps1, from infrastructure.yml; commit both in a pull request)):
+#   - Service Connection: AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05 creates it, workload identity federation)
+#   - Agent Pool: AZL_AGENT_POOL (devops.runners[].pool of the general runner; self-hosted with on-prem access)
+#   - Variable Group: AZL_VARIABLE_GROUP (devops.pipelines.variable_group: the group of the repository). Task 05 writes to it
 #     ARM_*, TF_BACKEND_RG, _SA, _CONTAINER and _KEY (devops.state.*, the key devops.state.azure_local_key), AZL_DEFAULT_BRANCH
 #     (devops.repository.default_branch) and the tool versions AZL_TERRAFORM_VERSION, AZL_PYTHON_VERSION, AZL_ANSIBLE_CORE_VERSION,
 #     AZL_ANSIBLE_LINT_VERSION, AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION and AZL_AZ_KEYVAULT_VERSION (devops.pipelines.tool_versions.*),
@@ -15,44 +15,29 @@
 #     with approval checks; task 05 lists the value to write there, once, in a pull request). It is bound when the pipeline is compiled and is not
 #     a run parameter: a deployment job to an environment with no approval check runs without one, so the person who queues the run must not
 #     choose it. While it is empty, the stage ApprovalEnvironmentNotSet fails after the plan and nothing is changed.
-#   - Infrastructure file: the parameter infrastructureFile (devops.pipelines.infrastructure_file). Each Terraform and Ansible job writes the
+#   - Infrastructure file: AZL_INFRASTRUCTURE_FILE (devops.pipelines.infrastructure_file). Each Terraform and Ansible job writes the
 #     Terraform variables (into the job's temporary directory) and the Ansible inventory, group_vars and host_vars (into src/ansible/inventory,
 #     git-ignored there) from it (config/variables/scripts/New-IacVariableFiles.ps1): they hold subscription IDs and names, so they are never
 #     committed or published.
 #   - The Terraform extension from the marketplace (TerraformInstaller@1, TerraformTaskV4@4).
 #
-# Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
-# inputs, and that other keywords take template expressions or runtime parameters
-# (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-# ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool is a runtime parameter, and so are the names of the
-# service connection and the variable group that task 05 creates from the file (${{ parameters.name }}, no default). The approval environment is
-# not one of them: a value the queuer must not choose is read from a YAML file of the repository. A run that nobody started
-# cannot supply the parameters: this pipeline is started by hand.
+# Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                 compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                 and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                 (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                 scheduled run needs none.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. Only the
 # jobs that validate and plan use it; the apply and the on-premises jobs run in the self-hosted pool.
-# Started by hand, like the schema 5 pipelines (arm-deployment, os-configuration, cicd-infra): a run started by a push or a pull request
-# cannot supply the parameters below, which have no default.
+# Started by hand, like the other deployment pipelines (arm-deployment, os-configuration, cicd-infra): a deployment is a decision, not a push.
 trigger: none
 pr: none
 
 parameters:
-  - name: agentPool
-    displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
-    type: string
-  - name: serviceConnection
-    displayName: Azure Resource Manager service connection. Enter devops.pipelines.service_connection
-    type: string
-  - name: variableGroup
-    displayName: Variable group with ARM_*, TF_BACKEND_* and the tool versions. Enter devops.pipelines.variable_group (with environments, <name>-<environment>)
-    type: string
-  - name: infrastructureFile
-    displayName: Path of infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file
-    type: string
 
 variables:
-  - group: ${{ parameters.variableGroup }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT: the approval environment of the three deployment stages, bound at compile time (not a run parameter).
   - template: variables/approval-environments.yml
   - name: TF_ROOT
@@ -67,6 +52,26 @@ stages:
   - stage: Validate
     displayName: 'Validate'
     jobs:
+      # The master file against the schema and the rules, the same check as config:validate of GitLab and config-validate of GitHub.
+      - job: CheckInfrastructureFile
+        displayName: 'Check infrastructure.yml'
+        pool:
+          name: ${{ variables.AZL_AGENT_POOL }}
+          demands:
+            - pwsh
+        # One schema check of one file: the toolkit's limit, not a figure from Microsoft.
+        timeoutInMinutes: 15
+        steps:
+          - checkout: self
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              if (-not (Get-Module -ListAvailable powershell-yaml | Where-Object Version -EQ $env:AZL_POWERSHELL_YAML_VERSION)) { Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Scope CurrentUser -Force -Repository PSGallery }
+              ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:IAC_INFRASTRUCTURE_FILE
+              if ($LASTEXITCODE -ne 0) { throw "Test-InfrastructureFile.ps1 exited with code $LASTEXITCODE." }
+            displayName: 'Check infrastructure.yml'
+            env:
+              IAC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+
       - job: TerraformValidate
         displayName: 'Terraform Validate'
         # Validates only: the hosted image is a platform choice.
@@ -131,7 +136,7 @@ stages:
               exit $LASTEXITCODE
             displayName: 'Write the Terraform variables from the infrastructure file'
             env:
-              IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+              IAC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
 
           - task: TerraformTaskV4@4
             displayName: 'Terraform Init'
@@ -139,7 +144,7 @@ stages:
               provider: 'azurerm'
               command: 'init'
               workingDirectory: '$(TF_ROOT)'
-              backendServiceArm: ${{ parameters.serviceConnection }}
+              backendServiceArm: ${{ variables.AZL_SERVICE_CONNECTION }}
               backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
               backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
               backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
@@ -152,7 +157,7 @@ stages:
               command: 'plan'
               workingDirectory: '$(TF_ROOT)'
               commandOptions: '-out=tfplan -input=false -var-file=$(Agent.TempDirectory)/iac/terraform/azure-local/terraform.tfvars.json'
-              environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+              environmentServiceNameAzureRM: ${{ variables.AZL_SERVICE_CONNECTION }}
 
           - publish: '$(TF_ROOT)/tfplan'
             artifact: tfplan
@@ -170,7 +175,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment is set'
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -193,7 +198,7 @@ stages:
           - deployment: TerraformApply
             displayName: 'Terraform Apply'
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
             # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
             environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
             strategy:
@@ -216,7 +221,7 @@ stages:
                         provider: 'azurerm'
                         command: 'init'
                         workingDirectory: '$(TF_ROOT)'
-                        backendServiceArm: ${{ parameters.serviceConnection }}
+                        backendServiceArm: ${{ variables.AZL_SERVICE_CONNECTION }}
                         backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
                         backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
                         backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
@@ -229,7 +234,7 @@ stages:
                         command: 'apply'
                         workingDirectory: '$(TF_ROOT)'
                         commandOptions: '-auto-approve -input=false $(Pipeline.Workspace)/tfplan/tfplan'
-                        environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+                        environmentServiceNameAzureRM: ${{ variables.AZL_SERVICE_CONNECTION }}
 
       # =========================================================================
       # Stage: Configure On-Prem (self-hosted agent)
@@ -245,7 +250,7 @@ stages:
           - deployment: OnPremConfig
             displayName: 'Ansible Configuration'
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
             # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
             environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
             strategy:
@@ -262,7 +267,7 @@ stages:
                     - task: AzureCLI@2
                       displayName: 'Run Ansible Playbooks (05, 01, 02, 03)'
                       inputs:
-                        azureSubscription: ${{ parameters.serviceConnection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         scriptType: pscore
                         scriptLocation: inlineScript
                         addSpnToEnvironment: true
@@ -288,7 +293,7 @@ stages:
                           ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml -e "azurelocal_os_configuration_infrastructure_file=$(Build.SourcesDirectory)/$env:IAC_INFRASTRUCTURE_FILE"
                           ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
                       env:
-                        IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                        IAC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
 
       # =========================================================================
       # Stage: Configure Operations
@@ -300,7 +305,7 @@ stages:
           - deployment: Operations
             displayName: 'Monitoring'
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
             # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
             environment: ${{ variables.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
             strategy:
@@ -317,7 +322,7 @@ stages:
                     - task: AzureCLI@2
                       displayName: 'Run Operations Playbooks (04)'
                       inputs:
-                        azureSubscription: ${{ parameters.serviceConnection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         scriptType: pscore
                         scriptLocation: inlineScript
                         inlineScript: |
@@ -333,4 +338,4 @@ stages:
                           pip install -r (Get-ChildItem -LiteralPath (Join-Path $root 'azure/azcollection') -Filter 'requirements*.txt' | Select-Object -First 1).FullName
                           ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
                       env:
-                        IAC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                        IAC_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}

@@ -78,7 +78,7 @@ platform's approval, publishing `report.json`, `summary.md` and the event feed o
 
 No client secret is in a file: with `devops.authentication.method` client_secret it is a masked variable or secret that task 05 reads
  from Key Vault. The files hold no value: task 05 of the CI/CD setup sets every variable they read from `infrastructure.yml` (see
- [pipelines/README.md](../pipelines/README.md#where-every-value-comes-from)); on Azure DevOps it lists the run parameters to enter and the environment name to write in `approval-environments.yml`. Use a
+ [pipelines/README.md](../pipelines/README.md#where-every-value-comes-from)); on Azure DevOps it writes the pool, the service connection, the variable group and the paths into `pipelines/azure-devops/variables/pipeline-settings.yml` and the environment names into `approval-environments.yml` (D126: no run parameter carries a deployment value). Use a
 self-hosted runner that reaches Azure over HTTPS. The Active Directory check also needs a domain-joined runner with the
 ActiveDirectory module; elsewhere it is reported as Skipped, never as passed.
 

@@ -158,7 +158,7 @@ Job routing:
 | --- | --- | --- |
 | GitHub | `runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]` | `runs-on: [self-hosted, windows, ztp]` |
 | GitLab | `tags: [$AZL_RUNNER_LABEL]` (the tag is set when the runner token is created) | `tags: [ztp, windows]` |
-| Azure DevOps | `pool: name: ${{ parameters.agentPool }}` (`devops.runners[].pool`) | the pool of the ztp runner (demands `ztp`) |
+| Azure DevOps | `pool: name: ${{ variables.AZL_AGENT_POOL }}` (`devops.runners[].pool`, a variable of `variables/pipeline-settings.yml` that task 05 writes) | the pool of the ztp runner (demands `ztp`) |
 
 `AZL_RUNNER_LABEL` is `devops.pipelines.runner_label`: one entry of `devops.runners[].labels` of the general runner; `AZL_RUNNER_OS` is its `devops.runners[].os_type`. Task 05 sets them, and the approval environment variables, from the file as GitHub repository variables or GitLab project variables. Azure DevOps reads the pool before any variable exists, so there it is a run parameter with no default; task 05 prints the value to enter. The approval environment is not a run parameter: it is the variable of the same name in `pipelines/azure-devops/variables/approval-environments.yml`, which task 05 lists the value for. The pipelines under `pipelines/` hold no runner label, pool or environment name.
 

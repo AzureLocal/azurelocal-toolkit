@@ -14,9 +14,9 @@
 # notification (Settings > Integrations, and each user's notification settings). An update that is merely offered ends with exit code 0: read the verdict in the
 # job log and the report.
 #
-# The schedule (owner directive D74: check for updates on a schedule). GitLab keeps a schedule in the project, not in this file: CI/CD > Schedules > New schedule,
-# with the cron expression of the key devops.pipelines.schedules.check_for_updates of infrastructure.yml (UTC; task 05 of the CI/CD setup prints it) and the default
-# branch as the target. A scheduled pipeline has UPDATECHECK_SOURCE azure, the default below. The jobs start only from a schedule, the web form or the API, never
+# The schedule (owner directive D74: check for updates on a schedule). GitLab keeps a schedule in the project, not in this file (CI/CD > Schedules):
+# task 05 of the CI/CD setup (Set-CicdVariables.ps1) creates or updates it from the key devops.pipelines.schedules.check_for_updates of infrastructure.yml
+# (UTC), on the default branch, and deactivates it when the key is empty (D126: the same schedule as GitHub and Azure DevOps). A scheduled pipeline has UPDATECHECK_SOURCE azure, the default below. The jobs start only from a schedule, the web form or the API, never
 # from a push or a merge request.
 #
 # Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: expands CI/CD variables
@@ -32,6 +32,12 @@
 #   UPDATECHECK_SOURCE     azure | cluster
 # Runner: the general runner with the tag AZL_RUNNER_LABEL and pwsh 7. Source azure also needs the Azure CLI (the runner role installs it on Linux). Source
 # cluster needs a route to the cluster (WinRM, TCP 5985 or 5986) and a runner account that may read the update state of the cluster; no password is stored here.
+
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from a schedule of the project (task 05 creates it from
+# devops.pipelines.schedules.check_for_updates), the web form or the API, never from a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/'
 
 stages:
   - day2-check-updates

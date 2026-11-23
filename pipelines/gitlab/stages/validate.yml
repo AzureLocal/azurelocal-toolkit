@@ -15,7 +15,6 @@ terraform:validate:
         terraform fmt -check -recursive
       '
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 ansible:lint:
@@ -30,7 +29,6 @@ ansible:lint:
         ansible-playbook --syntax-check playbooks/site.yml
       '
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 # The infrastructure file is checked before anything is generated from it.
@@ -44,7 +42,6 @@ config:validate:
         exit $LASTEXITCODE
       '
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 terraform:plan:

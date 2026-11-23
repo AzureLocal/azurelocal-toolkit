@@ -39,6 +39,12 @@
 # variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
 # ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
 stages:
   - day2-cluster-operations
 
@@ -75,7 +81,7 @@ day2-cluster-operations-read:
   # Reads of the cluster over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
   timeout: 30 minutes
   rules:
-    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/ && $OPERATIONS_ACTION =~ /^(HealthCheck|Alerts|Capacity)$/'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $OPERATIONS_ACTION =~ /^(HealthCheck|Alerts|Capacity)$/'
   script:
     - |
       pwsh -NoProfile -Command '

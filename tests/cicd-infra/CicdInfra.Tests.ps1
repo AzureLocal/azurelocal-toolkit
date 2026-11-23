@@ -518,8 +518,8 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         ($v | Where-Object Name -eq 'AZL_RUNNER_LABEL').Key | Should -Be 'devops.pipelines.runner_label'
         ($v | Where-Object Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT').Value | Should -Be 'azr-prod-us'
         ($v | Where-Object Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT').Key | Should -Be 'devops.pipelines.environments.arm_deployment'
-        # the storage wipe approval is read by the Azure DevOps pipeline only
-        @($v | Where-Object Name -eq 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE').Count | Should -Be 0
+        # the second approval of a storage wipe is read on every platform (D126)
+        ($v | Where-Object Name -eq 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE').Key | Should -Be 'devops.pipelines.environments.os_configuration_clear_storage'
     }
     It 'GitHub: sets each one as a repository variable (no --env), from the file' {
         Start-Recording { param($f, $a) New-Out '' }
@@ -566,7 +566,7 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         }
         finally { $env:GITLAB_TOKEN = $null }
     }
-    It 'Azure DevOps: sets no variable; it lists the pool to enter as a run parameter and each environment to write in the variables template, never as a run parameter' {
+    It 'Azure DevOps: sets no variable; it names the pool and each environment for the settings files Set-CicdVariables.ps1 writes, never a run parameter (D126)' {
         Start-Recording {
             param($f, $a)
             if ($f -eq 'az') { return New-Out 'x' }
@@ -575,22 +575,21 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx' }
         $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
         (Get-Calls 'AZL_').Count | Should -Be 0
-        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
-        ($rows | Where-Object Target -eq 'devops.runners[].pool').Detail | Should -Match "Enter 'pool-lnx' as the agent pool parameter"
+        @($r | Where-Object Action -eq 'Pipeline run parameter').Count | Should -Be 0 -Because 'no deployment value is a run parameter'
+        $rows = @($r | Where-Object Action -eq 'Pipeline settings file')
         $rows | ForEach-Object { $_.Status | Should -Be 'Skipped' }
-        # the approval environments are not run parameters: whoever queues a run could choose an environment with no approval. The task lists them for the YAML file of the repository
-        @($rows | Where-Object Target -like 'devops.pipelines.environments.*').Count | Should -Be 0
-        $templateRows = @($r | Where-Object Action -eq 'Pipeline variable template')
-        $templateRows | ForEach-Object { $_.Status | Should -Be 'Skipped' }
+        ($rows | Where-Object Target -eq 'devops.runners[].pool').Detail | Should -Match "writes 'pool-lnx' as AZL_AGENT_POOL into pipelines/azure-devops/variables/pipeline-settings\.yml"
+        # the approval environments go to the other YAML file of the repository: whoever queues a run cannot choose an environment with no approval
+        $templateRows = @($rows | Where-Object Target -like 'devops.pipelines.environments.*')
         @($templateRows | ForEach-Object Target | Sort-Object) | Should -Be @('devops.pipelines.environments.arm_deployment', 'devops.pipelines.environments.cicd_infra', 'devops.pipelines.environments.os_configuration', 'devops.pipelines.environments.os_configuration_clear_storage', 'devops.pipelines.environments.terraform_deployment')
-        ($templateRows | Where-Object Target -eq 'devops.pipelines.environments.os_configuration_clear_storage').Detail | Should -Match "Write 'azr-prod-us' as the value of AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE in pipelines/azure-devops/variables/approval-environments\.yml"
-        foreach ($t in $templateRows) { $t.Detail | Should -Match 'not a run parameter' }
+        ($templateRows | Where-Object Target -eq 'devops.pipelines.environments.os_configuration_clear_storage').Detail | Should -Match "writes 'azr-prod-us' as AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE into pipelines/azure-devops/variables/approval-environments\.yml"
+        foreach ($t in $rows) { $t.Detail | Should -Match 'never a run parameter' }
     }
     It 'Azure DevOps: there is no default pool, so a general runner without one is refused' {
         { Get-AzlCicdPipelineInput -Settings (Get-Settings 'azure_devops') } | Should -Throw '*devops.runners[[]].pool is not set*'
         { ConvertTo-AzlRunnerTerraformVariable -Settings (Get-Settings 'azure_devops') } | Should -Throw '*Azure DevOps needs the agent pool*'
     }
-    It 'Azure DevOps: the service connection and the variable groups are named by devops.pipelines (5.6.27), and the run parameters list them' {
+    It 'Azure DevOps: the service connection and the variable groups are named by devops.pipelines (5.6.27), and the settings file rows name them (D126)' {
         Start-Recording {
             param($f, $a)
             if ($f -eq 'az') { return New-Out 'x' }
@@ -602,9 +601,10 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         $groups.Count | Should -BeGreaterThan 0
         $groups | ForEach-Object { $_ | Should -BeLike 'iic-azure-credentials*' }
         @($r | Where-Object Action -eq 'Service connection').Target | Should -Be 'iic-azure-local'
-        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
-        ($rows | Where-Object Target -eq 'devops.pipelines.service_connection').Detail | Should -Match "Enter 'iic-azure-local' as the service connection parameter"
-        ($rows | Where-Object Target -eq 'devops.pipelines.variable_group').Detail | Should -Match "Enter 'iic-azure-credentials-"
+        $groups | Should -Contain 'iic-azure-credentials' -Because 'the repository group, which every pipeline reads (D126)'
+        $rows = @($r | Where-Object Action -eq 'Pipeline settings file')
+        ($rows | Where-Object Target -eq 'devops.pipelines.service_connection').Detail | Should -Match "writes 'iic-azure-local' as AZL_SERVICE_CONNECTION into pipelines/azure-devops/variables/pipeline-settings\.yml"
+        ($rows | Where-Object Target -eq 'devops.pipelines.variable_group').Detail | Should -Match "writes 'iic-azure-credentials' as AZL_VARIABLE_GROUP"
         (Get-Calls 'AzureLocal-ServiceConnection|(?<!iic-)azure-credentials').Count | Should -Be 0
     }
     It 'Azure DevOps: there is no default service connection or variable group name, so a file without them is refused' {
@@ -689,7 +689,7 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx'; $d.devops.runners[0]['admin_ssh_public_key'] = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly iic-runner-admin' }
         $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
         $groups = @(Get-Calls '^REST POST .*/distributedtask/variablegroups')
-        $groups.Count | Should -Be $s.Environments.Count
+        $groups.Count | Should -Be ($s.Environments.Count + 1) -Because 'the repository group, which the pipelines read (D126), and one per environment'
         foreach ($g in $groups) {
             $vars = $g.Body.variables
             $vars['AZL_TERRAFORM_VERSION'].value | Should -Be '1.16.3'
@@ -698,11 +698,11 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
             $vars['AZL_DEFAULT_BRANCH'].value | Should -Be 'main'
             $vars['AZL_RUNNER_SSH_PUBLIC_KEY'].value | Should -Match '^ssh-ed25519 '
             $vars['TF_BACKEND_KEY'].value | Should -Be 'azure-local.tfstate'
-            $vars.Contains('AZL_INFRASTRUCTURE_FILE') | Should -BeFalse -Because 'the path is a run parameter'
+            $vars.Contains('AZL_INFRASTRUCTURE_FILE') | Should -BeFalse -Because 'the path is a variable of pipeline-settings.yml, read when the pipeline is compiled'
         }
-        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
-        ($rows | Where-Object Target -eq 'devops.pipelines.infrastructure_file').Detail | Should -Match "Enter 'config/infrastructure.yml' as the infrastructure file parameter"
-        ($rows | Where-Object Target -eq 'devops.pipelines.handoff_path').Detail | Should -Match "Enter 'ztp-state' as the handoff path parameter"
+        $rows = @($r | Where-Object Action -eq 'Pipeline settings file')
+        ($rows | Where-Object Target -eq 'devops.pipelines.infrastructure_file').Detail | Should -Match "writes 'config/infrastructure.yml' as AZL_INFRASTRUCTURE_FILE"
+        ($rows | Where-Object Target -eq 'devops.pipelines.handoff_path').Detail | Should -Match "writes 'ztp-state' as AZL_HANDOFF_PATH"
         @($rows | Where-Object Target -like 'devops.pipelines.tool_versions.*').Count | Should -Be 0
     }
     It 'TF_BACKEND_KEY is devops.state.azure_local_key' {

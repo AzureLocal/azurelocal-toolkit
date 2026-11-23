@@ -83,13 +83,15 @@ Describe 'Azure DevOps OS configuration pipeline: shape' {
     }
     It 'asks for the parameters of the task, with safe defaults' {
         $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
-        foreach ($n in 'infrastructure_file', 'handoff_path', 'nodes', 'steps', 'mode', 'approved_bootstrap', 'agent_pool', 'service_connection') { $p.Keys | Should -Contain $n }
+        foreach ($n in 'nodes', 'steps', 'mode', 'approved_bootstrap', 'confirm_wipe_deployed_cluster') { $p.Keys | Should -Contain $n }
         $p['mode']['default'] | Should -Be 'Plan'
         $p['approved_bootstrap']['type'] | Should -Be 'boolean'
         $p['approved_bootstrap']['default'] | Should -BeFalse
         foreach ($n in 'nodes', 'steps') { $p[$n]['default'] | Should -Be 'all' }
-        # the paths are devops.pipelines.infrastructure_file and handoff_path: run parameters with no default
-        foreach ($n in 'infrastructure_file', 'handoff_path') { $p[$n].Contains('default') | Should -BeFalse -Because $n }
+        # D126: the paths, the pool and the service connection are compile-time variables of variables/pipeline-settings.yml, never run parameters
+        foreach ($n in 'infrastructure_file', 'handoff_path', 'agent_pool', 'service_connection', 'variable_group') { $p.Keys | Should -Not -Contain $n }
+        $script:Text | Should -Match 'variables\.AZL_INFRASTRUCTURE_FILE'
+        $script:Text | Should -Match 'variables\.AZL_HANDOFF_PATH'
     }
     It 'has no transport or storage wipe parameter: the script reads os_configuration.remoting.transport and os_configuration.clear_storage from the file' {
         $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
@@ -225,17 +227,17 @@ Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell
         }
         $script:Text | Should -Not -Match '(?m)^\s*-\s*(powershell|bash|script|cmd):'
     }
-    It 'runs on a self-hosted pool chosen by a parameter, with pwsh as a demand' {
+    It 'runs on the self-hosted pool of variables/pipeline-settings.yml, with pwsh as a demand' {
         foreach ($stage in @(@($script:Stages) + @($script:GuardStages))) {
             $pool = $stage['jobs'][0]['pool']
-            $pool['name'] | Should -Be '${{ parameters.agent_pool }}'
+            $pool['name'] | Should -Be '${{ variables.AZL_AGENT_POOL }}'
             @($pool['demands']) | Should -Contain 'pwsh'
             $pool.Contains('vmImage') | Should -BeFalse
         }
     }
-    It 'signs in to Azure through a service connection named by a parameter' {
+    It 'signs in to Azure through the service connection of variables/pipeline-settings.yml' {
         foreach ($name in 'Plan', 'Apply') {
-            (Get-AzureStep $name)['inputs']['azureSubscription'] | Should -Be '${{ parameters.service_connection }}'
+            (Get-AzureStep $name)['inputs']['azureSubscription'] | Should -Be '${{ variables.AZL_SERVICE_CONNECTION }}'
         }
     }
 }
@@ -264,8 +266,8 @@ Describe 'Azure DevOps OS configuration pipeline: no value of any ID or secret' 
         $script:Text | Should -Not -Match 'AccountKey=|SharedAccessSignature|-----BEGIN|ghp_[A-Za-z0-9]{20,}'
         $script:Text | Should -Not -Match '(?i)ConvertTo-SecureString'
     }
-    It 'takes secrets only from a variable group, and sets no variable whose name looks like a secret' {
-        @($script:Ado['variables'] | Where-Object { $_.Contains('group') }).Count | Should -BeGreaterThan 0
+    It 'takes secrets only from a variable group (the settings file names it), and sets no variable whose name looks like a secret' {
+        @($script:Ado['variables'] | Where-Object { $_.Contains('template') -and $_['template'] -eq 'variables/pipeline-settings.yml' }).Count | Should -Be 1
         foreach ($v in @($script:Ado['variables'] | Where-Object { $_.Contains('name') })) { $v['name'] | Should -Not -Match '(?i)password|secret|token|key|credential' }
         $script:Text | Should -Not -Match '(?i)\$\([^)]*(password|secret)[^)]*\)'
     }

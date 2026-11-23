@@ -17,6 +17,8 @@
     Set-AzlCicdVariable            Task 05: ARM_* secrets and variables per environment, the runner label and approval environments the
                                    pipelines select (devops.pipelines), and the Azure DevOps service connection
     Get-AzlCicdPipelineInput       The runner label, agent pool and approval environments of the pipelines, each with its infrastructure key
+    Export-AzlCicdPipelineSetting  Task 05 (D126): the pipeline values a platform reads only from a file (the Azure DevOps settings files, the schedule)
+    Set-AzlGitLabPipelineSchedule  Task 05 (D126): the GitLab project schedule of the check for updates
     Invoke-AzlCicdRunnerDeployment Task 06: terraform init, validate, plan and, only with -Apply, apply of the cicd-infra environment
 
     Every function that changes something supports -WhatIf: it reads what exists and reports what it would do. Each is
@@ -490,12 +492,12 @@ function Get-AzlCicdPipelineName {
     <#
     .SYNOPSIS
         Azure DevOps: the name of the service connection (devops.pipelines.service_connection) or of the variable group (devops.pipelines.variable_group).
-        Task 05 creates both with these names and the Azure DevOps pipelines take them as run parameters, so there is no default name: a missing key stops.
+        Task 05 creates both with these names and the Azure DevOps pipelines read them from variables/pipeline-settings.yml, so there is no default name: a missing key stops.
     #>
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [Parameter(Mandatory)][ValidateSet('ServiceConnection', 'VariableGroup')][string]$Name)
     $key = if ($Name -eq 'ServiceConnection') { 'devops.pipelines.service_connection' } else { 'devops.pipelines.variable_group' }
     $value = [string]$Settings.Pipelines.$Name
-    if (-not $value) { throw "$key is not set. On Azure DevOps task 05 creates the $(if ($Name -eq 'ServiceConnection') { 'service connection' } else { 'variable group' }) with this name and the pipelines take it as a run parameter; there is no default name." }
+    if (-not $value) { throw "$key is not set. On Azure DevOps task 05 creates the $(if ($Name -eq 'ServiceConnection') { 'service connection' } else { 'variable group' }) with this name and the pipelines read it from pipelines/azure-devops/variables/pipeline-settings.yml; there is no default name." }
     return $value
 }
 
@@ -1064,10 +1066,11 @@ function Get-AzlCicdVariablePlan {
 
 # The variables the toolkit's pipelines read (pipelines/github-actions, pipelines/gitlab, pipelines/azure-devops) and the infrastructure key
 # each one is set from. Name is the repository variable (GitHub), the project CI/CD variable (GitLab) or the variable of the variable group
-# (Azure DevOps); Role names the run parameter of the Azure DevOps pipelines. AzureDevOps says how Azure DevOps takes it: Parameter (a run
-# parameter with no default, because the pool, the service connection, the variable group and the file paths are read before any variable
-# exists; task 05 lists the value to enter), Template (an approval environment: a variable of pipelines/azure-devops/variables/approval-environments.yml,
-# bound when the pipeline is compiled so that whoever queues a run cannot choose it; task 05 lists the value to write there, once, in a pull request)
+# (Azure DevOps); Role names it in the output of task 05. AzureDevOps says how Azure DevOps takes it (D126: no run parameter carries a deployment
+# value): Settings (a variable of pipelines/azure-devops/variables/pipeline-settings.yml, because the pool, the service connection, the variable group and the
+# file paths are read when the pipeline is compiled, before any library variable exists), Template (an approval environment: a variable of
+# pipelines/azure-devops/variables/approval-environments.yml, bound when the pipeline is compiled so that whoever queues a run cannot choose it; both files
+# are written by Export-AzlCicdPipelineSetting / Set-CicdVariables.ps1 and committed in a pull request)
 # or Group (task 05 writes it to the variable group, and a task input or a script reads it as $(name)). These names are the contract with the
 # pipeline files; tests/pipelines/PipelineSettings.Tests.ps1 and
 # tests/variables/PipelineValues.Tests.ps1 check both sides.
@@ -1076,20 +1079,22 @@ $script:AzlPipelineVariable = @(
     # Schema 5.6.28: GitHub selects a self-hosted runner by its OS label too (runs-on: [self-hosted, <os>, <label>]).
     [pscustomobject]@{ Name = 'AZL_RUNNER_OS'; Role = 'runner OS label'; Key = 'devops.runners[].os_type'; Platforms = @('github'); AzureDevOps = '' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION'; Role = 'OS configuration approval environment'; Key = 'devops.pipelines.environments.os_configuration'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('azure_devops'); AzureDevOps = 'Template' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
     # Schema 5.6.28: the one environment of every day 2 job that changes the cluster (update, node maintenance, changing operations, storage performance test).
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OPERATIONS'; Role = 'day 2 operations approval environment'; Key = 'devops.pipelines.environments.operations'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Template' }
-    # Azure DevOps only (schema 5.6.27): the names of the service connection and the variable group that task 05 creates. GitHub and GitLab sign in
-    # with the repository's or project's own variables and have neither.
-    [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_VARIABLE_GROUP'; Role = 'variable group'; Key = 'devops.pipelines.variable_group'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
-    # Schema 5.6.28: the infrastructure file and the ZTP handoff path the pipelines pass to the scripts (Azure DevOps: run parameters, because
-    # a compile-time parameter path is what the run form shows).
-    [pscustomobject]@{ Name = 'AZL_INFRASTRUCTURE_FILE'; Role = 'infrastructure file'; Key = 'devops.pipelines.infrastructure_file'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
-    [pscustomobject]@{ Name = 'AZL_HANDOFF_PATH'; Role = 'handoff path'; Key = 'devops.pipelines.handoff_path'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    # Azure DevOps only (schema 5.6.27): the agent pool, and the names of the service connection and the variable group that task 05 creates. GitHub
+    # and GitLab select the runner by its label and sign in with the repository's or project's own variables. D126: on Azure DevOps these are variables
+    # of pipelines/azure-devops/variables/pipeline-settings.yml (Settings), which Export-AzlCicdPipelineSetting writes from the file: the pool, a service
+    # connection and a variable group are read when the pipeline is compiled, before any library variable exists.
+    [pscustomobject]@{ Name = 'AZL_AGENT_POOL'; Role = 'agent pool'; Key = 'devops.runners[].pool'; Platforms = @('azure_devops'); AzureDevOps = 'Settings' }
+    [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops'); AzureDevOps = 'Settings' }
+    [pscustomobject]@{ Name = 'AZL_VARIABLE_GROUP'; Role = 'variable group'; Key = 'devops.pipelines.variable_group'; Platforms = @('azure_devops'); AzureDevOps = 'Settings' }
+    # Schema 5.6.28: the infrastructure file and the ZTP handoff path the pipelines pass to the scripts (Azure DevOps: variables of pipeline-settings.yml).
+    [pscustomobject]@{ Name = 'AZL_INFRASTRUCTURE_FILE'; Role = 'infrastructure file'; Key = 'devops.pipelines.infrastructure_file'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Settings' }
+    [pscustomobject]@{ Name = 'AZL_HANDOFF_PATH'; Role = 'handoff path'; Key = 'devops.pipelines.handoff_path'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Settings' }
     # The sign-in method every pipeline follows (oidc or client_secret).
     [pscustomobject]@{ Name = 'AZL_AUTH_METHOD'; Role = 'sign-in method'; Key = 'devops.authentication.method'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
     # Azure DevOps has no predefined variable with the default branch of the repository (GitHub: github.event.repository.default_branch;
@@ -1111,14 +1116,13 @@ $script:AzlPipelineVariable = @(
     [pscustomobject]@{ Name = 'AZL_RUNNER_SSH_PUBLIC_KEY'; Role = 'runner SSH public key'; Key = 'devops.runners[].admin_ssh_public_key'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
 )
 
-# The variable groups task 05 writes the sign-in values to on Azure DevOps: one per entry of devops.environments[], named <variable_group>-<environment>,
-# or one named <variable_group> when the file lists no environment.
+# The variable groups task 05 writes the sign-in values to on Azure DevOps: the repository group <variable_group>, which every pipeline reads (D126, as
+# GitHub and GitLab read the repository or project values), and one per entry of devops.environments[], named <variable_group>-<environment>.
 function Get-AzlCicdVariableGroupName {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings)
     $base = Get-AzlCicdPipelineName -Settings $Settings -Name VariableGroup
     $scopes = @($Settings.Environments | ForEach-Object { $_.Name } | Where-Object { $_ })
-    if ($scopes.Count -eq 0) { return @($base) }
-    return @($scopes | ForEach-Object { "$base-$_" })
+    return @($base) + @($scopes | ForEach-Object { "$base-$_" })
 }
 
 function Get-AzlCicdPipelineInput {
@@ -1131,7 +1135,9 @@ function Get-AzlCicdPipelineInput {
         (devops.runners[]: os_type, pool, admin_ssh_public_key), and checks them against what the other tasks create: runner_label must be one
         of the labels of the general (Linux) runner, and every environment must be an entry of devops.environments[] with approval_required
         true. A key with a registry default gives its default. Returns nothing for a key that is not set and has no default.
-        GitHub and GitLab take the values as variables (Name); Azure DevOps takes them as run parameters (Role), as the variable of the same name in pipelines/azure-devops/variables/approval-environments.yml (the approval environments) or from the variable group.
+        GitHub and GitLab take the values as variables (Name). Azure DevOps takes the same names as compile-time variables of
+        pipelines/azure-devops/variables/pipeline-settings.yml (Settings: the pool, the service connection, the variable group and the file paths) and of
+        approval-environments.yml (Template: the approval environments), which Export-AzlCicdPipelineSetting writes, or from the variable group (Group).
         A value that is a secret reference (keyvault://, env://, file://, command://; only devops.runners[].admin_ssh_public_key may be one)
         is returned as it is, with Reference true: Set-AzlCicdVariable resolves it when it sets the variable.
     #>
@@ -1145,7 +1151,13 @@ function Get-AzlCicdPipelineInput {
         $role = $variable.Key -replace '^devops\.pipelines\.(environments\.)?', ''
         # The service connection and the variable group have no default name on Azure DevOps: a missing key stops here (Get-AzlCicdPipelineName).
         if ($role -eq 'service_connection') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection); AzureDevOps = $variable.AzureDevOps; Reference = $false }); continue }
-        if ($role -eq 'variable_group') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (@(Get-AzlCicdVariableGroupName -Settings $Settings) -join "' or '"); AzureDevOps = $variable.AzureDevOps; Reference = $false }); continue }
+        # D126: the pipelines read the repository group <variable_group> (Get-AzlCicdVariableGroupName lists it first).
+        if ($role -eq 'variable_group') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (Get-AzlCicdPipelineName -Settings $Settings -Name VariableGroup); AzureDevOps = $variable.AzureDevOps; Reference = $false }); continue }
+        if ($variable.Key -eq 'devops.runners[].pool') {
+            if (-not $general -or -not $general.Pool) { throw 'devops.runners[].pool is not set for the general (Linux) runner. The Azure DevOps pipelines take it as their agent pool.' }
+            $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = [string]$general.Pool; AzureDevOps = $variable.AzureDevOps; Reference = $false })
+            continue
+        }
         $value = switch ($variable.Key) {
             'devops.pipelines.runner_label' { $pipelines.RunnerLabel }
             'devops.runners[].os_type' { if ($general) { $general.OsType } }
@@ -1179,10 +1191,6 @@ function Get-AzlCicdPipelineInput {
         if ($reference -and $variable.Key -ne 'devops.runners[].admin_ssh_public_key') { throw "$($variable.Key) is a secret reference; it must be a value." }
         $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = [string]$value; AzureDevOps = $variable.AzureDevOps; Reference = $reference })
     }
-    if ($Settings.Platform -eq 'azure_devops') {
-        if (-not $general -or -not $general.Pool) { throw 'devops.runners[].pool is not set for the general (Linux) runner. The Azure DevOps pipelines take it as their agent pool.' }
-        $found.Add([pscustomobject]@{ Name = 'agent pool'; Role = 'agent pool'; Key = 'devops.runners[].pool'; Value = [string]$general.Pool; AzureDevOps = 'Parameter'; Reference = $false })
-    }
     return $found.ToArray()
 }
 
@@ -1212,9 +1220,10 @@ function Set-AzlCicdVariable {
         $ClientId = [string]$ids[0]
     }
     $environmentScopes = @($Settings.Environments | ForEach-Object { $_.Name } | Where-Object { $_ })
-    # GitHub and GitLab: the repository (or project) gets the values too, so a job with no environment (validate, plan, preconditions) reads
-    # them; a job in an environment reads that environment's values. Azure DevOps: one variable group per environment.
-    $scopes = if ($Settings.Platform -eq 'azure_devops') { if ($environmentScopes.Count) { $environmentScopes } else { @('') } } else { @('') + $environmentScopes }
+    # Every platform: the repository (or project) gets the values too, so a job with no environment (validate, plan, preconditions) reads
+    # them; a job in an environment reads that environment's values. Azure DevOps: the repository group <variable_group>, which the pipelines
+    # read (D126), and one variable group per environment.
+    $scopes = @('') + $environmentScopes
     Use-AzlCicdSession -Settings $Settings
     try {
         $withSecret = ($Settings.Authentication.Method -eq 'client_secret') -and $PSCmdlet.ShouldProcess('Key Vault', 'Read the client secret to store it as a masked variable')
@@ -1290,7 +1299,7 @@ function Set-AzlCicdVariable {
 
         # The values the pipelines select or read (devops.pipelines and the keys in Get-AzlCicdPipelineInput). GitHub and GitLab: set for the
         # whole repository, never for one environment, because runs-on, the environment name and a job timeout are read before any environment
-        # applies. Azure DevOps: the run parameters are listed; the Group values went to the variable groups above.
+        # applies. Azure DevOps: the Settings and Template values are named for Set-CicdVariables.ps1; the Group values went to the variable groups above.
         foreach ($pipelineInput in $pipelineInputs) {
             $target = "$($pipelineInput.Name) (repository)"
             $detail = if ($pipelineInput.Reference) { "$($pipelineInput.Key) (read from its reference when set)" } else { "$($pipelineInput.Key) = $($pipelineInput.Value)" }
@@ -1317,29 +1326,27 @@ function Set-AzlCicdVariable {
                     else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' $detail)) }
                 }
                 'azure_devops' {
-                    # Azure DevOps expands a variable only at run time and reads the pool, the service connection and a parameter path at
-                    # compile time, so these are run parameters with no default. The task cannot set a parameter; it lists the value to enter.
-                    # An approval environment is not a run parameter: a run parameter would let whoever queues the run choose an environment with no approval.
-                    # The pipelines bind it at compile time from a variable of a YAML file of the repository, which the task cannot write; it lists the value too.
-                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.")) }
-                    elseif ($pipelineInput.AzureDevOps -eq 'Template') { $results.Add((Format-AzlResult $task 'Pipeline variable template' $pipelineInput.Key 'Skipped' "Write '$($pipelineInput.Value)' as the value of $($pipelineInput.Name) in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request. The pipelines bind the approval environment when they are compiled; it is not a run parameter, so whoever queues a run cannot choose it.")) }
+                    # Azure DevOps reads the pool, the service connection, the variable group and the approval environment when the pipeline is
+                    # compiled, before any library variable exists. D126: the pipelines read them from two YAML files of the repository,
+                    # variables/pipeline-settings.yml (Settings) and variables/approval-environments.yml (Template), which Export-AzlCicdPipelineSetting
+                    # writes from the file after this function (Set-CicdVariables.ps1 runs both). This function changes the platform; the row names the file.
+                    $file = switch ($pipelineInput.AzureDevOps) { 'Settings' { 'pipeline-settings.yml' } 'Template' { 'approval-environments.yml' } default { '' } }
+                    if ($file) { $results.Add((Format-AzlResult $task 'Pipeline settings file' $pipelineInput.Key 'Skipped' "Set-CicdVariables.ps1 writes '$($pipelineInput.Value)' as $($pipelineInput.Name) into pipelines/azure-devops/variables/$file; commit it in a pull request. It is bound when the pipeline is compiled, never a run parameter.")) }
                 }
             }
         }
 
-        # devops.pipelines.schedules.check_for_updates (schema 5.6.28): no platform reads a schedule from a variable, so the task says where the value goes.
+        # devops.pipelines.schedules.check_for_updates (schema 5.6.28; D126: the same schedule on every platform). GitHub and Azure DevOps read a schedule
+        # only from the pipeline file: Set-CicdVariables.ps1 writes the cron line. GitLab keeps it in the project: this task creates or updates it.
         $checkSchedule = if ($Settings.Contains('Pipelines') -and $Settings.Pipelines -and $Settings.Pipelines.PSObject.Properties['Schedules']) { [string]$Settings.Pipelines.Schedules['check_for_updates'] } else { '' }
-        if ($checkSchedule) {
-            $where = switch ($Settings.Platform) {
-                'github' { 'the cron line of on.schedule in your copy of .github/workflows/day2-check-updates.yml (the sample carries the registry default)' }
-                'gitlab' { 'a pipeline schedule of the project (CI/CD > Schedules) for the default branch, which starts pipelines/gitlab/stages/day2-check-updates.yml' }
-                default { 'a schedules entry in your copy of pipelines/azure-devops/day2-check-updates.yml, and a default for each run parameter of that copy (a scheduled run cannot ask for the parameters, and the sample has none)' }
-            }
-            $results.Add((Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Skipped' "Use '$checkSchedule' (UTC) in $where."))
+        if ($Settings.Platform -eq 'gitlab') { $results.Add((Set-AzlGitLabPipelineSchedule -Settings $Settings -Cron $checkSchedule -WhatIf:$WhatIfPreference)) }
+        elseif ($checkSchedule) {
+            $where = if ($Settings.Platform -eq 'github') { '.github/workflows/day2-check-updates.yml (on.schedule)' } else { 'pipelines/azure-devops/day2-check-updates.yml (schedules)' }
+            $results.Add((Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Skipped' "Set-CicdVariables.ps1 writes '$checkSchedule' (UTC) into the cron line of $where; commit it in a pull request."))
         }
 
         if ($Settings.Platform -eq 'azure_devops' -and $Settings.Authentication.Method -eq 'oidc') {
-            # devops.pipelines.service_connection (schema 5.6.27): the name the Azure DevOps pipelines take as their run parameter.
+            # devops.pipelines.service_connection (schema 5.6.27): the name the Azure DevOps pipelines read from variables/pipeline-settings.yml.
             $connection = Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection
             $base = "$($Settings.ScmUrl)/$([uri]::EscapeDataString($Settings.Project))/_apis"
             $existing = @((Invoke-AzlAdo -Method GET -Uri "$base/serviceendpoint/endpoints?endpointNames=$([uri]::EscapeDataString($connection))&api-version=7.1").value) | Select-Object -First 1
@@ -1363,6 +1370,187 @@ function Set-AzlCicdVariable {
         }
     }
     finally { Close-AzlCicdSession }
+    return $results.ToArray()
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Task 05 (D126): the values a platform reads only from the repository or the project, and the schedule of the check for updates
+# ---------------------------------------------------------------------------------------------------------------------
+
+# The description that identifies the GitLab pipeline schedule of the check for updates, so a second run of task 05 updates it instead of adding one.
+$script:AzlCheckForUpdatesScheduleDescription = 'Azure Local day 2: check for updates (devops.pipelines.schedules.check_for_updates)'
+
+function Test-AzlCronExpression {
+    # A five-field cron expression (minute hour day month weekday), the form GitHub, GitLab and Azure DevOps all read: each field is *, a number in
+    # its range, a range a-b, a step x/n, or a list of those; the month and the weekday may also be names (JAN to DEC, SUN to SAT).
+    param([string]$Cron)
+    $fields = @(([string]$Cron).Trim() -split '\s+' | Where-Object { $_ })
+    if ($fields.Count -ne 5) { return $false }
+    $ranges = @(@(0, 59), @(0, 23), @(1, 31), @(1, 12), @(0, 7))
+    $names = @(@(), @(), @(), @('JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'), @('SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'))
+    for ($i = 0; $i -lt 5; $i++) {
+        foreach ($item in ($fields[$i] -split ',')) {
+            if ($item -notmatch '^(\*|[0-9A-Za-z]+(-[0-9A-Za-z]+)?)(/([0-9]+))?$') { return $false }
+            if ($Matches[4] -and [int]$Matches[4] -lt 1) { return $false }
+            if ($Matches[1] -eq '*') { continue }
+            foreach ($bound in ($Matches[1] -split '-')) {
+                if ($bound -match '^[0-9]+$') { if ([int]$bound -lt $ranges[$i][0] -or [int]$bound -gt $ranges[$i][1]) { return $false } }
+                elseif ($names[$i] -notcontains $bound.ToUpperInvariant()) { return $false }
+            }
+        }
+    }
+    return $true
+}
+
+function Set-AzlGitLabPipelineSchedule {
+    <#
+    .SYNOPSIS
+        GitLab: creates or updates the project pipeline schedule of the check for updates from devops.pipelines.schedules.check_for_updates, on the
+        default branch (devops.repository.default_branch), in UTC. GitLab keeps a schedule in the project, never in a file, so task 05 sets it like a
+        variable. A scheduled run takes UPDATECHECK_SOURCE azure, the default of pipelines/gitlab/stages/day2-check-updates.yml. An empty value means no
+        schedule: an existing one is deactivated (never deleted, so its history stays), and none is created.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [AllowEmptyString()][string]$Cron = '')
+    $task = '05-configure-variables'
+    if ($Cron -and -not (Test-AzlCronExpression $Cron)) { throw "devops.pipelines.schedules.check_for_updates '$Cron' is not a five-field cron expression." }
+    $branch = [string]$Settings.Repository.DefaultBranch
+    $detail = if ($Cron) { "cron '$Cron' (UTC) on the branch $branch" } else { 'the key is empty: no schedule' }
+    $encoded = [uri]::EscapeDataString("$($Settings.Organization)/$($Settings.Repository.Name)")
+    $id = (Invoke-AzlGitLab -Settings $Settings -Method GET -Path "projects/$encoded").id
+    # Every page of the schedules (per_page is a page size, not a limit), until the one of the check for updates is found.
+    $existing = $null
+    for ($page = 1; $page -le 50 -and -not $existing; $page++) {
+        $batch = @(Invoke-AzlGitLab -Settings $Settings -Method GET -Path "projects/$id/pipeline_schedules?per_page=100&page=$page" | Where-Object { $_ })
+        $existing = $batch | Where-Object { $_.PSObject.Properties['description'] -and [string]$_.description -eq $script:AzlCheckForUpdatesScheduleDescription } | Select-Object -First 1
+        if ($batch.Count -lt 100) { break }
+    }
+    if (-not $Cron -and -not $existing) { return (Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Skipped' $detail) }
+    if (-not $PSCmdlet.ShouldProcess($script:AzlCheckForUpdatesScheduleDescription, 'Create, update or deactivate the GitLab pipeline schedule')) {
+        return (Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Planned' $detail)
+    }
+    if (-not $Cron) {
+        Invoke-AzlGitLab -Settings $Settings -Method PUT -Path "projects/$id/pipeline_schedules/$($existing.id)" -Body ([ordered]@{ active = $false }) | Out-Null
+        return (Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Updated' 'the key is empty: the schedule is deactivated')
+    }
+    $body = [ordered]@{ description = $script:AzlCheckForUpdatesScheduleDescription; ref = $branch; cron = $Cron; cron_timezone = 'UTC'; active = $true }
+    if ($existing) {
+        Invoke-AzlGitLab -Settings $Settings -Method PUT -Path "projects/$id/pipeline_schedules/$($existing.id)" -Body $body | Out-Null
+        return (Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Updated' $detail)
+    }
+    Invoke-AzlGitLab -Settings $Settings -Method POST -Path "projects/$id/pipeline_schedules" -Body $body | Out-Null
+    return (Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Created' $detail)
+}
+
+function ConvertTo-AzlYamlQuoted {
+    # A YAML single-quoted scalar: the value as it is, a quote doubled.
+    param([AllowEmptyString()][string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Write-AzlTextFile {
+    # Writes text as UTF-8 without a byte order mark; Updated, Exists (no change) or Planned (-WhatIf at the caller).
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][string]$Before, [bool]$Apply)
+    if ($Text -ceq $Before) { return 'Exists' }
+    if (-not $Apply) { return 'Planned' }
+    [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
+    return 'Updated'
+}
+
+function Export-AzlCicdPipelineSetting {
+    <#
+    .SYNOPSIS
+        D126. Writes into the repository the pipeline values a platform reads only from a file, each from its key of infrastructure.yml.
+    .DESCRIPTION
+        GitHub and GitLab read every deployment value from variables that Set-AzlCicdVariable sets. A schedule, and on Azure DevOps the pool, the
+        service connection, the variable group and the approval environments, are read before any variable exists, so they are written here:
+          azure_devops  pipelines/azure-devops/variables/pipeline-settings.yml   AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_VARIABLE_GROUP (and its
+                                                                                 `- group:` entry), AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH
+                        pipelines/azure-devops/variables/approval-environments.yml   AZL_ENVIRONMENT_* (devops.pipelines.environments.*; empty when not set,
+                                                                                 so the pipeline refuses the stage that changes something)
+                        pipelines/azure-devops/day2-check-updates.yml          the cron line (devops.pipelines.schedules.check_for_updates) and the branch
+                                                                                 of the schedule (devops.repository.default_branch)
+          github        <GitHubWorkflowDirectory>/day2-check-updates.yml       the cron line (default .github/workflows when the workflow is there, else
+                                                                                 pipelines/github-actions)
+          gitlab        nothing: the schedule is a project setting, which Set-AzlCicdVariable creates (Set-AzlGitLabPipelineSchedule)
+        The values come from Get-AzlCicdPipelineInput, the table task 05 uses, so a key that is not valid (an environment without approval, no pool)
+        stops it before it writes anything. Commit the result in a pull request. -WhatIf lists the files it would change.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Settings,
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [string]$GitHubWorkflowDirectory = ''
+    )
+    $task = '05-configure-variables'
+    $results = [System.Collections.Generic.List[object]]::new()
+    if (-not (Test-Path -LiteralPath $RepositoryRoot -PathType Container)) { throw "RepositoryRoot '$RepositoryRoot' is not a folder." }
+    $inputs = @(Get-AzlCicdPipelineInput -Settings $Settings)
+    $cron = if ($Settings.Contains('Pipelines') -and $Settings.Pipelines -and $Settings.Pipelines.PSObject.Properties['Schedules']) { [string]$Settings.Pipelines.Schedules['check_for_updates'] } else { '' }
+    # An empty value means no schedule (the registry allows it): the cron line is left as it is and the row says to remove the schedule block.
+    if ($cron -and -not (Test-AzlCronExpression $cron)) { throw "devops.pipelines.schedules.check_for_updates '$cron' is not a five-field cron expression." }
+    $apply = $PSCmdlet.ShouldProcess($RepositoryRoot, 'Write the pipeline settings files')
+
+    $setCron = {
+        param([string]$Path, [string]$Pattern, [string]$Branch)
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "The pipeline file '$Path' is not there." }
+        if (-not $cron) { return 'Skipped' }
+        $before = [IO.File]::ReadAllText($Path)
+        if (-not [regex]::IsMatch($before, $Pattern)) { throw "'$Path' has no cron line of the check for updates to write." }
+        $text = [regex]::Replace($before, $Pattern, { param($m) $m.Groups[1].Value + (ConvertTo-AzlYamlQuoted $cron) })
+        if ($Branch) {
+            $branchPattern = '(?m)^(    branches:\r?\n      include:\r?\n        - )\S+'
+            if (-not [regex]::IsMatch($text, $branchPattern)) { throw "'$Path' has no branch of the schedule to write." }
+            $text = [regex]::Replace($text, $branchPattern, { param($m) $m.Groups[1].Value + $Branch })
+        }
+        Write-AzlTextFile -Path $Path -Text $text -Before $before -Apply $apply
+    }
+
+    switch ($Settings.Platform) {
+        'azure_devops' {
+            $variables = [IO.Path]::Combine($RepositoryRoot, 'pipelines', 'azure-devops', 'variables')
+            foreach ($file in @(@{ Name = 'pipeline-settings.yml'; Kind = 'Settings' }, @{ Name = 'approval-environments.yml'; Kind = 'Template' })) {
+                $path = [IO.Path]::Combine($variables, $file.Name)
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "The Azure DevOps settings file '$path' is not there. Copy pipelines/azure-devops with its variables folder first." }
+                $before = [IO.File]::ReadAllText($path)
+                $text = $before
+                $names = @($script:AzlPipelineVariable | Where-Object { $_.AzureDevOps -eq $file.Kind -and $_.Platforms -contains 'azure_devops' } | ForEach-Object Name)
+                foreach ($name in $names) {
+                    $value = [string](@($inputs | Where-Object Name -EQ $name) | Select-Object -First 1 | ForEach-Object Value)
+                    $pattern = "(?m)^(  - name: $([regex]::Escape($name))\r?\n    value: )[^\r\n]*"
+                    if (-not [regex]::IsMatch($text, $pattern)) { throw "'$path' has no entry $name to write." }
+                    $text = [regex]::Replace($text, $pattern, { param($m) $m.Groups[1].Value + (ConvertTo-AzlYamlQuoted $value) })
+                }
+                if ($file.Kind -eq 'Settings') {
+                    # The variable group as a `- group:` entry of the template: a group name read at compile time, from the same file as the pool.
+                    $group = [string](@($inputs | Where-Object Name -EQ 'AZL_VARIABLE_GROUP') | Select-Object -First 1 | ForEach-Object Value)
+                    $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+                    $text = [regex]::Replace($text, '(?m)^  - group: .*(\r?\n)?', '')
+                    if (-not $text.EndsWith($nl)) { $text += $nl }
+                    $text += "  - group: $(ConvertTo-AzlYamlQuoted $group)$nl"
+                }
+                $status = Write-AzlTextFile -Path $path -Text $text -Before $before -Apply $apply
+                $results.Add((Format-AzlResult $task 'Pipeline settings file' "pipelines/azure-devops/variables/$($file.Name)" $status (($names | ForEach-Object { "$_ = '$(@($inputs | Where-Object Name -EQ $_) | Select-Object -First 1 | ForEach-Object Value)'" }) -join '; ')))
+            }
+            $branch = [string]$Settings.Repository.DefaultBranch
+            if ($branch -notmatch '^[\w./-]+$') { throw "devops.repository.default_branch '$branch' is not a branch name." }
+            $path = [IO.Path]::Combine($RepositoryRoot, 'pipelines', 'azure-devops', 'day2-check-updates.yml')
+            $status = & $setCron $path "(?m)^(  - cron: )'[^']*'" $branch
+            $results.Add((Format-AzlResult $task 'Pipeline schedule' 'pipelines/azure-devops/day2-check-updates.yml' $status $(if ($cron) { "cron '$cron' (UTC) on the branch $branch" } else { 'devops.pipelines.schedules.check_for_updates is empty (no schedule): remove the schedules block of the file in a pull request' })))
+        }
+        'github' {
+            if (-not $GitHubWorkflowDirectory) {
+                $GitHubWorkflowDirectory = if (Test-Path -LiteralPath ([IO.Path]::Combine($RepositoryRoot, '.github', 'workflows', 'day2-check-updates.yml'))) { '.github/workflows' } else { 'pipelines/github-actions' }
+            }
+            $relative = "$($GitHubWorkflowDirectory.TrimEnd('/', '\'))/day2-check-updates.yml"
+            $path = [IO.Path]::Combine($RepositoryRoot, $relative)
+            $status = & $setCron $path "(?m)^(    - cron: )'[^']*'" ''
+            $results.Add((Format-AzlResult $task 'Pipeline schedule' $relative $status $(if ($cron) { "cron '$cron' (UTC); GitHub runs a schedule on the default branch" } else { 'devops.pipelines.schedules.check_for_updates is empty (no schedule): remove the on.schedule block of the file in a pull request' })))
+        }
+        default {
+            $results.Add((Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Skipped' 'GitLab keeps the schedule in the project: Set-CicdVariables.ps1 (task 05) creates it. No file is written.'))
+        }
+    }
     return $results.ToArray()
 }
 
@@ -1719,4 +1907,5 @@ function Invoke-AzlCicdRunnerDeployment {
 
 Export-ModuleMember -Function ConvertTo-AzlCicdSetting, Get-AzlCicdPipelineInput, Get-AzlCicdSetting, Resolve-AzlCicdInput, Initialize-AzlCicdLog, Write-AzlCicdLog,
 Invoke-AzlCicdBootstrap, New-AzlCicdProject, Set-AzlCicdProjectSetting, New-AzlCicdEnvironment, Set-AzlCicdVariable,
-Invoke-AzlCicdRunnerDeployment, ConvertTo-AzlRunnerTerraformVariable, Get-AzlFederatedCredentialPlan, Invoke-AzlNative, Invoke-AzlRest
+Invoke-AzlCicdRunnerDeployment, ConvertTo-AzlRunnerTerraformVariable, Get-AzlFederatedCredentialPlan, Invoke-AzlNative, Invoke-AzlRest,
+Export-AzlCicdPipelineSetting, Set-AzlGitLabPipelineSchedule

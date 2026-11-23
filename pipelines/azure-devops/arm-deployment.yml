@@ -16,27 +16,25 @@
 #                   every precondition and that these parameters validated. `resume` resubmits a failed Deploy. While the variable is empty,
 #                   the stage ApprovalEnvironmentNotSet fails instead and nothing is changed.
 #
-# Setup (names only, no value is in this file; task 05 of the CI/CD setup lists the value of every run parameter to enter)
-#   Service connection  an Azure Resource Manager service connection, named in the parameter `azureServiceConnection`
+# Setup (names only, no value is in this file; task 05 of the CI/CD setup writes every value below into variables/pipeline-settings.yml and variables/approval-environments.yml (Set-CicdVariables.ps1, from infrastructure.yml; commit both in a pull request))
+#   Service connection  an Azure Resource Manager service connection, named by AZL_SERVICE_CONNECTION
 #                       (devops.pipelines.service_connection). Task 05 creates it with workload identity federation (no client secret)
 #                       when devops.authentication.method is oidc; the AzurePowerShell task signs in with whatever scheme it has.
-#   Variable group      parameter `variableGroup` (devops.pipelines.variable_group, <name>-<environment>). Task 05 writes to it the tool versions
+#   Variable group      AZL_VARIABLE_GROUP (devops.pipelines.variable_group: the group of the repository). Task 05 writes to it the tool versions
 #                       this file reads: AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION
 #                       (devops.pipelines.tool_versions.*). The local administrator and LCM passwords are read from the Key Vaults named by
 #                       the keyvault:// references in the master file; the identity needs Get on those secrets and the rights in the design (section 12).
-#   Agent pool          a self-hosted pool with pwsh 7, parameter `agentPool`: devops.runners[].pool of the general runner.
+#   Agent pool          a self-hosted pool with pwsh 7, AZL_AGENT_POOL: devops.runners[].pool of the general runner.
 #   Environment         the name in variables/approval-environments.yml (AZL_ENVIRONMENT_ARM_DEPLOYMENT: devops.pipelines.environments.arm_deployment;
 #                       task 05 lists the value to write there, once, in a pull request). Task 04 of the CI/CD setup creates the environment from
 #                       devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name
 #                       is not a run parameter (Learn: a template expression sees only the variables of the YAML files).
-#   Infrastructure file parameter `infrastructureFile`: devops.pipelines.infrastructure_file.
-#   Why parameters     the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
-#                       inputs, and that other keywords take template expressions or runtime parameters
-#                       (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                       ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-#                       (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
-#                       file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval
-#                       environment is not one of them: a value the queuer must not choose is read from a YAML file of the repository.
+#   Infrastructure file AZL_INFRASTRUCTURE_FILE: devops.pipelines.infrastructure_file.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 #                       The Active Directory check needs a domain-joined agent; elsewhere it is Skipped, not failed.
 # Where the files come from: the OS configuration report is the artifact os-configuration-report of an OS configuration pipeline run
 # (osConfigurationPipelineId and osConfigurationRunId), as GitHub fetches it, or a repository path (osConfigurationReport).
@@ -52,9 +50,6 @@ parameters:
     type: string
     default: Plan
     values: [Plan, Validate, ValidateAndDeploy, Deploy]
-  - name: infrastructureFile
-    displayName: Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file
-    type: string
   - name: osConfigurationPipelineId
     displayName: 'Optional: ID of the OS configuration pipeline whose artifact os-configuration-report holds the report (with osConfigurationRunId; none to skip)'
     type: string
@@ -79,18 +74,10 @@ parameters:
     displayName: Known issue ids to proceed past, comma-separated (for example arc-device-id-name). Leave empty normally.
     type: string
     default: ''
-  - name: azureServiceConnection
-    displayName: Azure Resource Manager service connection. Enter devops.pipelines.service_connection
-    type: string
-  - name: variableGroup
-    displayName: Variable group with the tool versions. Enter devops.pipelines.variable_group (with environments, <name>-<environment>)
-    type: string
-  - name: agentPool
-    displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
-    type: string
 
 variables:
-  - group: ${{ parameters.variableGroup }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_ARM_DEPLOYMENT: the approval environment of the Deploy stage, bound at compile time (not a run parameter).
   - template: variables/approval-environments.yml
   - name: armScript
@@ -102,7 +89,7 @@ stages:
     jobs:
       - job: Plan
         pool:
-          name: ${{ parameters.agentPool }}
+          name: ${{ variables.AZL_AGENT_POOL }}
         # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
         timeoutInMinutes: 30
         steps:
@@ -121,7 +108,7 @@ stages:
           - task: AzurePowerShell@5
             displayName: Preconditions
             inputs:
-              azureSubscription: ${{ parameters.azureServiceConnection }}
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
               azurePowerShellVersion: OtherVersion
               preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
               pwsh: true
@@ -135,7 +122,7 @@ stages:
                 & '$(armScript)' @arguments
                 exit $LASTEXITCODE
             env:
-              ARM_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+              ARM_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
               ARM_OS_REPORT: ${{ iif(and(ne(parameters.osConfigurationPipelineId, 'none'), ne(parameters.osConfigurationRunId, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.osConfigurationReport) }}
               ARM_HANDOFF_FILE: ${{ parameters.handoffFile }}
           - pwsh: |
@@ -155,7 +142,7 @@ stages:
         jobs:
           - job: Validate
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
             # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
             # The real limit is the script's wait, deployment.validate_timeout_minutes, read from the infrastructure file. A job timeout is read before
             # any variable exists, so this is a fixed upper bound: the registry maximum of that key (1440) plus 60 minutes, the same as GitLab.
@@ -176,7 +163,7 @@ stages:
               - task: AzurePowerShell@5
                 displayName: Validate
                 inputs:
-                  azureSubscription: ${{ parameters.azureServiceConnection }}
+                  azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                   azurePowerShellVersion: OtherVersion
                   preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                   pwsh: true
@@ -190,7 +177,7 @@ stages:
                     & '$(armScript)' @arguments
                     exit $LASTEXITCODE
                 env:
-                  ARM_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                  ARM_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                   ARM_OS_REPORT: ${{ iif(and(ne(parameters.osConfigurationPipelineId, 'none'), ne(parameters.osConfigurationRunId, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.osConfigurationReport) }}
                   ARM_HANDOFF_FILE: ${{ parameters.handoffFile }}
               - pwsh: |
@@ -215,7 +202,7 @@ stages:
           - job: Refuse
             displayName: 'Refuse: no approval environment is set'
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
@@ -239,7 +226,7 @@ stages:
             # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
             environment: ${{ variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
             pool:
-              name: ${{ parameters.agentPool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
             # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
             # The real limit is the script's wait, deployment.deploy_timeout_minutes, read from the infrastructure file. A job timeout is read before
             # any variable exists, so this is a fixed upper bound: the registry maximum of that key (1440) plus 60 minutes, the same as GitLab.
@@ -263,7 +250,7 @@ stages:
                     - task: AzurePowerShell@5
                       displayName: Deploy
                       inputs:
-                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         azurePowerShellVersion: OtherVersion
                         preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                         pwsh: true
@@ -279,7 +266,7 @@ stages:
                           & '$(armScript)' @arguments
                           exit $LASTEXITCODE
                       env:
-                        ARM_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                        ARM_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                         ARM_OS_REPORT: ${{ iif(and(ne(parameters.osConfigurationPipelineId, 'none'), ne(parameters.osConfigurationRunId, 'none')), '$(Pipeline.Workspace)/os-configuration-report', parameters.osConfigurationReport) }}
                         ARM_HANDOFF_FILE: ${{ parameters.handoffFile }}
                         ARM_ACKNOWLEDGE: ${{ parameters.acknowledgeKnownIssues }}

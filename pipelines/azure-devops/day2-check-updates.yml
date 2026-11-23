@@ -13,43 +13,42 @@
 # failure notification (Project settings > Notifications). An update that is merely offered ends with exit code 0: read the verdict in the log and the
 # report (the build artifact day2-update-check).
 #
-# The schedule (owner directive D74: check for updates on a schedule) is NOT in this sample, and that is a limit of the platform, not an omission. Learn:
-# a scheduled run cannot use pipeline variables, and it cannot be asked for a parameter. The pool, the service connection, the variable group and the file
-# path are run parameters with no default here (devops.* values are never written in a pipeline file), so a scheduled run would fail at once for want of
-# them. To schedule it, copy this file, give each of the four parameters of your deployment as its default, and add the block below with the value of the key
-# devops.pipelines.schedules.check_for_updates of infrastructure.yml (a five-field cron expression in UTC; task 05 of the CI/CD setup prints it). Schedules
-# defined in the pipeline's Triggers settings take precedence over YAML schedules
-# (https://learn.microsoft.com/azure/devops/pipelines/process/scheduled-triggers).
-#   schedules:
-#     - cron: '17 4 * * *'
-#       displayName: Check for updates
-#       branches:
-#         include: ['*']
-#       always: true
-# GitHub Actions and GitLab CI run the same check on a schedule without a copy: their pipelines read the deployment values from variables.
+# The schedule (owner directive D74: check for updates on a schedule; D126: the same schedule on GitHub, GitLab and Azure DevOps). It is the key
+# devops.pipelines.schedules.check_for_updates of infrastructure.yml, a five-field cron expression in UTC. Learn: a schedule cannot use pipeline variables
+# and must be in the main YAML file (https://learn.microsoft.com/azure/devops/pipelines/process/scheduled-triggers), so the cron line and the branch below
+# are written in this file. This sample carries the registry defaults of devops.pipelines.schedules.check_for_updates and devops.repository.default_branch,
+# and tests/pipelines/Day2Pipelines.Tests.ps1 keeps them equal; Set-CicdVariables.ps1 (task 05) writes the values of your file into both lines.
+# A scheduled run cannot be asked for a parameter: every parameter here has a default (source azure), and the deployment values are compile-time variables
+# of variables/pipeline-settings.yml, so the scheduled run takes the Azure view as on GitHub and GitLab. always: true runs it even when the code did not change
+# (a check of the cluster, not a build). Schedules defined in the pipeline's Triggers settings take precedence over this one: define none there.
 #
-# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the value of every
-# run parameter to enter.
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh). Source azure also
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup writes every value below into variables/pipeline-settings.yml and variables/approval-environments.yml (Set-CicdVariables.ps1, from infrastructure.yml; commit both in a pull request).
+#   Agent pool      a self-hosted pool (AZL_AGENT_POOL: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh). Source azure also
 #                   needs the Azure CLI. Source cluster needs a route to the cluster (WinRM, TCP 5985 or 5986) and an agent account that may read the update
 #                   state of the cluster.
-#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#   Service conn.   the Azure Resource Manager service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05
 #                   creates it), workload identity federation, with Azure Stack HCI Administrator or Reader on the cluster resource. Only source azure uses it.
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#   Variable group  AZL_VARIABLE_GROUP (Pipelines > Library; devops.pipelines.variable_group, the repository group task 05 writes). This file reads
 #                   AZL_POWERSHELL_YAML_VERSION from it (devops.pipelines.tool_versions.powershell_yaml).
-#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other keywords take
-#                   template expressions or runtime parameters
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). So the pool, the service connection,
-#                   the variable group and the file path are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 name: day2-check-updates-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none
 pr: none
 
+schedules:
+  - cron: '17 4 * * *'
+    displayName: Check for updates
+    branches:
+      include:
+        - main
+    always: true
+
 parameters:
-  - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
-    type: string
   - name: source
     displayName: 'azure: what Azure shows for the cluster resource (Azure CLI, no node access). cluster: what the update service on the cluster has discovered (PowerShell remoting)'
     type: string
@@ -57,18 +56,10 @@ parameters:
     values:
       - azure
       - cluster
-  - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7). Enter devops.runners[].pool of the general runner'
-    type: string
-  - name: service_connection
-    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
-    type: string
-  - name: variable_group
-    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
-    type: string
 
 variables:
-  - group: ${{ parameters.variable_group }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   - name: checkAzureScript
     value: scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1
   - name: checkClusterScript
@@ -83,7 +74,7 @@ stages:
           - job: CheckAzure
             displayName: 'Check for updates, Azure view (read only)'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # Two read calls of Azure and a file: the toolkit's limit for a read-only check, not a figure from Microsoft.
@@ -100,7 +91,7 @@ stages:
               - task: AzureCLI@2
                 displayName: 'Check for updates (Azure)'
                 inputs:
-                  azureSubscription: ${{ parameters.service_connection }}
+                  azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                   scriptType: pscore
                   scriptLocation: inlineScript
                   workingDirectory: $(Build.SourcesDirectory)
@@ -113,7 +104,7 @@ stages:
                     if ($code -ne 0) { throw "Get-AvailableSolutionUpdate.azcli.ps1 exited with code $code." }
                 env:
                   CHECK_SCRIPT: $(checkAzureScript)
-                  CHECK_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                  CHECK_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                   CHECK_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-update-check
 
               - task: PublishPipelineArtifact@1
@@ -132,7 +123,7 @@ stages:
           - job: CheckCluster
             displayName: 'Check for updates, cluster view (read only)'
             pool:
-              name: ${{ parameters.agent_pool }}
+              name: ${{ variables.AZL_AGENT_POOL }}
               demands:
                 - pwsh
             # One read of the update service over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
@@ -157,7 +148,7 @@ stages:
                 workingDirectory: $(Build.SourcesDirectory)
                 env:
                   CHECK_SCRIPT: $(checkClusterScript)
-                  CHECK_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                  CHECK_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
                   CHECK_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-update-check
 
               - task: PublishPipelineArtifact@1

@@ -16,21 +16,20 @@
 # the artifact (write-back/). The file in the repository is not changed and nothing is committed: review the copy and commit it through a pull request.
 #
 # What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the
-# value of every run parameter to enter.
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), a route to the
+# value of every setting, and Set-CicdVariables.ps1 writes them into variables/pipeline-settings.yml.
+#   Agent pool      a self-hosted pool (AZL_AGENT_POOL: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), a route to the
 #                   BMC addresses (HTTPS, TCP 443) and, for the directory step, the ActiveDirectory module (RSAT) on a domain-joined agent.
-#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05
+#   Service conn.   the Azure Resource Manager service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; task 05
 #                   creates it), workload identity federation, with Reader on the subscriptions of the tenant inventory and Key Vault Secrets User
 #                   on the vault of the BMC login (the secret reference of hardware.bmc or nodes[].bmc in the master file).
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#   Variable group  AZL_VARIABLE_GROUP (Pipelines > Library; devops.pipelines.variable_group, the repository group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
 #                   It holds no BMC password: the script reads it from Key Vault at run time.
-#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other
-#                   keywords take template expressions or runtime parameters
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection, the
-#                   variable group and the file path are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                   compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                   and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                   scheduled run needs none.
 name: discovery-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none
@@ -42,9 +41,6 @@ pr: none
 lockBehavior: sequential
 
 parameters:
-  - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
-    type: string
   - name: scope
     displayName: 'What to discover: all (hardware inventory, Azure tenant, Active Directory), hardware, dell, tenant or directory'
     type: string
@@ -67,18 +63,10 @@ parameters:
     displayName: 'Scope tenant: also record the role assignments'
     type: boolean
     default: false
-  - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7, route to the BMCs). Enter devops.runners[].pool of the general runner'
-    type: string
-  - name: service_connection
-    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
-    type: string
-  - name: variable_group
-    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
-    type: string
 
 variables:
-  - group: ${{ parameters.variable_group }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   - name: DISCOVERY_SCRIPT
     value: scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1
 
@@ -90,7 +78,7 @@ stages:
       - job: Discover
         displayName: 'Discover (read only)'
         pool:
-          name: ${{ parameters.agent_pool }}
+          name: ${{ variables.AZL_AGENT_POOL }}
           demands:
             - pwsh
         # A read-only run: the toolkit's limit, not a figure from Microsoft. A BMC is read for at most 900 seconds (Invoke-HardwareDiscovery.ps1, NodeBudgetSeconds), four at a time.
@@ -107,7 +95,7 @@ stages:
           - task: AzurePowerShell@5
             displayName: 'Discover'
             inputs:
-              azureSubscription: ${{ parameters.service_connection }}
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
               azurePowerShellVersion: OtherVersion
               preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
               pwsh: true
@@ -124,7 +112,7 @@ stages:
                 & $env:DISCOVERY_SCRIPT @p
                 if ($LASTEXITCODE -ne 0) { throw "Invoke-AzlDiscoveryRun.ps1 exited with code $LASTEXITCODE." }
             env:
-              DISCOVERY_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              DISCOVERY_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
               DISCOVERY_SCOPE: ${{ parameters.scope }}
               DISCOVERY_MANAGEMENT_PORT: ${{ parameters.management_port }}
               DISCOVERY_WRITE_BACK: ${{ parameters.write_back }}

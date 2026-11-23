@@ -15,8 +15,8 @@
 #
 # The schedule (owner directive D74: check for updates on a schedule). It is the key devops.pipelines.schedules.check_for_updates of infrastructure.yml,
 # a five-field cron expression in UTC. GitHub reads a cron expression only from this file (no variable or expression can be used there), so this sample carries
-# the default of the key, and tests/pipelines/Day2Pipelines.Tests.ps1 keeps the two equal. When your file sets another value, change the cron line of your
-# copy to it; task 05 of the CI/CD setup prints the value to use. A scheduled run has no inputs, so it takes the source azure.
+# the default of the key, and tests/pipelines/Day2Pipelines.Tests.ps1 keeps the two equal. Task 05 of the CI/CD setup (Set-CicdVariables.ps1) writes the value
+# of your file into the cron line of your copy (D126: the same schedule as GitLab and Azure DevOps); commit it. A scheduled run has no inputs, so it takes the source azure.
 #
 # Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets every variable below
 # from infrastructure.yml. GitHub reads runs-on and env from the vars context

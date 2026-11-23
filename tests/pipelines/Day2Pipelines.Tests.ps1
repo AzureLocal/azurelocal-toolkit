@@ -265,13 +265,13 @@ Describe 'The approval binding of the jobs that change the cluster' {
         $defined.Count | Should -Be 1
         [string]$defined[0]['value'] | Should -Be '' -Because 'no value of a deployment is written in the toolkit'
     }
-    It 'Azure DevOps: the run forms are exactly the parameters listed, and none of them names the approval environment' {
+    It 'Azure DevOps: the run forms are exactly the choices of one run listed (D126: no deployment value, no approval environment)' {
         $expected = @{
-            'day2-check-updates'      = @('infrastructure_file', 'source', 'agent_pool', 'service_connection', 'variable_group')
-            'day2-update'             = @('infrastructure_file', 'action', 'update_mode', 'agent_pool', 'variable_group')
-            'day2-node-maintenance'   = @('infrastructure_file', 'node', 'action', 'agent_pool', 'service_connection', 'variable_group')
-            'day2-cluster-operations' = @('infrastructure_file', 'action', 'node', 'enable', 'agent_pool', 'variable_group')
-            'validation'              = @('infrastructure_file', 'run_performance_test', 'agent_pool', 'variable_group')
+            'day2-check-updates'      = @('source')
+            'day2-update'             = @('action', 'update_mode')
+            'day2-node-maintenance'   = @('node', 'action')
+            'day2-cluster-operations' = @('action', 'node', 'enable')
+            'validation'              = @('run_performance_test')
         }
         foreach ($name in $expected.Keys) {
             $names = @((Get-Yaml "pipelines/azure-devops/$name.yml")['parameters'] | ForEach-Object { [string]$_['name'] })
@@ -469,14 +469,16 @@ Describe 'Check for updates: read only, on a schedule, and the run fails when th
         $doc['day2-check-updates-azure']['id_tokens'].Contains('ARM_OIDC_TOKEN') | Should -BeTrue
         $doc['day2-check-updates-cluster'].Contains('id_tokens') | Should -BeFalse
     }
-    It 'Azure DevOps: a scheduled run cannot supply the run parameters, so the sample carries the block as a comment with the registry default, and no active schedule' {
+    It 'Azure DevOps: the schedule is active (D126): the registry defaults of the cron line and the branch, and the only parameter has a default, so a scheduled run takes the Azure view' {
         $default = [string]@($script:Registry | Where-Object Path -EQ 'devops.pipelines.schedules.check_for_updates')[0].Node['default']
+        $branch = [string]@($script:Registry | Where-Object Path -EQ 'devops.repository.default_branch')[0].Node['default']
         $file = 'pipelines/azure-devops/day2-check-updates.yml'
-        (Get-CodeText $file) | Should -Not -Match '(?m)^schedules:'
-        (Get-Text $file) | Should -Match "(?m)^#\s+- cron: '$([regex]::Escape($default))'\r?$"
-        (Get-Text $file) | Should -Match '(?m)^#\s+always: true\r?$'
         $doc = Get-Yaml $file
-        $doc.Contains('schedules') | Should -BeFalse
+        @($doc['schedules']).Count | Should -Be 1
+        [string]@($doc['schedules'])[0]['cron'] | Should -Be $default
+        @(@($doc['schedules'])[0]['branches']['include']) | Should -Be @($branch)
+        @($doc['schedules'])[0]['always'] | Should -BeTrue
+        @($doc['parameters']).Count | Should -Be 1
         @($doc['parameters'] | Where-Object { $_['name'] -eq 'source' })[0]['default'] | Should -Be 'azure'
         $doc['trigger'] | Should -Be 'none'
     }

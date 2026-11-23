@@ -4,7 +4,7 @@
 # Task 06 of automation / 01-cicd-infra as a pipeline: validate, terraform plan,
 # manual approval (environment check), terraform apply of the reviewed plan.
 #
-# Sign-in: the service connection of the parameter serviceConnection (devops.pipelines.service_connection; made by task 05 with workload
+# Sign-in: the service connection of AZL_SERVICE_CONNECTION (devops.pipelines.service_connection; made by task 05 with workload
 # identity federation when devops.authentication.method is oidc). The scripts follow AZL_AUTH_METHOD (devops.authentication.method) from the
 # variable group: oidc takes the federated token of the service connection, client_secret its secret. The identity needs Storage Blob Data
 # Contributor on the state account, and the roles in docs/cicd-infra-deployment.md.
@@ -12,24 +12,22 @@
 #                 value to write there, once, in a pull request), with an Approvals check (the manual approval). It is bound when the pipeline is
 #                 compiled and is not a run parameter: a deployment job to an environment with no approval check runs without one, so the person who
 #                 queues the run must not choose it. While it is empty and apply is on, the stage ApprovalEnvironmentNotSet fails and nothing is changed.
-# Variable group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment>). Task 05 writes to it AZL_AUTH_METHOD,
+# Variable group: AZL_VARIABLE_GROUP (devops.pipelines.variable_group: the group of the repository). Task 05 writes to it AZL_AUTH_METHOD,
 #                 AZL_RUNNER_SSH_PUBLIC_KEY (devops.runners[].admin_ssh_public_key of the Linux runner, a public key), AZL_TERRAFORM_VERSION
 #                 and AZL_POWERSHELL_YAML_VERSION (devops.pipelines.tool_versions.*).
-# Infrastructure file: the parameter infrastructureFile (devops.pipelines.infrastructure_file). Task 05 lists every value to enter.
+# Infrastructure file: AZL_INFRASTRUCTURE_FILE (devops.pipelines.infrastructure_file). Set-CicdVariables.ps1 writes it.
 # Requirements: the Terraform extension from the marketplace (TerraformInstaller@1).
 #
 # Where it runs: the first time on Microsoft-hosted agents (there are no agents yet);
-# set the agentPool parameter to the pool of the agents (devops.runners[].pool of the general runner) after the agents exist.
-# Why parameters: the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task
-# inputs, and that other keywords take template expressions or runtime parameters
-# (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-# ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
-# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the file path are
-# runtime parameters (${{ parameters.name }}). The approval environment is not one of them: a value the queuer must not choose is read from a YAML
-# file of the repository.
+# run with the parameter runner set to self-hosted (AZL_AGENT_POOL: devops.runners[].pool of the general runner) after the agents exist.
+# Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are
+#                 compile-time variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job
+#                 and a service connection take template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                 (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them, and a
+#                 scheduled run needs none.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. The
-# Validate stage only validates; Plan and Apply use it only for the first run (agentPool hosted), before the self-hosted agents exist.
+# Validate stage only validates; Plan and Apply use it only for the first run (runner hosted), before the self-hosted agents exist.
 name: cicd-infra-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none
@@ -39,26 +37,21 @@ pr: none
 lockBehavior: sequential
 
 parameters:
-  - name: infrastructureFile
-    displayName: Path of infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file
-    type: string
-  - name: agentPool
-    displayName: Agent pool. hosted for the first run (Microsoft-hosted ubuntu-latest), then devops.runners[].pool of the general runner
+  - name: runner
+    displayName: 'Where Plan and Apply run: hosted for the first run (the Microsoft-hosted image; no agent exists yet), self-hosted (AZL_AGENT_POOL) after the agents exist'
     type: string
     default: hosted
-  - name: serviceConnection
-    displayName: Azure service connection. Enter devops.pipelines.service_connection
-    type: string
-  - name: variableGroup
-    displayName: Variable group with the sign-in method, the tool versions and the runner public key. Enter devops.pipelines.variable_group (with environments, <name>-<environment>)
-    type: string
+    values:
+      - hosted
+      - self-hosted
   - name: apply
     displayName: Also run the apply stage (it waits for approval)
     type: boolean
     default: false
 
 variables:
-  - group: ${{ parameters.variableGroup }}
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
   # AZL_ENVIRONMENT_CICD_INFRA: the approval environment of the Apply stage, bound at compile time (not a run parameter).
   - template: variables/approval-environments.yml
   - name: TF_ROOT
@@ -103,18 +96,18 @@ stages:
               ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:CICD_INFRASTRUCTURE_FILE
             displayName: Check infrastructure.yml
             env:
-              CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+              CICD_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
 
   - stage: Plan
     displayName: Plan
     dependsOn: Validate
     # The first run has no self-hosted agent yet, so it runs on the hosted image; later runs name the pool.
-    ${{ if eq(parameters.agentPool, 'hosted') }}:
+    ${{ if eq(parameters.runner, 'hosted') }}:
       pool:
         vmImage: ubuntu-latest
     ${{ else }}:
       pool:
-        name: ${{ parameters.agentPool }}
+        name: ${{ variables.AZL_AGENT_POOL }}
         demands:
           - terraform
     jobs:
@@ -130,7 +123,7 @@ stages:
           - task: AzureCLI@2
             displayName: Plan (nothing changes in Azure)
             inputs:
-              azureSubscription: ${{ parameters.serviceConnection }}
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
               scriptType: pscore
               scriptLocation: inlineScript
               addSpnToEnvironment: true # exposes $env:servicePrincipalId, $env:tenantId and $env:idToken (federation) or $env:servicePrincipalKey (secret)
@@ -143,7 +136,7 @@ stages:
                 & './$(TASK06)' -InfrastructureFile $env:CICD_INFRASTRUCTURE_FILE -WorkingDirectory '$(WORK)'
                 terraform -chdir='$(TF_ROOT)' show -no-color '$(WORK)/cicd-infra.tfplan' | Tee-Object '$(WORK)/plan.txt'
             env:
-              CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+              CICD_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
               # The public key of the Linux runners task 06 writes to the Terraform variables (from the variable group).
               AZL_RUNNER_SSH_PUBLIC_KEY: $(AZL_RUNNER_SSH_PUBLIC_KEY)
           - publish: $(WORK)
@@ -156,12 +149,12 @@ stages:
         displayName: Apply (no approval environment is set)
         dependsOn: Plan
         # The same pool choice as the Plan stage: the first run has no self-hosted agent yet.
-        ${{ if eq(parameters.agentPool, 'hosted') }}:
+        ${{ if eq(parameters.runner, 'hosted') }}:
           pool:
             vmImage: ubuntu-latest
         ${{ else }}:
           pool:
-            name: ${{ parameters.agentPool }}
+            name: ${{ variables.AZL_AGENT_POOL }}
             demands:
               - terraform
         jobs:
@@ -180,12 +173,12 @@ stages:
         displayName: Apply (needs approval)
         dependsOn: Plan
         # The same pool choice as the Plan stage: the first run has no self-hosted agent yet.
-        ${{ if eq(parameters.agentPool, 'hosted') }}:
+        ${{ if eq(parameters.runner, 'hosted') }}:
           pool:
             vmImage: ubuntu-latest
         ${{ else }}:
           pool:
-            name: ${{ parameters.agentPool }}
+            name: ${{ variables.AZL_AGENT_POOL }}
             demands:
               - terraform
         jobs:
@@ -208,7 +201,7 @@ stages:
                     - task: AzureCLI@2
                       displayName: Apply the reviewed plan
                       inputs:
-                        azureSubscription: ${{ parameters.serviceConnection }}
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
                         scriptType: pscore
                         scriptLocation: inlineScript
                         addSpnToEnvironment: true
@@ -220,4 +213,4 @@ stages:
                           if ($env:AZL_AUTH_METHOD -eq 'client_secret') { $env:ARM_CLIENT_SECRET = $env:servicePrincipalKey } else { $env:ARM_USE_OIDC = 'true'; $env:ARM_OIDC_TOKEN = $env:idToken }
                           & './$(TASK06)' -InfrastructureFile $env:CICD_INFRASTRUCTURE_FILE -PlanFile '$(Pipeline.Workspace)/cicd-infra-plan/cicd-infra.tfplan' -Apply
                       env:
-                        CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+                        CICD_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}

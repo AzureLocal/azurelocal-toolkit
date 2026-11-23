@@ -1000,7 +1000,7 @@
                 "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here."
               },
               "pool": {
-                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines take the pool of the general runner as their agent pool parameter.",
+                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines read the pool of the general runner as AZL_AGENT_POOL of pipelines/azure-devops/variables/pipeline-settings.yml, which task 05 writes (D126).",
                 "type": "string"
               },
               "private_ips": {

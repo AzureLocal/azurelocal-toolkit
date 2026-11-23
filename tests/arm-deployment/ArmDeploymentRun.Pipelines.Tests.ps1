@@ -160,18 +160,17 @@ Describe 'Azure DevOps' {
     }
     It 'signs in through a workload identity service connection and the AzurePowerShell task, not with a secret' {
         $script:Text['ado'] | Should -Match 'AzurePowerShell@5'
-        $script:Text['ado'] | Should -Match 'azureSubscription: \$\{\{ parameters.azureServiceConnection \}\}'
+        $script:Text['ado'] | Should -Match 'azureSubscription: \$\{\{ variables.AZL_SERVICE_CONNECTION \}\}'
         $script:Text['ado'] | Should -Match 'workload identity federation'
-        # Pass H: the name is devops.pipelines.service_connection, entered at run time; the parameter has no default (not even a placeholder).
-        $p = @($script:A.parameters | Where-Object name -eq 'azureServiceConnection')
-        $p.Count | Should -Be 1
-        $p[0].Contains('default') | Should -BeFalse
+        # D126: the name is devops.pipelines.service_connection, a compile-time variable of variables/pipeline-settings.yml (task 05 writes it), never a run parameter.
+        @($script:A.parameters | Where-Object { $_ -and $_.name -eq 'azureServiceConnection' }).Count | Should -Be 0
+        $script:Text['ado'] | Should -Match '(?m)^\s+- template: variables/pipeline-settings\.yml\r?$'
         $script:Text['ado'] | Should -Match 'devops\.pipelines\.service_connection'
     }
     It 'the stage with the long deploy has the fixed upper bound above the largest wait the file allows, and runs queue one after the other' {
         $script:Text['ado'] | Should -Match 'timeoutInMinutes: 1500'
         $script:A.lockBehavior | Should -Be 'sequential'
-        @($script:A.parameters | Where-Object name -eq 'infrastructureFile')[0].Contains('default') | Should -BeFalse
+        @($script:A.parameters | Where-Object { $_ -and $_.name -eq 'infrastructureFile' }).Count | Should -Be 0 -Because 'the path is AZL_INFRASTRUCTURE_FILE of variables/pipeline-settings.yml (D126)'
         $script:Text['ado'] | Should -Match 'preferredAzurePowerShellVersion: \$\(AZL_AZ_POWERSHELL_VERSION\)'
     }
 }

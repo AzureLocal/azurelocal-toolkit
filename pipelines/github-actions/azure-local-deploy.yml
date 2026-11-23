@@ -25,8 +25,9 @@
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. Only the
 # jobs that validate and plan use it; the apply and the on-premises jobs run on the self-hosted runner.
-# Trigger: every push and pull request that touches the code validates it. Plan, apply and the configuration run only on the default branch
-# of the repository (github.event.repository.default_branch): the branch filter of a trigger cannot read a variable.
+# Trigger: started by hand (workflow_dispatch), like the same pipeline on GitLab (the web form or the API) and Azure DevOps (trigger: none):
+# D126, one design on every platform, and a deployment is a decision, not a push. Plan, apply and the configuration run only on the default
+# branch of the repository (github.event.repository.default_branch).
 #
 # No approval environment, no change. While the repository variable AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT is empty, the job that changes something does not run (its if needs the
 # variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
@@ -34,15 +35,6 @@
 name: Azure Local Deployment
 
 on:
-  push:
-    paths:
-      - 'src/terraform/**'
-      - 'src/ansible/**'
-      - 'config/variables/**'
-  pull_request:
-    paths:
-      - 'src/terraform/**'
-      - 'src/ansible/**'
   workflow_dispatch:
 
 # Every run step is PowerShell 7.
@@ -73,6 +65,22 @@ jobs:
   # =========================================================================
   # Validate
   # =========================================================================
+  # The master file against the schema and the rules, the same check as config:validate of GitLab and CheckInfrastructureFile of Azure DevOps.
+  config-validate:
+    name: Check infrastructure.yml
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # One schema check of one file: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check infrastructure.yml
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable powershell-yaml | Where-Object Version -EQ $env:AZL_POWERSHELL_YAML_VERSION)) { Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Scope CurrentUser -Force -Repository PSGallery }
+          ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+          exit $LASTEXITCODE
+
   terraform-validate:
     name: Terraform Validate
     # Validates only: the hosted image is a platform choice.

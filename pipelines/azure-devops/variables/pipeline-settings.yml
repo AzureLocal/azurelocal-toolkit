@@ -1,0 +1,31 @@
+# The deployment values every Azure DevOps pipeline of the toolkit reads when it is compiled (owner directive D126: one CI/CD design on GitHub, GitLab and
+# Azure DevOps, every value from infrastructure.yml).
+#
+# Why this file exists. GitHub and GitLab read the runner, the infrastructure file and the handoff path from repository or project variables that task 05
+# of the CI/CD setup sets from infrastructure.yml. Azure DevOps reads the pool of a job, the service connection of a task and the variable group before any
+# variable of a library or of the pipeline exists: Learn says a macro variable $(name) is expanded only in task inputs, and a template expression
+# ${{ variables.name }} sees only the variables of the YAML files (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So on
+# Azure DevOps these values are variables of this YAML file, which every pipeline includes with `- template: variables/pipeline-settings.yml`. They are not
+# run parameters: no run form asks for them, a scheduled run (day2-check-updates.yml) needs none, and whoever queues a run cannot change them.
+#
+# GENERATED in your repository: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables/powershell/Set-CicdVariables.ps1 writes
+# this file (and variables/approval-environments.yml) from infrastructure.yml, with the variable group as a `- group:` entry. Commit the result in a pull
+# request and run it again after you change the file. The toolkit ships the values empty, because no value of a deployment is written in the toolkit: until
+# the file is generated, Azure DevOps refuses to compile a pipeline (an empty pool), so nothing runs.
+#
+#   AZL_AGENT_POOL           devops.runners[].pool of the general runner (the self-hosted agent pool)
+#   AZL_SERVICE_CONNECTION   devops.pipelines.service_connection (the Azure Resource Manager service connection task 05 creates)
+#   AZL_VARIABLE_GROUP       devops.pipelines.variable_group (the repository group task 05 writes; the generated file also references it with `- group:`)
+#   AZL_INFRASTRUCTURE_FILE  devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_HANDOFF_PATH         devops.pipelines.handoff_path (the ZTP handoff files; none for an ISO-installed cluster)
+variables:
+  - name: AZL_AGENT_POOL
+    value: ''
+  - name: AZL_SERVICE_CONNECTION
+    value: ''
+  - name: AZL_VARIABLE_GROUP
+    value: ''
+  - name: AZL_INFRASTRUCTURE_FILE
+    value: ''
+  - name: AZL_HANDOFF_PATH
+    value: ''

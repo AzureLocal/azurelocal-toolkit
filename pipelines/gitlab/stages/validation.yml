@@ -42,6 +42,12 @@
 # variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
 # ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
 
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
 stages:
   - validation
 

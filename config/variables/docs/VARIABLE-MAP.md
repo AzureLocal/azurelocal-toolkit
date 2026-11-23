@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.64. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.65. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 757 | 508 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4789 | 4581 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4792 | 4584 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6919 | 5091 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6922 | 5094 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,9 +94,9 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1093 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1097 |
 | sonar | Sonar | 19 | 0 | 266 |
-| cicd-infra | Outside the flow | 91 | 0 | 891 |
+| cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 41 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 232 | 0 | 0 |
@@ -246,18 +246,20 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 **Reads (91):**
 `devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.pipelines.environments.operations`, `devops.pipelines.schedules.check_for_updates`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group`, `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path`, `devops.pipelines.tool_versions.terraform`, `devops.pipelines.tool_versions.python`, `devops.pipelines.tool_versions.ansible_core`, `devops.pipelines.tool_versions.ansible_lint`, `devops.pipelines.tool_versions.az_powershell`, `devops.pipelines.tool_versions.powershell_yaml`, `devops.pipelines.tool_versions.az_keyvault`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].size`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].pool`, `devops.runners[].private_ips`, `devops.runners[].subnet.name`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `devops.runners[].admin_ssh_public_key`, `devops.runners[].admin_username`, `devops.runners[].nsg_name`, `devops.runners[].managed_identity_name`, `devops.runners[].windows_admin_password_secret`, `devops.runners[].zones`, `devops.runners[].os_disk_size_gb`, `devops.runners[].os_disk_type`, `devops.runners[].os_disk_caching`, `devops.runners[].data_disk_caching`, `devops.runners[].encryption_at_host`, `devops.runners[].image.publisher`, `devops.runners[].image.offer`, `devops.runners[].image.sku`, `devops.runners[].image.version`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`, `landing_zone.networks[].allow_forwarded_traffic`, `landing_zone.networks[].allow_gateway_transit`
 
-Where in the code (file, function, keys read by name; 8 places):
+Where in the code (file, function, keys read by name; 10 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 72 |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 25 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 26 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlRunnerPool` | 14 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineInput` | 11 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlRunnerTerraformVariable` | 4 |
 | `scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap/azurecli/New-CicdBootstrap.azcli.ps1` | `(script)` | 4 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineName` | 2 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Export-AzlCicdPipelineSetting` | 1 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Set-AzlCicdVariable` | 1 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Set-AzlGitLabPipelineSchedule` | 1 |
 
 ### infrastructure-helpers
 
@@ -1876,16 +1878,16 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 980 | 980 | 0 |
+| arm_deployment | parameters | 984 | 984 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
 | cicd_infra | env_vars | 156 | 156 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 321 | 321 | 0 |
-| cicd_infra | pipeline_variables | 204 | 204 | 0 |
-| cicd_infra | secret_names | 31 | 31 | 0 |
+| cicd_infra | pipeline_inputs | 324 | 324 | 0 |
+| cicd_infra | pipeline_variables | 201 | 201 | 0 |
+| cicd_infra | secret_names | 30 | 30 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |
 | discovery | parameters | 75 | 75 | 0 |

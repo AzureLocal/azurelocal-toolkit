@@ -98,6 +98,10 @@ BeforeAll {
         healthScript = '^scripts/'; arcScript = '^scripts/'; networkScript = '^scripts/'; storageScript = '^scripts/'
         AZL_ENVIRONMENT_OS_CONFIGURATION = '^$'; AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE = '^$'; AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'
         AZL_ENVIRONMENT_CICD_INFRA = '^$'; AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT = '^$'; AZL_ENVIRONMENT_OPERATIONS = '^$'
+        # D126: the deployment values of Azure DevOps, compile-time variables of variables/pipeline-settings.yml that task 05 writes: the toolkit ships them empty
+        AZL_AGENT_POOL = '^$'; AZL_SERVICE_CONNECTION = '^$'; AZL_VARIABLE_GROUP = '^$'; AZL_INFRASTRUCTURE_FILE = '^$'; AZL_HANDOFF_PATH = '^$'
+        # D126: the per-run confirmation of a storage wipe on a deployed cluster (GitLab), safe default false as the input of GitHub and the parameter of Azure DevOps
+        CONFIRM_WIPE_DEPLOYED_CLUSTER = '^false$'
     }
 }
 
@@ -218,8 +222,13 @@ Describe 'Sign-in: every pipeline follows devops.authentication.method (AZL_AUTH
 
 Describe 'Branches: the deploy branch is the default branch of the repository' {
     It '<File> holds no branch name' -ForEach $script:Files {
+        # D126: the branch of the Azure DevOps schedule must be written in the file (Learn: a schedule cannot use variables). The sample carries the registry
+        # default of devops.repository.default_branch, task 05 writes the value of the file, and tests/pipelines/PipelineParity.Tests.ps1 checks both.
+        $scheduleBranch = if ($File -eq 'pipelines/azure-devops/day2-check-updates.yml') { [regex]::Match((Get-Text $File), '(?m)^    branches:\r?\n      include:\r?\n        - (\S+)').Groups[1].Value } else { '' }
+        $default = [string]@($script:Registry | Where-Object Path -EQ 'devops.repository.default_branch')[0].Node['default']
         foreach ($l in (Get-CodeLine $File)) {
             if ($l.Text -match '^\s*-?\s*(displayName|description):') { continue }
+            if ($scheduleBranch -and $scheduleBranch -eq $default -and $l.Text -match "^        - $([regex]::Escape($default))\s*$") { continue }
             $l.Text | Should -Not -Match '(?<![\w./-])(main|master)(?![\w.-])' -Because "$File line $($l.Number)"
             $l.Text | Should -Not -Match 'refs/heads/(?!\{0\})' -Because "$File line $($l.Number)"
         }
