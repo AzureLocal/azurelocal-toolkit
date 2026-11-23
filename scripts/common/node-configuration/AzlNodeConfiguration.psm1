@@ -302,9 +302,22 @@ function Get-AzlNodeSpec {
     if (-not $mgmt.MacAddress) { throw "Node $name's management port has no mac_address. Ports are found by MAC, so it is required." }
     $modeLabel = (Get-AzlManagementMode -Infrastructure $Infrastructure -Node $Node).Label
 
+    # D62: which file ports carry storage traffic (an intent of networking.intents with traffic storage names them, or the port's roles say storage), and which also
+    # carry management traffic. A storage-only port must have no VLAN ID on the NIC before the deployment (Network ATC applies the storage VLANs; Azure Validate
+    # StorageAdapterReadiness fails otherwise). A port that also carries management keeps its VLAN: Learn says every management adapter has the same management VLAN.
+    $storageIntentPorts = @{}; $managementIntentPorts = @{}
+    foreach ($intent in @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.intents'))) {
+        $traffic = @(ConvertTo-List (Get-AzlProp $intent 'traffic') | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        foreach ($adapterName in @(ConvertTo-List (Get-AzlProp $intent 'adapters') | ForEach-Object { ([string]$_).ToLowerInvariant() })) {
+            if ('storage' -in $traffic) { $storageIntentPorts[$adapterName] = $true }
+            if ('management' -in $traffic) { $managementIntentPorts[$adapterName] = $true }
+        }
+    }
     $ports = foreach ($p in @(Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $Node)) {
         $roles = @(ConvertTo-List $p['roles'] | ForEach-Object { [string]$_ })
         $isMgmt = (ConvertTo-MacKey $p['mac_address']) -eq (ConvertTo-MacKey $mgmt.MacAddress)
+        $portKey = ([string]$p['name']).ToLowerInvariant()
+        $carriesManagement = $isMgmt -or $managementIntentPorts.ContainsKey($portKey) -or ($roles -contains 'management')
         [pscustomobject]@{
             Name         = [string]$p['name']
             Mac          = ConvertTo-MacKey $p['mac_address']
@@ -314,6 +327,8 @@ function Get-AzlNodeSpec {
             PrefixLength = $(if ($p.Contains('prefix_length')) { [int]$p['prefix_length'] } elseif ($isMgmt) { $mgmt.PrefixLength } else { $null })
             Gateway      = $(if ($isMgmt) { $mgmt.Gateway } else { $null })
             IsManagement = $isMgmt
+            # D62: a storage port that carries no management traffic; the OS configuration clears a VLAN ID left on it before the deployment.
+            StorageOnly  = ((-not $carriesManagement) -and ($storageIntentPorts.ContainsKey($portKey) -or ($roles -contains 'storage')))
             # Opt-in rename (NicNames): the name the user wants the OS adapter to have. Empty means the adapter keeps whatever name the OS gave it.
             OsNameOverride = $(if ($p.Contains('os_name_override') -and "$($p['os_name_override'])" -ne '') { [string]$p['os_name_override'] } else { '' })
             # What the file says about where the adapter is (informational; the adapter is found by MAC).
@@ -417,6 +432,9 @@ function Get-AzlNodeReadParameter {
     # san: the file declares a SAN, so the node reads MPIO, MSDSM, the FC ports and the iSCSI initiator. Whatever the file says, the node always reports the FC and iSCSI disks
     # it sees (sanDisks, read only), so a SAN the file does not declare is found.
     $p = @{ mgmtMac = $Spec.Management.Mac; san = [bool]$Spec.San; sanDisks = $true; sanType = $(if ($Spec.San) { $Spec.San.Type } else { '' }) }
+    # D62: the node also reads the VlanID advanced property of the storage-only ports, so a VLAN ID left on one is found and cleared before Network ATC.
+    $storageMacs = @($Spec.Ports | Where-Object { $_.PSObject.Properties['StorageOnly'] -and $_.StorageOnly -and $_.Mac } | ForEach-Object { [string]$_.Mac })
+    if ($storageMacs.Count) { $p.storageMacs = $storageMacs }
     if ($Spec.Sbe) {
         $p.sbeDir = $Spec.Sbe.Dir
         $p.sbeZip = $Spec.Sbe.ZipName
@@ -725,6 +743,17 @@ function Compare-AzlNodeState {
                 if ($hasGw -or $mgmt.Mode -eq 'static') { $gatewayHolders.Add($nic.n) }
                 continue
             }
+            # D62: a VLAN ID left on a storage-only port (the VlanID advanced property) is cleared to 0 before Network ATC, as its own guarded change:
+            # Network ATC applies the storage VLANs itself, and Azure Validate StorageAdapterReadiness fails on a storage adapter that carries one.
+            # A node of a deployed cluster is left alone (Network ATC owns the storage VLANs then), and so is one that does not say whether it is.
+            if ($port.PSObject.Properties['StorageOnly'] -and $port.StorageOnly -and $null -ne $nic.vlan -and "$($nic.vlan)" -ne '' -and "$($nic.vlan)" -ne '0') {
+                $clusterEvidence = Get-AzlProp (Get-AzlProp $State 'stor') 'cluster'
+                $deployedCluster = [bool](Get-AzlProp $clusterEvidence 'deployed' $false)
+                $vlanItem = "storage VLAN $label"
+                if ($null -eq $clusterEvidence) { & $add (New-AzlPlanItem $n 'Network' $vlanItem "VLAN $($nic.vlan) on the NIC" 'no VLAN on the NIC (0)' Blocked 'A storage adapter carries a VLAN ID, but the node did not report whether it belongs to a cluster, so it is not cleared. Read the node again with the current toolkit, or clear it by hand: Set-NetAdapterAdvancedProperty -Name <adapter> -RegistryKeyword VlanID -RegistryValue 0; Restart-NetAdapter -Name <adapter>.') }
+                elseif ($deployedCluster) { & $add (New-AzlPlanItem $n 'Network' $vlanItem "VLAN $($nic.vlan) on the NIC" 'left alone' Info "The node belongs to a deployed cluster ($((@(Get-AzlProp $clusterEvidence 'why' @()) | ForEach-Object { [string]$_ }) -join '; ')): Network ATC owns the storage VLANs, so the VLAN ID is not touched.") }
+                else { & $add (New-AzlPlanItem $n 'Network' $vlanItem "VLAN $($nic.vlan) on the NIC" 'no VLAN on the NIC (0)' Change 'A storage adapter must carry no VLAN ID before the deployment: Network ATC applies the storage VLANs (networking.storage), and Azure Validate StorageAdapterReadiness fails otherwise. Its own guarded change (one VLAN mutation per change): the storage link goes down for a moment.' @{ id = "Network/vlan/$($nic.mac)"; kind = 'nic-vlan'; mac = $nic.mac; vlan = 0; storage = $true }) }
+            }
             switch ($port.IpAssignment) {
                 'none' {
                     $dirty = $nic.dhcp -eq 'Enabled' -or $routable.Count -gt 0 -or $hasGw
@@ -889,7 +918,7 @@ function Compare-AzlNodeState {
                 & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI before the deployment' 'not enabled here' 'left to the deployment' Skipped "Azure Local $($Spec.San.ReleaseTrain) (solution $($Spec.San.SolutionVersion)): the deployment configures iSCSI for a SAN-only design (template create-cluster-san-iscsi), and Microsoft Learn says not to enable iSCSI on the machines before it. The MSiSCSI service, MSDSM auto-claim for iSCSI, target portals and sessions are not made. storage.san.iscsi and nodes[].san.initiator_iqn go to the deployment through the ARM parameters.")
             }
             elseif ($iscsiReleaseUnknown) {
-                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI before the deployment' 'Azure Local release unknown' 'known release' Blocked "A SAN-only iSCSI design: Microsoft Learn says to enable iSCSI by hand before the deployment up to the release before 2610, and not to from 2610 (the deployment does it). The release is not known, so iSCSI is not touched. Set deployment.solution_version (for example 12.2610.1004.50) or give the ZTP handoff.")
+                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI before the deployment' 'Azure Local release unknown' 'known release' Blocked "A SAN-only iSCSI design: Microsoft Learn says to enable iSCSI by hand before the deployment up to the release before 2610, and not to from 2610 (the deployment does it). The release is not known, so iSCSI is not touched. Set deployment.solution_version (for example 12.2611.1004.9) or give the ZTP handoff.")
             }
             elseif ($Spec.San.Type -eq 'iscsi') {
                 $svcOk = [string]$sanState.iscsiSvc -eq 'Running/Automatic'
@@ -1290,7 +1319,7 @@ function Invoke-AzlNodeConfiguration {
     $halted = $false
     # A driver install that returns pnputil 3010 needs a restart. It is recorded, the node is restarted ONCE per run at the very end of the apply (after every other step), and a driver
     # that was installed is not installed again while the old version is still read (the new binding loads at the restart).
-    $restartRequired = $false; $restartRecorded = $false; $applyFailed = $false; $driverInstalled = @{}
+    $restartRequired = $false; $restartRecorded = $false; $applyFailed = $false; $driverInstalled = @{}; $vlanTried = @{}
     $guardClock = if ($Clock) { $Clock } else { New-AzlGuardClock }
     # The context is the object of New-AzlGuardEventContext; a hashtable (Path, Method, SchemaVersion, PayloadVersion, Phase) is turned into one.
     if ($EventContext -is [System.Collections.IDictionary]) {
@@ -1384,6 +1413,7 @@ function Invoke-AzlNodeConfiguration {
                 $mpioItem.Note = 'The node restarted once for this and the LUN paths are still separate disks. Check that the array''s vendor and product ID (padded to 8 and 16 characters) are in MPIOSupportedDeviceList (Get-MPIOAvailableHW IsMultipathed, mpclaim -s -d) and in Get-MSDSMSupportedHW; a second restart is not tried in this run.'
             }
         }
+        $todo = @($todo | Where-Object { $_.Apply.kind -ne 'nic-vlan' -or -not $vlanTried.ContainsKey([string]$_.Apply.id) }) # D62: each VLAN change once per run
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'driver' -or -not $driverInstalled.ContainsKey([string]$_.Apply.id) }) # a driver installed in this run waits for the restart, it is not installed again
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
@@ -1433,9 +1463,13 @@ function Invoke-AzlNodeConfiguration {
         $parts = Split-AzlGuardedAction -Todo $todo
         if (@($parts.Management).Count -or @($parts.Vlan).Count) {
             $group = if (@($parts.Management).Count) { 'Management' } else { 'Vlan' }
+            # One VLAN mutation per guarded change (the guard refuses more): the management VLAN, or one storage-only port's VLAN ID cleared (D62). Each VLAN item is
+            # tried once in a run, and its pass does not count against -MaxPasses, so two storage ports do not use up the passes of the other steps.
+            $groupTodo = if ($group -eq 'Vlan') { @(@($parts.Vlan)[0]) } else { @($parts.Management) }
+            if ($group -eq 'Vlan') { $vlanTried[[string]$groupTodo[0].Apply.id] = $true; $limit++ }
             & $heartbeat.SetPhase $heartbeat "Guarded change $group"
             $reconcile = @{ CompareArgument = $compareArgs; ReadParameter = $readParameters; Secret = $secrets; State = $null }
-            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo @($parts.$group) -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart -Reconcile $reconcile
+            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo $groupTodo -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart -Reconcile $reconcile
             $guardOutcomes.Add($outcome)
             if ($reconcile.State) { $state = $reconcile.State }
             if ($outcome.State -notin 'Committed', 'ObservedCommitted') { $halted = $true; break }

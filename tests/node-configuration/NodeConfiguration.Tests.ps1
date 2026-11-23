@@ -1400,3 +1400,63 @@ Describe 'The Time step sets the time zone of the site (site.time_zone)' {
         $apply | Should -Match '\(Get-TimeZone\)\.Id -ieq \$zone'
     }
 }
+
+Describe 'D62: a VLAN ID left on a storage-only port is cleared before Network ATC' {
+    BeforeEach {
+        $script:Infra62 = Get-Infra
+        $script:Spec62 = Get-AzlNodeSpec -Infrastructure $script:Infra62 -Node $script:Infra62.nodes[0]
+        function New-VlanState([hashtable]$Vlan, [switch]$Deployed, [switch]$NoClusterEvidence) {
+            $s = New-ConfiguredState $script:Spec62
+            foreach ($mac in $Vlan.Keys) { ($s.nics | Where-Object { $_.mac -eq $mac }).vlan = $Vlan[$mac] }
+            if (-not $NoClusterEvidence) { $s.stor | Add-Member -NotePropertyName cluster -NotePropertyValue ([pscustomobject]@{ deployed = [bool]$Deployed; why = @(if ($Deployed) { 'the Cluster service (ClusSvc) is running' }) }) }
+            $s
+        }
+    }
+    It 'marks the storage ports (roles or a storage intent) as storage-only, never a port that carries management, and asks the node to read their VLAN ID' {
+        @($script:Spec62.Ports | Where-Object StorageOnly | ForEach-Object Name) | Should -Be @('Port2', 'Port3')
+        $p = Get-AzlNodeReadParameter -Spec $script:Spec62
+        @($p.storageMacs) | Should -Be @('00005e005312', '00005e005313')
+        $infra = Get-Infra
+        $infra.networking.intents = @([ordered]@{ name = 'converged'; traffic = @('management', 'compute', 'storage'); adapters = @('Port0', 'Port1') }, [ordered]@{ name = 'storage'; traffic = @('storage'); adapters = @('Port4') })
+        $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
+        @($spec.Ports | Where-Object StorageOnly | ForEach-Object Name) | Should -Be @('Port2', 'Port3', 'Port4')
+    }
+    It 'plans a guarded nic-vlan change to 0 for each storage-only port with a VLAN ID, and nothing for VLAN 0 or a port whose driver reports none' {
+        $state = New-VlanState @{ '00005e005312' = 712; '00005e005313' = 0 }
+        $plan = @(Compare-AzlNodeState -Spec $script:Spec62 -State $state)
+        $items = @($plan | Where-Object { $_.Item -like 'storage VLAN*' })
+        $items.Count | Should -Be 1
+        $items[0].Action | Should -Be 'Change'
+        $items[0].Current | Should -Be 'VLAN 712 on the NIC'
+        $items[0].Apply.kind | Should -Be 'nic-vlan'
+        $items[0].Apply.vlan | Should -Be 0
+        $items[0].Apply.mac | Should -Be '00005e005312'
+        $items[0].Note | Should -Match 'StorageAdapterReadiness'
+        @(Compare-AzlNodeState -Spec $script:Spec62 -State (New-VlanState @{}) | Where-Object { $_.Item -like 'storage VLAN*' }).Count | Should -Be 0
+    }
+    It 'leaves a node of a deployed cluster alone (Info), and blocks when the node does not say whether it is one' {
+        $info = @(Compare-AzlNodeState -Spec $script:Spec62 -State (New-VlanState @{ '00005e005312' = 712 } -Deployed) | Where-Object { $_.Item -like 'storage VLAN*' })
+        $info[0].Action | Should -Be 'Info'; $info[0].Apply | Should -BeNullOrEmpty; $info[0].Note | Should -Match 'Network ATC owns the storage VLANs'
+        $blocked = @(Compare-AzlNodeState -Spec $script:Spec62 -State (New-VlanState @{ '00005e005312' = 712 } -NoClusterEvidence) | Where-Object { $_.Item -like 'storage VLAN*' })
+        $blocked[0].Action | Should -Be 'Blocked'; $blocked[0].Apply | Should -BeNullOrEmpty
+    }
+    It 'with -Execute clears two storage ports as two guarded VLAN changes, one per change, each once, and converges' {
+        $both = New-VlanState @{ '00005e005312' = 712; '00005e005313' = 713 }
+        $one = New-VlanState @{ '00005e005313' = 713 }
+        $none = New-VlanState @{}
+        $t = New-FakeTransport @($both, $one, $none) { throw 'no inline Apply: a VLAN change is a guarded change' }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec62 -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp -MaxPasses 1
+        $stages = @($t.Log | Where-Object Kind -eq 'GuardStage')
+        $stages.Count | Should -Be 2
+        foreach ($s in $stages) { $s.Parameters.config.group | Should -Be 'Vlan'; @($s.Parameters.config.items).Count | Should -Be 1; $s.Parameters.config.items[0].vlan | Should -Be 0 }
+        @($stages | ForEach-Object { $_.Parameters.config.items[0].mac }) | Should -Be @('00005e005312', '00005e005313')
+        $r.Converged | Should -BeTrue
+    }
+    It 'tries a VLAN change once per run: a VLAN ID that comes back is reported, not cleared in a loop' {
+        $stuck = New-VlanState @{ '00005e005312' = 712 }
+        $t = New-FakeTransport @($stuck) { throw 'no inline Apply' }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec62 -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'GuardStage').Count | Should -Be 1
+        $r.Converged | Should -BeFalse
+    }
+}

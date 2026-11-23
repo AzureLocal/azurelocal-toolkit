@@ -149,7 +149,9 @@ Invoke-Section 'nics' {
             $pci = ''
             if ($a.PnPDeviceID -match '^(PCI\\VEN_[0-9A-Fa-f]{4}&DEV_[0-9A-Fa-f]{4})') { $pci = $Matches[1].ToUpperInvariant() }
             $vlan = $null
-            if ((Get-MacKey $a.MacAddress) -eq (Get-MacKey ([string](Get-P $P 'mgmtMac' '')))) {
+            # The management port, and (D62) the storage-only ports: a VLAN ID left on one of those is cleared before Network ATC.
+            $vlanMacs = @(@([string](Get-P $P 'mgmtMac' '')) + @(Get-P $P 'storageMacs' @()) | ForEach-Object { Get-MacKey ([string]$_) })
+            if ($vlanMacs -contains (Get-MacKey $a.MacAddress)) {
                 $vp = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -ErrorAction SilentlyContinue
                 if ($vp) { $vlan = [int](@($vp.RegistryValue)[0]) }
             }
