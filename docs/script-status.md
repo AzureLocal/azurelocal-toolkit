@@ -19,7 +19,7 @@ Task folders: 118.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 75 | 43 | 0 |
+| PowerShell | 82 | 36 | 0 |
 | Azure CLI | 50 | 0 | 68 |
 
 Azure CLI applies to 50 tasks, does not apply to 68, and is not decided for 0.
@@ -112,15 +112,15 @@ Azure CLI applies to 50 tasks, does not apply to 68, and is not decided for 0.
 | `phase-03-os-configuration/task-09-disable-unused-network-adapters` | not built | not applicable | no |
 | `phase-03-os-configuration/task-10-configure-hostname` | not built | not applicable | no |
 | `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | not built | not applicable | no |
-| `phase-03-os-configuration/task-16-phase03-verification` | not built | not applicable | no |
-| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | built | yes |
-| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not applicable | no |
-| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | built | yes |
-| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
+| `phase-03-os-configuration/task-16-phase03-verification` | built | not applicable | no |
+| `phase-04-arc-registration/task-01-pre-registration-validation` | built | built | yes |
+| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | built | not applicable | no |
+| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | built | built | yes |
+| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | built | built | yes |
 | `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | built | yes |
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not applicable | no |
-| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | built | not applicable | no |
+| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | built | built | yes |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
 | `phase-06-post-deployment/task-02-cluster-quorum-configuration` | built | built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |

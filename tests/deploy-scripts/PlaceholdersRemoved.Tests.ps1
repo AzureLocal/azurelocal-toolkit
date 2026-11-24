@@ -30,6 +30,25 @@ BeforeDiscovery {
         @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration'; Name = 'Invoke-PowerSwitchEndpoint-Orchestrated.ps1'; FolderGone = $false }
         @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-03-firewall-endpoint-verification'; Name = 'Invoke-FirewallEndpoint-Orchestrated.ps1'; FolderGone = $false }
         @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-04-network-validation'; Name = 'Invoke-NetworkReadiness-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api'; Name = 'Invoke-HardwareDiscovery-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation'; Name = 'Invoke-BiosIdracValidation-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation'; Name = 'Invoke-BiosIdracRemediation-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-02-os-installation/task-01-delete-and-recreate-virtual-disk-on-dell-boss-card'; Name = 'Invoke-ResetBossVirtualDisk-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-02-os-installation/task-02-mount-and-verify-dell-gold-image-iso'; Name = 'Invoke-MountGoldImageISO-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-02-os-installation/task-04-verify-os-deployment'; Name = 'Invoke-OsDeploymentVerification-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-01-enable-winrm-for-remote-management'; Name = 'Invoke-EnableWinRm-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-02-enable-rdp'; Name = 'Invoke-EnableRdp-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-03-configure-static-ip-address'; Name = 'Invoke-ConfigureStaticIP-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter'; Name = 'Invoke-DisableDHCP-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-05-configure-dns-servers'; Name = 'Invoke-ConfigureDNS-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-06-verify-dns-client-configuration'; Name = 'Invoke-VerifyDNS-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp'; Name = 'Invoke-ConfigureNTP-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-08-enable-icmp-ping'; Name = 'Invoke-EnableICMP-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters'; Name = 'Invoke-DisableAdapters-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname'; Name = 'Invoke-ConfigureHostname-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional'; Name = 'Invoke-ClearStorage-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion'; Name = 'Invoke-VerifyADDomainStatus-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template'; Name = 'Invoke-DeployCluster-Orchestrated.ps1'; FolderGone = $false }
     ) | ForEach-Object {
         $task = [IO.Path]::Combine($deploy, $_.Task.Replace('/', [IO.Path]::DirectorySeparatorChar))
         $_ + @{ TaskPath = $task; FilePath = [IO.Path]::Combine($task, 'powershell', $_.Name) }

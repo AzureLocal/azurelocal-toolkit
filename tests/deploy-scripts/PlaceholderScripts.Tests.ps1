@@ -26,7 +26,7 @@ BeforeDiscovery {
         @{ Name = 'Set-NTPConfiguration.ps1'; Folder = [IO.Path]::Combine($p03, 'task-07-configure-time-synchronization-ntp', 'powershell'); Instead = [IO.Path]::Combine($p03, 'Set-AzureLocalNodeConfiguration.ps1') }
         @{ Name = 'Set-NodeHostname.ps1'; Folder = [IO.Path]::Combine($p03, 'task-10-configure-hostname', 'powershell'); Instead = [IO.Path]::Combine($p03, 'Set-AzureLocalNodeConfiguration.ps1') }
     )
-    # The task folders that stay: the catalogue lists them and an Orchestrated wrapper is still in each.
+    # The task folders that stay: the catalogue lists them (the pages name them).
     $script:KeptTask = @(
         @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-03-configure-static-ip-address' }
         @{ Task = '04-cluster-deployment/phase-03-os-configuration/task-05-configure-dns-servers' }
@@ -63,11 +63,12 @@ Describe 'The scripts with typed-in placeholder text are removed' {
         $text | Should -Not -Match 'REPLACE_'
     }
 
-    It 'the task folder <Task> keeps its Orchestrated wrapper and its catalogue entry' -ForEach $script:KeptTask {
+    It 'the task folder <Task> keeps its catalogue entry and its powershell folder' -ForEach $script:KeptTask {
+        # O10: the Orchestrated placeholders no guide page names are gone; the folder stays because the pages name it (a thin wrapper or a .gitkeep holds it).
         $catalogue = Import-PowerShellDataFile -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'TaskCatalogue.psd1'))
         @($catalogue.Tasks | Where-Object { $_.Path -eq $Task }).Count | Should -Be 1
         $folder = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $Task.Replace('/', [IO.Path]::DirectorySeparatorChar), 'powershell')
-        @(Get-ChildItem -LiteralPath $folder -Filter '*-Orchestrated.ps1').Count | Should -BeGreaterThan 0
+        @(Get-ChildItem -LiteralPath $folder -Force -File).Count | Should -BeGreaterThan 0
     }
 
     It 'the registry has no parameter group for <Name>' -ForEach @($script:Removed | Sort-Object { $_.Name } -Unique) {

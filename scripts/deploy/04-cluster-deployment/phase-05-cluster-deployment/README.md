@@ -9,7 +9,7 @@ Pipelines: `pipelines/github-actions/arm-deployment.yml`, `pipelines/gitlab/stag
 `pipelines/azure-devops/arm-deployment.yml`.
 
 `Invoke-AzureLocalClusterDeployment.ps1` below is the earlier, lower-level script (one mode per run, no report, no resume). The
-`active-directory` and `local-identity` folders now hold only placeholders (scripts that end with exit code 3 and change nothing): the legacy scripts that
+`active-directory` and `local-identity` folders hold thin wrappers (`Invoke-VerifyADPrerequisites-Orchestrated.ps1`, `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1`, `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1`) over the pre-cluster verification, the OS configuration and the post-deployment verification, and the Azure CLI scripts: the legacy scripts that
 read the older `variables.yml` layout are removed ([docs/arm-deployment-audit.md](../../../../docs/arm-deployment-audit.md), section 1.4). The run settings file of the entry scripts is `-SettingsFile`.
 
 **Schema 5 path (current):** ARM Validate, then Deploy, generated from `infrastructure.yml`.

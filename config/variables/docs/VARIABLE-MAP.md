@@ -17,9 +17,9 @@ Registry version 5.0.72. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 782 | 528 | 87 | 5 | 160 | 2 |
-| Owned by a tool (`tools.*`) | 4979 | 4776 | 0 | 0 | 203 | 0 |
+| Owned by a tool (`tools.*`) | 4960 | 4757 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7134 | 5306 | 98 | 5 | 1713 | 12 |
+| All registry leaves | 7115 | 5287 | 98 | 5 | 1713 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -90,11 +90,11 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | Tool | Phase | Reads (keys) | Writes or fills (keys) | Owns (tool variables) |
 | --- | --- | ---: | ---: | ---: |
 | trailwright | Design | 0 | 139 | 0 |
-| discovery | Discovery | 30 | 15 | 154 |
+| discovery | Discovery | 30 | 15 | 152 |
 | ztp | ZTP | 85 | 0 | 844 |
 | os-configuration | OS configuration | 79 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1088 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1071 |
 | sonar | Sonar | 19 | 0 | 267 |
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
@@ -1903,7 +1903,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 975 | 975 | 0 |
+| arm_deployment | parameters | 958 | 958 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
@@ -1917,7 +1917,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | cicd_infra | secret_names | 30 | 30 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |
-| discovery | parameters | 75 | 75 | 0 |
+| discovery | parameters | 73 | 73 | 0 |
 | discovery | secret_names | 2 | 2 | 0 |
 | draftsman | env_vars | 1 | 1 | 0 |
 | draftsman | url_parameters | 6 | 6 | 0 |

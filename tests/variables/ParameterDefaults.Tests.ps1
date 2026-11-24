@@ -50,10 +50,11 @@ Describe 'The replaced scripts are gone and nothing names them' {
     It '<Name> is removed' -ForEach $script:Removed {
         Test-Path -LiteralPath ([IO.Path]::Combine($Folder, $Name)) | Should -BeFalse
     }
-    It 'the task folder of <Name> keeps a script and its catalogue entry, or the whole task is gone' -ForEach $script:Removed {
+    It 'the task folder of <Name> keeps a script (or a .gitkeep) and its catalogue entry, or the whole task is gone' -ForEach $script:Removed {
         $catalogue = Import-PowerShellDataFile -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'TaskCatalogue.psd1'))
         if (Test-Path -LiteralPath $Folder) {
-            @(Get-ChildItem -LiteralPath $Folder -Filter '*.ps1').Count | Should -BeGreaterThan 0
+            # a script, or a .gitkeep when the placeholder went under O10 and a guide page still names the task folder
+            @(Get-ChildItem -LiteralPath $Folder -File -Force).Count | Should -BeGreaterThan 0
             @($catalogue.Tasks | Where-Object { $_.Path -eq $Task }).Count | Should -Be 1
         }
         else {

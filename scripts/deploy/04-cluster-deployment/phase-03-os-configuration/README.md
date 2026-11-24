@@ -28,8 +28,7 @@ hardware partner provides an SBE: `winrm_copy` (copied over WinRM from the host 
 `hardware.sbe.node_pull_url` and checks the SHA-256); it is delivered last. Azure Arc Run Command cannot carry a file and there is no storage account route.
 
 The modules are in `scripts/common/node-configuration` (spec, comparison, transports, the node scripts) and
-`scripts/common/azure-local`. The `task-NN-*` folders below hold one placeholder each (a script that ends with exit code 3, NOT IMPLEMENTED, and
-changes nothing): the two scripts above do the work of tasks 01 to 11 and 13, from the one schema 5 `infrastructure.yml`.
+`scripts/common/azure-local`. The `task-NN-*` folders below hold no script (a `.gitkeep` keeps each, because the guide pages name them): the two scripts above do the work of tasks 01 to 11 and 13, from the one schema 5 `infrastructure.yml`. Task 16 holds two thin wrappers (`Invoke-Phase03Verification-Orchestrated.ps1` and `Test-Phase03Verification.ps1`) over the OS configuration plan and the nodes checks of the pre-cluster verification.
 
 | Earlier task | Done now by |
 |---|---|
@@ -43,7 +42,7 @@ changes nothing): the two scripts above do the work of tasks 01 to 11 and 13, fr
 | 13 verification | the verify pass of `Invoke-AzureLocalOsConfiguration.ps1` |
 
 The per-task scripts were removed because the schema 5 path replaces them, and several carried values a deployment chooses or a prompt for a login:
-the task scripts of tasks 02, 04, 06, 08, 09 and 11, and the `Invoke-*-Orchestrated.ps1` wrappers (now placeholders). Earlier removals:
+the task scripts of tasks 02, 04, 06, 08, 09 and 11, and the `Invoke-*-Orchestrated.ps1` placeholders (removed under owner decision O10: no guide page names them). Earlier removals:
 
 - `Enable-WinRmConfiguration.ps1` (task 01) set the TrustedHosts of the node it ran on to a management subnet that it assumed. The RemoteManagement step of
   `Set-AzureLocalNodeConfiguration.ps1` opens WinRM, RDP and ICMP on the node, and the one-time bootstrap (`remoting.bootstrapTransport`: `arc`, `smb` or `auto`)

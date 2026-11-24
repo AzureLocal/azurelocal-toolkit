@@ -52,8 +52,8 @@ Registry 5.0.57 removed the legacy scripts that this table listed. The scripts b
 - `Get-HciResourceProviderObjectId.ps1` and its `-Standalone` copy (both identities): removed, replaced by the object id lookup of the ARM run.
 - `Deploy-CreateLocalAdmin.ps1`: removed, replaced by the LocalAdmin step of `Set-AzureLocalNodeConfiguration.ps1`.
 - The cluster health, domain status and local identity checks of the task "verify deployment completion": removed, replaced by checks 1 and 2 of `Invoke-VerifyPostDeployment.ps1`.
-- The scripts of these task folders that were scaffolds are now placeholders that end with exit code 3 and change nothing: `Invoke-VerifyADPrerequisites-Orchestrated.ps1`,
-  `Invoke-DeployCluster-Orchestrated.ps1` and `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1`. The Azure CLI placeholders (`azurecli/az-deploy-cluster*.ps1`) are replaced by
+- The scripts of these task folders that were scaffolds: `Invoke-VerifyADPrerequisites-Orchestrated.ps1`, `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` and
+  `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` are now thin wrappers over the pre-cluster verification, the OS configuration and the post-deployment verification; the placeholders `Invoke-DeployCluster-Orchestrated.ps1` and `Invoke-VerifyADDomainStatus-Orchestrated.ps1` were removed (no guide page names them). The Azure CLI placeholders (`azurecli/az-deploy-cluster*.ps1`) are replaced by
   `Invoke-AzureLocalArmDeployment.azcli.ps1` (`az deployment group validate` and `create`, with the same parameter set).
 ### 1.5 Pipelines today
 

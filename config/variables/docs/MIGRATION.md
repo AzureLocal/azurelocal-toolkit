@@ -710,7 +710,7 @@ These scripts held `REPLACE_...` or `<PLACEHOLDER>` text that a person had to ty
 | Removed | Use instead |
 | --- | --- |
 | `Test-ADPrerequisites-Standalone.ps1` (phase 05, active directory, task 01) | `Invoke-AzureLocalPreClusterVerification.ps1` (checks ID-AD-003, ID-AD-007, ID-AD-010) and `Invoke-VerifyADPrerequisites-Orchestrated.ps1` |
-| `Test-ADDomainStatus-Standalone.ps1` (task 02) | `Invoke-VerifyADDomainStatus-Orchestrated.ps1` |
+| `Test-ADDomainStatus-Standalone.ps1` (task 02) | `Invoke-VerifyPostDeployment.ps1` (the placeholder `Invoke-VerifyADDomainStatus-Orchestrated.ps1` that stood here was removed under owner decision O10) |
 | `Test-ClusterHealth-Standalone.ps1` (active directory and local identity, task 02) | `Invoke-VerifyClusterHealth-Orchestrated.ps1` of the same task folder |
 | `Test-LocalIdentityConfig-Standalone.ps1` (local identity, task 02) | `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` |
 | `Set-StaticIPAddress.ps1`, `Set-DnsServers.ps1`, `Set-NTPConfiguration.ps1`, `Set-NodeHostname.ps1` (phase 03, tasks 03, 05, 07, 10) | The Network, Dns, Time and Hostname steps of `Set-AzureLocalNodeConfiguration.ps1` |

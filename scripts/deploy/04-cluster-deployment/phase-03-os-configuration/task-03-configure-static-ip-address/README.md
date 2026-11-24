@@ -6,7 +6,7 @@ This task sets the static management address of each Azure Local node from `infr
 
 | Script | What it does |
 |---|---|
-| `Invoke-ConfigureStaticIP-Orchestrated.ps1` | A placeholder: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. The work is done by the Network step below. |
+| (none) | The task folder holds no script. The work is done by the Network step below. |
 
 The earlier wrapper and the node-local script `Set-StaticIPAddress.ps1` are removed. The adapter name, address, gateway and DNS servers were
 `REPLACE_WITH_...` text that a person had to type into the script. A schema 5 script does the same work: the Network

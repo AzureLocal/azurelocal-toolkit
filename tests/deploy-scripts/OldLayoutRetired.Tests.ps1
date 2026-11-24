@@ -2,7 +2,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 # The old layout is retired in the cluster deployment area: no script of scripts/deploy/04-cluster-deployment, scripts/common/node-configuration,
 # scripts/common/arm-deployment, scripts/common/idrac-management or scripts/common/redfish takes -ConfigPath, asks for a value (Read-Host, Get-Credential) or reads
-# an old-shape file. The scripts that a schema 5 script replaces are removed; each task folder keeps a placeholder (exit code 3) where no real script is left; the
+# an old-shape file. The scripts that a schema 5 script replaces are removed; a task folder keeps a thin wrapper where a guide page names the old file (O10: the other placeholders are gone); the
 # scripts that stay take -InfrastructureFile (mandatory) and stop with exit code 2 when it cannot be read. Child processes are used for the exit codes; nothing is
 # contacted (every file name here does not exist, so each script stops before it reaches a BMC, a node or Azure).
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/deploy-scripts/OldLayoutRetired.Tests.ps1
@@ -55,28 +55,12 @@ BeforeDiscovery {
     )
     $script:RemovedCase = @($script:Removed | ForEach-Object { @{ Name = [IO.Path]::GetFileName($_.Gone); Gone = [IO.Path]::Combine($cluster, $_.Gone.Replace('/', [IO.Path]::DirectorySeparatorChar)); Instead = [IO.Path]::Combine($cluster, $_.Instead.Replace('/', [IO.Path]::DirectorySeparatorChar)) } })
 
-    # The scripts that became the placeholder of a task folder whose work a schema 5 script does (relative to the cluster folder).
+    # O10: the placeholders no guide page names are gone. The two the pages name stay as placeholders (the DHCP reservations are the network team's task;
+    # the toolkit has no script for them). Task folders whose script a schema 5 script replaces keep a thin wrapper where a page names the old file.
     $script:Placeholder = @(
-        "$p3/task-02-enable-rdp/powershell/Invoke-EnableRdp-Orchestrated.ps1"
-        "$p3/task-03-configure-static-ip-address/powershell/Invoke-ConfigureStaticIP-Orchestrated.ps1"
-        "$p3/task-04-disable-dhcp-on-management-adapter/powershell/Invoke-DisableDHCP-Orchestrated.ps1"
-        "$p3/task-05-configure-dns-servers/powershell/Invoke-ConfigureDNS-Orchestrated.ps1"
-        "$p3/task-06-verify-dns-client-configuration/powershell/Invoke-VerifyDNS-Orchestrated.ps1"
-        "$p3/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1"
-        "$p3/task-08-enable-icmp-ping/powershell/Invoke-EnableICMP-Orchestrated.ps1"
-        "$p3/task-09-disable-unused-network-adapters/powershell/Invoke-DisableAdapters-Orchestrated.ps1"
-        "$p3/task-10-configure-hostname/powershell/Invoke-ConfigureHostname-Orchestrated.ps1"
-        "$p3/task-11-clear-previous-storage-configuration-conditional/powershell/Invoke-ClearStorage-Orchestrated.ps1"
-        "$p3/task-16-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1"
-        "$p4/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1"
-        "$p4/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1"
-        "$p4/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1"
-        "$p5/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1"
-        "$p5/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1"
-        "$p5/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1"
-        "$p5/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1"
+        "phase-01-hardware-provisioning/task-01-create-dhcp-reservations-for-idrac-interfaces/powershell/Invoke-DhcpReservationsIdrac-Orchestrated.ps1"
+        "phase-01-hardware-provisioning/task-03-create-dhcp-reservations-for-management-nics/powershell/Invoke-DhcpReservationsMgmt-Orchestrated.ps1"
     ) | ForEach-Object { @{ Name = [IO.Path]::GetFileName($_); Path = [IO.Path]::Combine($cluster, $_.Replace('/', [IO.Path]::DirectorySeparatorChar)) } }
-
     # The scripts that stay: relative path (to the repository), what they do when the file cannot be read.
     $script:Kept = @(
         'scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1'
@@ -88,6 +72,14 @@ BeforeDiscovery {
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1'
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1'
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification/powershell/Test-Phase03Verification.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity/powershell/Invoke-ArcVerification-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template/powershell/Invoke-VerifyADPrerequisites-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1'
         'scripts/common/idrac-management/Enable-IdracVnc.ps1'
     ) | ForEach-Object { @{ Name = [IO.Path]::GetFileName($_); Relative = $_ } }
     # These stop with exit code 2 when the file cannot be read (the SSH script throws, which a pipeline sees as 1).
@@ -129,7 +121,12 @@ Describe 'The scripts that a schema 5 script replaces are removed' {
     }
 }
 
-Describe 'A task folder whose script a schema 5 script replaces keeps a placeholder' {
+Describe 'Only the placeholders that a guide page names are left (O10)' {
+    It 'the only placeholders of the cluster deployment folder are the two DHCP reservation tasks' {
+        $found = @(Get-ChildItem -LiteralPath $script:Cluster -Recurse -File -Filter '*.ps1' |
+                Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match '(?m)^# PLACEHOLDER:|\bInvoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)\b' } | ForEach-Object Name | Sort-Object)
+        $found -join ',' | Should -Be 'Invoke-DhcpReservationsIdrac-Orchestrated.ps1,Invoke-DhcpReservationsMgmt-Orchestrated.ps1'
+    }
     It '<Name> is a placeholder that takes -InfrastructureFile and ends with exit code 3' -ForEach $script:Placeholder {
         Test-Path -LiteralPath $Path | Should -BeTrue
         $text = Get-Content -LiteralPath $Path -Raw
@@ -141,7 +138,6 @@ Describe 'A task folder whose script a schema 5 script replaces keeps a placehol
         $r.Output | Should -Match 'NOT IMPLEMENTED'
     }
 }
-
 Describe 'No script of the area takes -ConfigPath or asks for a value' {
     It 'no script of the area has a ConfigPath parameter, variable or argument, and every one parses' {
         $bad = foreach ($f in Get-OwnScript) {

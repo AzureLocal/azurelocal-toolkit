@@ -1,54 +1,67 @@
 #Requires -Version 7.0
-# PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
-[CmdletBinding(SupportsShouldProcess = $true)]
+<#
+.SYNOPSIS
+    Phase 03, task 16: the Test- name of Invoke-Phase03Verification-Orchestrated.ps1. Read only.
+
+.DESCRIPTION
+    A thin wrapper: it keeps the file name that this task folder and its guide page name, and runs the script that does the work.
+    Runs Invoke-Phase03Verification-Orchestrated.ps1 of this folder with the same arguments (OS configuration plan with -FailOnPendingChanges, then the
+    nodes checks of the pre-cluster verification).
+
+    Exit codes: 0 passed or planned (a partial pre-cluster run with no blocking result is reported as 0), 1 a check failed or a node did not converge, 2 bad input (also a missing file).
+    -WhatIf prints the command line of each step and runs none.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5).
+
+.PARAMETER Node
+    Optional. Limit the run to these nodes (node names).
+
+.PARAMETER ReportDirectory
+    Optional. Where the script writes its report (report.json and summary.md).
+
+.PARAMETER SettingsFile
+    Optional. The run settings file (JSON) of the script that does the work.
+
+.PARAMETER Credential
+    Optional. The login for the nodes. Without it the account of the file is used. The script never asks.
+
+.EXAMPLE
+    ./Test-Phase03Verification.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+#>
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$EnvironmentName = '',
-    [string]$ProjectName = '',
-    [string]$SubscriptionId = '',
-    [string]$ResourceGroupName = '',
-    [string]$LogPath = ''
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [string[]]$Node,
+    [string]$ReportDirectory,
+    [string]$SettingsFile,
+    [pscredential]$Credential
 )
-
-#region CONFIGURATION
-$environment_name = ''
-$project_name = 'Azure Local Toolkit'
-$subscription_id = ''
-$resource_group_name = ''
-#endregion
-
-if ([string]::IsNullOrWhiteSpace($EnvironmentName)) { $EnvironmentName = $environment_name }
-if ([string]::IsNullOrWhiteSpace($ProjectName)) { $ProjectName = $project_name }
-if ([string]::IsNullOrWhiteSpace($SubscriptionId)) { $SubscriptionId = $subscription_id }
-if ([string]::IsNullOrWhiteSpace($ResourceGroupName)) { $ResourceGroupName = $resource_group_name }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Get-DeploymentCommonModulePath {
+function Get-DeploymentWrapperModulePath {
     $current = Get-Item -LiteralPath $PSScriptRoot
     while ($null -ne $current) {
-        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
-        }
-
+        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentWrapper.psm1')
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
         $current = $current.Parent
     }
 
-    throw "Unable to locate DeploymentScaffold.psm1 from '$PSScriptRoot'."
+    throw "Unable to locate DeploymentWrapper.psm1 from '$PSScriptRoot'."
 }
 
-Import-Module (Get-DeploymentCommonModulePath) -Force
+Import-Module (Get-DeploymentWrapperModulePath) -Force
 
-Invoke-DeploymentStandalone `
-    -ScriptPath $PSCommandPath `
-    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-16-phase03-verification' `
-    -ActionName 'Test-Phase03Verification' `
-    -LogPath $LogPath `
-    -Parameters $PSBoundParameters `
-    -Configuration ([ordered]@{
-        environment_name = $EnvironmentName
-        project_name = $ProjectName
-        subscription_id = $SubscriptionId
-        resource_group_name = $ResourceGroupName
-    })
+if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) {
+    Write-Error "Cannot read the infrastructure file '$InfrastructureFile'." -ErrorAction Continue
+    exit 2
+}
+
+$arguments = @{ InfrastructureFile = $InfrastructureFile }
+if ($Node) { $arguments['Node'] = $Node }
+if ($ReportDirectory) { $arguments['ReportDirectory'] = $ReportDirectory }
+if ($SettingsFile) { $arguments['SettingsFile'] = $SettingsFile }
+if ($Credential) { $arguments['Credential'] = $Credential }
+exit (Invoke-DeploymentWrapperStep -ScriptPath (Join-Path $PSScriptRoot 'Invoke-Phase03Verification-Orchestrated.ps1') -Argument $arguments -Label 'Phase 03 verification' -WhatIf:$WhatIfPreference)

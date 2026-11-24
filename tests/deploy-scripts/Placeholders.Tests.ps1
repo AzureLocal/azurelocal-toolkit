@@ -155,8 +155,8 @@ Describe 'Every placeholder' {
         $script:Placeholders = @(Get-PlaceholderFile)
     }
 
-    It 'exists in a useful number' {
-        $script:Placeholders.Count | Should -BeGreaterThan 10
+    It 'exists (the two the guide pages name)' {
+        $script:Placeholders.Count | Should -BeGreaterThan 1 -Because "the two DHCP reservation tasks are the placeholders a guide page names (O10)"
     }
 
     It 'parses, needs PowerShell 7, is strict and stops on errors, and says it is a placeholder' {
