@@ -17,9 +17,9 @@ Registry version 5.0.67. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 769 | 520 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4798 | 4590 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4808 | 4600 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6940 | 5112 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6950 | 5122 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -41,7 +41,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Design | Trailwright | 139 | azure, cluster, devops, disconnected, environment, hardware, identity, landing_zone, networking, nodes, operations, provisioning, scenario, sdn, security, site, storage | any (it writes the whole file) | infrastructure.yml (Trailwright exports it) |
 | Discovery | Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1 | 38 | azure, hardware, identity, nodes, scenario | discovery | a proposal for nodes[] (serial number, ports, MACs), reviewed by you |
 | ZTP | azurelocal-ztp | 85 | _metadata, azure, hardware, key_vaults, networking, nodes, provisioning, scenario, site | ztp | ztp-handoff.json (Arc machine IDs, installed build, management address verified), ztp-events.jsonl |
-| OS configuration | Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1 | 78 | _metadata, azure, cluster, deployment, hardware, identity, networking, nodes, os_configuration, provisioning, scenario, site, storage | os_configuration | the OS configuration report (ports and OS adapter names by MAC, SAN disks), os-configuration-events.jsonl |
+| OS configuration | Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1 | 79 | _metadata, azure, cluster, deployment, hardware, identity, networking, nodes, os_configuration, provisioning, scenario, site, storage | os_configuration | the OS configuration report (ports and OS adapter names by MAC, SAN disks), os-configuration-events.jsonl |
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
@@ -54,7 +54,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `site` | 5 |  | 3 | 1 |  |  |  | 1 |
 | `environment` | 4 |  |  |  |  |  |  |  |
 | `tags` |  |  |  |  |  |  |  | 1 |
-| `identity` | 11 | 3 |  | 13 | 14 | 9 | 4 | 20 |
+| `identity` | 11 | 3 |  | 14 | 14 | 9 | 4 | 20 |
 | `networking` | 22 |  | 9 | 12 | 24 | 20 |  | 37 |
 | `security` | 1 |  |  |  |  | 11 |  | 7 |
 | `operations` | 13 |  |  |  |  |  |  | 14 |
@@ -92,9 +92,9 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | trailwright | Design | 0 | 139 | 0 |
 | discovery | Discovery | 30 | 13 | 154 |
 | ztp | ZTP | 85 | 0 | 843 |
-| os-configuration | OS configuration | 78 | 0 | 282 |
+| os-configuration | OS configuration | 79 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1103 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1113 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 41 | 0 | 0 |
@@ -155,10 +155,10 @@ Where in the code (file, function, keys read by name; 18 places, the first 12):
 
 ### os-configuration
 
-**Reads (78):**
-`site.time_zone`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.join_options.allow_ou_move`, `identity.active_directory.domain_controllers`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].purpose`, `identity.local_admin.username`, `identity.local_admin.password`, `networking.management.subnet`, `networking.oob.subnet`, `networking.ntp_servers`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.outbound.proxy.url`, `networking.outbound.proxy.bypass`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `networking.outbound.private_path.firewall_private_ip`, `networking.outbound.private_path.firewall_port`, `networking.outbound.private_path.proxy_bypass`, `scenario.identity`, `scenario.storage_architecture`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `deployment.solution_version`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].pci_location.bus`, `nodes[].network_adapters[].pci_location.device`, `nodes[].network_adapters[].pci_location.function`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].maintenance_address`, `nodes[].san.hbas[].ports[].wwpn`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.san.type`, `storage.san.array.vendor`, `storage.san.array.model`, `storage.san.iscsi.targets[].iqn`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `provisioning.os_version`, `os_configuration.clear_storage`, `os_configuration.network.confirm_minutes`, `os_configuration.network.stable_seconds`, `os_configuration.remoting.bootstrap_transport`, `os_configuration.remoting.allowed_source_cidrs`, `os_configuration.remoting.allow_any_source`, `os_configuration.remoting.trusted_hosts`, `os_configuration.remoting.use_https`, `os_configuration.remoting.isolation_confirmed`, `os_configuration.remoting.certificate`, `_metadata.schema_version`
+**Reads (79):**
+`site.time_zone`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.join_options.allow_ou_move`, `identity.active_directory.domain_controllers`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].purpose`, `identity.local_admin.username`, `identity.local_admin.password`, `networking.management.subnet`, `networking.oob.subnet`, `networking.ntp_servers`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.outbound.proxy.url`, `networking.outbound.proxy.bypass`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `networking.outbound.private_path.firewall_private_ip`, `networking.outbound.private_path.firewall_port`, `networking.outbound.private_path.proxy_bypass`, `scenario.identity`, `scenario.storage_architecture`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `deployment.solution_version`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].pci_location.bus`, `nodes[].network_adapters[].pci_location.device`, `nodes[].network_adapters[].pci_location.function`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].maintenance_address`, `nodes[].san.hbas[].ports[].wwpn`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.san.type`, `storage.san.array.vendor`, `storage.san.array.model`, `storage.san.iscsi.targets[].iqn`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `provisioning.os_version`, `os_configuration.clear_storage`, `os_configuration.network.confirm_minutes`, `os_configuration.network.stable_seconds`, `os_configuration.remoting.bootstrap_transport`, `os_configuration.remoting.allowed_source_cidrs`, `os_configuration.remoting.allow_any_source`, `os_configuration.remoting.trusted_hosts`, `os_configuration.remoting.use_https`, `os_configuration.remoting.isolation_confirmed`, `os_configuration.remoting.certificate`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 25 places, the first 12):
+Where in the code (file, function, keys read by name; 26 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -169,11 +169,11 @@ Where in the code (file, function, keys read by name; 25 places, the first 12):
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Invoke-AzlArcRegistration` | 8 |
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Get-AzlArcRegistrationSetting` | 7 |
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Invoke-AzlOsConfiguration` | 7 |
+| `scripts/common/remoting/AzlClusterConnection.psm1` | `Resolve-AzlClusterConnection` | 5 |
 | `scripts/common/remoting/AzlRemotingProfile.psm1` | `Get-AzlRemotingNodeAddress` | 4 |
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Get-AzlNodeAddressCandidate` | 3 |
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Get-AzlNodeEvidence` | 3 |
 | `scripts/common/node-configuration/AzlNodeAddress.psm1` | `Get-AzlFileAddressCandidate` | 2 |
-| `scripts/common/node-configuration/AzlNodeAddress.psm1` | `Resolve-AzlNodeAddress` | 2 |
 
 ### pre-cluster-verification
 
@@ -327,21 +327,21 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 139 places, the first 12):
+Where in the code (file, function, keys read by name; 138 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1` | `(script)` | 22 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1` | `(script)` | 21 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources/azurecli/Test-ManagementResources.azcli.ps1` | `(script)` | 20 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 20 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1` | `(script)` | 19 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 19 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/azurecli/New-NetworkSecurityGroup.azcli.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/azurecli/New-LogicalNetwork.azcli.ps1` | `(script)` | 18 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 17 |
 | `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | `(script)` | 17 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/azurecli/Deploy-ManagementVMs.azcli.ps1` | `(script)` | 16 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 16 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/azurecli/Test-ManagementConfiguration.azcli.ps1` | `(script)` | 15 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
@@ -430,9 +430,9 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
-| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName |
+| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; OS RemoteManagement; Sonar clusterName |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 |
-| `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin |
+| `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin; RemoteManagement |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin |
 | `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
 | `nodes[].management.ip_address` | Management address. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
@@ -443,11 +443,12 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `identity.local_admin.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin |
 | `networking.management.dns_servers` | ARM dnsServers. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 |
 | `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  |
-| `identity.active_directory.lcm_user.username` | Name only, no domain. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin |
+| `identity.active_directory.lcm_user.username` | Name only, no domain. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin; RemoteManagement |
+| `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement |
 | `networking.management.gateway` | The one default gateway. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM defaultGateway; OS Dns; Network; NicNames; UnusedAdapters; Gate NW-004; NW-015 |
 | `nodes[].network_adapters[].ip_assignment` | How the installed OS gets this port's host address before deployment. | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; sonar; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement |
 | `scenario.outbound_path` | How the machines reach Azure. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 |
-| `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin |
+| `identity.active_directory.lcm_user.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminPassword; OS RemoteManagement; ~DomainJoin |
 | `nodes[].network_adapters[].name` | The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) |
 | `networking.management.vlan_id` | 0 means untagged. | operator by hand; Trailwright questionnaire | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; ztp |  |
@@ -456,7 +457,6 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].network_adapters[].mac_address` | The port's identity. | operator by hand; Dell/Redfish discovery (proposed) | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) |
 | `storage.san.type` | Whether the SAN is fibre_channel or iscsi. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | OS Mpio; SanVerify; Gate ST-011 |
 | `azure.hci_resource_provider_object_id` | Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; ztp | ARM hciResourceProviderObjectID |
-| `identity.active_directory.lcm_user.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminPassword; OS ~DomainJoin |
 | `networking.management.infrastructure_pool.start` | First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and... | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM startingIPAddress; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters; Gate NW-015 |
 | `scenario.cloud` | Azure public cloud or Azure Government. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 |
 | `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | os-configuration; sonar; ztp | Sonar provisioningRoute |
@@ -1019,7 +1019,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName | read |
+| `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; OS RemoteManagement; Sonar clusterName | read |
 | `cluster.naming_prefix` | string, default `hci` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM namingPrefix | read |
 | `cluster.deployment_mode` | string, default `validate`, one of `validate`, `deploy` | operator; Trailwright; default | deployment | arm-deployment | ARM deploymentMode | read |
 | `cluster.witness.type` | string, required, one of `cloud`, `file_share`, `none` | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers; toolkit-legacy-scripts | ARM clusterWitnessStorageAccountName; witnessType | read |
@@ -1286,11 +1286,11 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `identity.active_directory.domain_fqdn` | string, required | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin | read |
-| `identity.active_directory.netbios_name` | string (netbios_name) | operator; Trailwright | os_configuration; deployment; monitoring; ansible | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin | read |
+| `identity.active_directory.domain_fqdn` | string, required | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin; RemoteManagement | read |
+| `identity.active_directory.netbios_name` | string (netbios_name) | operator; Trailwright | os_configuration; deployment; monitoring; ansible | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
 | `identity.active_directory.ou_path` | string, required | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM adouPath; OS DomainJoin | read |
-| `identity.active_directory.lcm_user.username` | string, required | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin | read |
-| `identity.active_directory.lcm_user.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright; ansible | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminPassword; OS ~DomainJoin | read |
+| `identity.active_directory.lcm_user.username` | string, required | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin; RemoteManagement | read |
+| `identity.active_directory.lcm_user.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminPassword; OS RemoteManagement; ~DomainJoin | read |
 | `identity.active_directory.domain_join_account.username` | string, required | operator | os_configuration; monitoring; ansible | os-configuration; sonar; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.domain_join_account.password` | string (kv_ref), required | operator; Key Vault ref | os_configuration; monitoring; ansible | os-configuration; sonar; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.local_admin_members` | array | operator | os_configuration | os-configuration | OS DomainJoin; LocalAdmin | read |
@@ -1890,7 +1890,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 990 | 990 | 0 |
+| arm_deployment | parameters | 1000 | 1000 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
