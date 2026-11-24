@@ -1,15 +1,15 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-ranger ('ranger') reads (a strict subset of the master file). Schema 5.6.33.
+# Template for the part of infrastructure.yml that azurelocal-ranger ('ranger') reads (a strict subset of the master file). Schema 5.6.34.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.33"
+  schema_version: "5.6.34"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "ranger"
   # Your own version of this file.
   # used by: trailwright
@@ -22,41 +22,182 @@ _metadata:
   # Free text about this file for the people who keep it.
   notes: ""
 
+# The design choices.
+scenario:
+  # active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity...
+  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright, ranger, beacon
+  identity: "active_directory"
+
+# Which environment this file describes.
+environment:
+  # Environment identifier: lowercase letters, digits and hyphens.
+  # required; used by: trailwright, ranger
+  name: "iic-azl-01"
+  # Class of the environment: lab, demo, poc, dev, test, stg or prd.
+  # required; one of: lab | demo | poc | dev | test | stg | prd; used by: trailwright
+  type: "lab"
+
+# The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
+azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform, ranger, beacon, loadtools
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  # Azure region, for example eastus.
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, beacon, loadtools
+  location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
+  resource_group: "rg-iic-azl-01"
+
+# Every Key Vault that a keyvault:// reference in this file names, with where it is.
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery, ranger, s2d_cartographer, loadtools
+key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform, ranger, s2d_cartographer, loadtools
+  - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
+    resource_group: "rg-iic-mgmt-01"
+
+# The Azure Local instance (the cluster deployment).
+cluster:
+  # Cluster name: a NetBIOS name of up to 15 characters.
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools
+  name: "iic-azl-01"
+  # The quorum witness of the cluster.
+  # required
+  witness:
+    # cloud (an Azure Storage account), file_share (disconnected operations), or none.
+    # required; one of: cloud | file_share | none; used by: deployment, trailwright, ranger
+    type: "cloud"
+  # The Key Vault the deployment uses for the instance's secrets (one per instance).
+  # required; used by: deployment
+  key_vault:
+    # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
+    # required; used by: deployment, trailwright, terraform, beacon, loadtools
+    name: "kv-iic-azl-01"
+
+# How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the run...
+# used by: deployment, os_configuration, monitoring
+deployment:
+  # The solution version the nodes run (four numeric parts, for example 12.2611.1004.9).
+  # used by: deployment, os_configuration, trailwright, ranger
+  solution_version: "12.2611.1004.9"
+
+# The machines, one entry each.
+# used by: deployment, monitoring
+nodes:
+  # Host name: up to 15 characters.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible, ranger, beacon, loadtools, draftsman, surveyor
+  - name: "iic-azl-n01"
+    # The machine's management port and address (schema 5.0 and 5.1).
+    # used by: ztp, os_configuration
+    management:
+      # Management address.
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon
+      ip_address: "192.0.2.11"
+    # Serial number (Dell service tag).
+    # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
+    serial_number: "SERIAL01"
+    # The baseboard management controller (BMC) of the machine: address, type and login.
+    # when scenario.os_install is simplified
+    bmc:
+      # IPv4 address of the BMC (iDRAC, iLO, XCC).
+      # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
+      ip_address: "198.51.100.11"
+      # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
+      # one of: idrac | ilo | xcc | other; used by: discovery, ranger
+      type: "idrac"
+
+# What every machine is.
+hardware:
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright, beacon
+  vendor: "Dell"
+  # Model, for example AX-760.
+  # required; used by: ztp, os_configuration, discovery, trailwright, draftsman
+  model: "AX-760"
+  # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
+  # used by: ztp
+  bmc:
+    # The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp...
+    # required; used by: ztp, discovery, trailwright, ranger
+    username: "keyvault://kv-iic-mgmt-01/bmc-username"
+    # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
+    # required; used by: ztp, discovery, trailwright, ranger
+    password: "keyvault://kv-iic-mgmt-01/bmc-password"
+
 # The on-premises networks.
 networking:
   # The management network and the infrastructure IP pool.
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     gateway: "192.0.2.1"
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, ranger, beacon
     dns_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:
     # Name of the Network ATC intent, for example management_compute or storage.
-    # required; used by: os_configuration, deployment, trailwright, ranger
+    # required; used by: os_configuration, deployment, trailwright, ranger, beacon, draftsman
     - name: "management"
       # Traffic types the intent carries: management, compute and storage (ARM trafficType).
-      # required; used by: os_configuration, deployment, trailwright, ranger
+      # required; used by: os_configuration, deployment, trailwright, ranger, beacon, draftsman
       traffic: ["management"]
       # Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds...
-      # required; used by: os_configuration, deployment, trailwright, ranger
+      # required; used by: os_configuration, deployment, trailwright, ranger, beacon
       adapters: ["Port1", "Port2"]
   # Every VLAN in the design, by name.
   # used by: os_configuration
   vlans:
     # Name of the VLAN, for example storage-1.
-    # required; used by: os_configuration, trailwright, ranger
+    # required; used by: os_configuration, trailwright, ranger, draftsman
     - name: "storage-1"
       # The VLAN number, 1 to 4094.
-      # required; used by: os_configuration, trailwright, ranger
+      # required; used by: os_configuration, trailwright, ranger, draftsman
       id: 711
+
+# Accounts and the identity provider (scenario.identity).
+identity:
+  # The deployment's local administrator on every machine.
+  # required; used by: os_configuration, deployment
+  local_admin:
+    # User name of the deployment local administrator on every machine (ARM localAdminUserName).
+    # required; used by: os_configuration, deployment, monitoring, trailwright, s2d_cartographer
+    username: "azl-admin"
+    # At least 14 characters with lowercase, uppercase, a digit and a special character.
+    # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+  # The Active Directory the instance joins and its accounts.
+  # when scenario.identity is active_directory
+  active_directory:
+    # ARM domainFqdn.
+    # required; used by: os_configuration, deployment, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools
+    domain_fqdn: "improbability.cloud"
+    # Distinguished name of the dedicated OU.
+    # required; used by: os_configuration, deployment, trailwright, ansible
+    ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
+    # The LCM deployment user, created in the OU by the AD preparation module.
+    # required; used by: deployment
+    lcm_user:
+      # Name only, no domain.
+      # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
+      username: "lcm-iic-azl-01"
+      # At least 14 characters with lowercase, uppercase, a digit and a special character.
+      # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
+      password: "keyvault://kv-iic-mgmt-01/lcm-password"
 
 # Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:
@@ -64,7 +205,7 @@ storage:
   # used by: deployment
   volumes:
     # Name of the volume, for example vol-workloads-01.
-    # required; used by: deployment, trailwright, ranger
+    # required; used by: deployment, trailwright, ranger, loadtools
     - name: "vol-workloads-01"
       # Size of the volume in GiB (binary units, as Windows counts).
       # required; used by: deployment, trailwright, ranger

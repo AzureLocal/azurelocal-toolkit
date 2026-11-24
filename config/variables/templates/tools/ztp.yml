@@ -1,15 +1,15 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-ztp ('ztp') reads (a strict subset of the master file). Schema 5.6.33.
+# Template for the part of infrastructure.yml that azurelocal-ztp ('ztp') reads (a strict subset of the master file). Schema 5.6.34.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.33"
+  schema_version: "5.6.34"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "ztp"
   # Your own version of this file.
   # used by: trailwright
@@ -25,7 +25,7 @@ _metadata:
 # The design choices.
 scenario:
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp, beacon
   outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright, ansible
@@ -44,39 +44,39 @@ site:
   name: "Azure Local Cloud"
 
 # Azure tags applied to the resources the tools create.
-# used by: ztp, cicd_infra, terraform
+# used by: ztp, cicd_infra, terraform, trailwright
 tags:
   example_name: "value"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform, ranger, beacon, loadtools
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, beacon, loadtools
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
   # used by: ztp, deployment, trailwright
   hci_resource_provider_object_id: "00000000-0000-0000-0000-000000000000"
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
-# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery, ranger, s2d_cartographer, loadtools
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform, ranger, s2d_cartographer, loadtools
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
 
 # (since 5.6.13) 
@@ -105,13 +105,13 @@ secrets:
 # used by: deployment, monitoring
 nodes:
   # Host name: up to 15 characters.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible, ranger, beacon, loadtools, draftsman, surveyor
   - name: "iic-azl-n01"
     # The machine's management port and address (schema 5.0 and 5.1).
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon
       ip_address: "192.0.2.11"
       # MAC of the management port.
       # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery, trailwright
@@ -150,13 +150,13 @@ nodes:
         # one of: access | tagged; used by: ztp, os_configuration
         vlan_mode: "access"
     # Serial number (Dell service tag).
-    # when scenario.os_install is simplified; used by: ztp, discovery, trailwright
+    # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
     serial_number: "SERIAL01"
     # The baseboard management controller (BMC) of the machine: address, type and login.
     # when scenario.os_install is simplified
     bmc:
       # IPv4 address of the BMC (iDRAC, iLO, XCC).
-      # when scenario.os_install is simplified; used by: ztp, discovery, trailwright
+      # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
       ip_address: "198.51.100.11"
       # BMC account name of this machine: a secret reference (keyvault://, env://, file:// or command://) or the plain name. azurelocal-ztp uses on...
       # used by: ztp, discovery
@@ -165,10 +165,10 @@ nodes:
       # used by: ztp, discovery
       password: "keyvault://kv-example-01/password"
     # Position in the rack, for example U12, for the as-built record.
-    # used by: ztp
+    # used by: ztp, trailwright
     rack_position: "24"
     # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
-    # used by: ztp, os_configuration, deployment, monitoring
+    # used by: ztp, os_configuration, deployment, monitoring, trailwright, beacon
     arc_machine_name: "iic-azl-n01"
     # Deprecated: use arc_machine_name.
     # used by: ztp, os_configuration
@@ -212,25 +212,25 @@ nodes:
 # What every machine is.
 hardware:
   # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
-  # required; used by: ztp, os_configuration, deployment, discovery, trailwright
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright, beacon
   vendor: "Dell"
   # Model, for example AX-760.
-  # required; used by: ztp, os_configuration, discovery, trailwright
+  # required; used by: ztp, os_configuration, discovery, trailwright, draftsman
   model: "AX-760"
   # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
   # used by: ztp
   bmc:
     # The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp...
-    # required; used by: ztp, discovery
+    # required; used by: ztp, discovery, trailwright, ranger
     username: "keyvault://kv-iic-mgmt-01/bmc-username"
     # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
-    # required; used by: ztp, discovery
+    # required; used by: ztp, discovery, trailwright, ranger
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...
     # used by: ztp, discovery
     rfs_write_attribute: true
     # (since 5.4) 
-    # default: false; used by: ztp, discovery
+    # default: false; used by: ztp, discovery, trailwright
     verify_certificate: false
   # BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios i...
   # used by: ztp
@@ -247,20 +247,23 @@ networking:
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     gateway: "192.0.2.1"
     # 0 means untagged.
-    # used by: ztp, os_configuration, trailwright, ansible
+    # used by: ztp, os_configuration, trailwright, ansible, beacon, draftsman
     vlan_id: 0
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, ranger, beacon
     dns_servers: ["192.0.2.4", "192.0.2.5"]
     # Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters.
-    # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
+    # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment, trailwright
     ip_assignment: "static"
+    # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
+    # default: false; used by: os_configuration, deployment, trailwright, ztp
+    use_dhcp: false
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
     site_ip_range:
@@ -271,7 +274,7 @@ networking:
       # required; used by: ztp, os_configuration
       end: "192.0.2.10"
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
-    # one of: dhcp | static; default: "dhcp"; used by: ztp, os_configuration
+    # one of: dhcp | static; default: "dhcp"; used by: ztp, os_configuration, trailwright
     provisioning_network: "dhcp"
     # (since 5.3) 
     # one of: device | site; default: "device"; used by: ztp, os_configuration
@@ -280,10 +283,10 @@ networking:
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
       # First address of the DHCP pool of the provisioning network.
-      # required; used by: ztp, os_configuration
+      # required; used by: ztp, os_configuration, trailwright
       start: "192.0.2.100"
       # Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start).
-      # required; used by: ztp, os_configuration
+      # required; used by: ztp, os_configuration, trailwright
       end: "192.0.2.199"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
@@ -292,10 +295,10 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: os_configuration, trailwright, ansible, ztp
+      # required; used by: os_configuration, trailwright, ansible, ztp, beacon
       url: ""
       # Addresses and names that go direct, not through the proxy.
-      # used by: os_configuration, ztp
+      # used by: os_configuration, ztp, trailwright, beacon
       bypass: []
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
@@ -308,7 +311,7 @@ provisioning:
   # when scenario.os_install is simplified; used by: ztp
   simplified:
     # Resource name of the Microsoft.Edge site.
-    # required; used by: ztp, monitoring, trailwright
+    # required; used by: ztp, monitoring, trailwright, beacon
     site_name: "iic-site-01"
     # Subscription of the site and edge machines, when it isn't azure.subscription_id.
     # used by: ztp, deployment
@@ -341,7 +344,7 @@ provisioning:
       # used by: ztp, trailwright
       host: "198.51.100.5"
       # Instead of host: the local adapter whose IPv4 address the BMCs reach.
-      # used by: ztp
+      # used by: ztp, trailwright
       host_adapter: ""
       # (since 5.4) 
       # default: "svc-ztp-media"; used by: ztp
@@ -353,7 +356,7 @@ provisioning:
     # used by: ztp
     media_path: "D:\\Data\\azl-ztp\\iic-azl-01\\media"
     # (since 5.2) 
-    # used by: ztp, monitoring
+    # used by: ztp, monitoring, beacon
     evidence_path: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"
     # (since 5.4) 
     # used by: ztp

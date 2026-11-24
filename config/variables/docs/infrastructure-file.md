@@ -38,16 +38,23 @@ The registry is the only master. From it the generator writes **one master file*
 
 | Tool id | Tool | Template | Keys |
 | --- | --- | --- | ---: |
-| `ztp` | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | [`ztp.yml`](../templates/tools/ztp.yml) | 119 |
-| `os_configuration` | OS configuration (toolkit) | [`os-configuration.yml`](../templates/tools/os-configuration.yml) | 168 |
-| `deployment` | Pre-cluster verification and ARM deployment (toolkit) | [`deployment.yml`](../templates/tools/deployment.yml) | 223 |
-| `cicd_infra` | CI/CD infrastructure (toolkit) | [`cicd-infra.yml`](../templates/tools/cicd-infra.yml) | 117 |
-| `monitoring` | [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | [`monitoring.yml`](../templates/tools/monitoring.yml) | 19 |
-| `discovery` | Hardware discovery (toolkit) | [`discovery.yml`](../templates/tools/discovery.yml) | 44 |
-| `trailwright` | [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright), which **writes** the file | [`trailwright.yml`](../templates/tools/trailwright.yml) | 195 |
-| `ranger` | [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger), design comparison (`-DesignPath`) | [`ranger.yml`](../templates/tools/ranger.yml) | 10 |
+| `ztp` | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | [`ztp.yml`](../templates/tools/ztp.yml) | 147 |
+| `os_configuration` | OS configuration (toolkit) | [`os-configuration.yml`](../templates/tools/os-configuration.yml) | 235 |
+| `deployment` | Pre-cluster verification and ARM deployment (toolkit) | [`deployment.yml`](../templates/tools/deployment.yml) | 320 |
+| `cicd_infra` | CI/CD infrastructure (toolkit) | [`cicd-infra.yml`](../templates/tools/cicd-infra.yml) | 199 |
+| `terraform` | Terraform (toolkit) | [`terraform.yml`](../templates/tools/terraform.yml) | 230 |
+| `ansible` | Ansible (toolkit) | [`ansible.yml`](../templates/tools/ansible.yml) | 95 |
+| `monitoring` | [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | [`monitoring.yml`](../templates/tools/monitoring.yml) | 61 |
+| `discovery` | Hardware discovery (toolkit) | [`discovery.yml`](../templates/tools/discovery.yml) | 66 |
+| `trailwright` | [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright), which **writes** the file | [`trailwright.yml`](../templates/tools/trailwright.yml) | 347 |
+| `ranger` | [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger), design comparison and drift report (compare-only: it never writes the file back) | [`ranger.yml`](../templates/tools/ranger.yml) | 66 |
+| `loadtools` | [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools), the cluster facts of a load test | [`loadtools.yml`](../templates/tools/loadtools.yml) | 36 |
+| `surveyor` | [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor), which **produces** values through its sizing handoff and reads the hardware for its as-built record | [`surveyor.yml`](../templates/tools/surveyor.yml) | 18 |
+| `draftsman` | [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman), the network design of its guided setup | [`draftsman.yml`](../templates/tools/draftsman.yml) | 39 |
+| `beacon` | [azurelocal-beacon](https://github.com/AzureLocal/azurelocal-beacon), the pre-deployment site checks | [`beacon.yml`](../templates/tools/beacon.yml) | 75 |
+| `s2d_cartographer` | [azurelocal-s2d-cartographer](https://github.com/AzureLocal/azurelocal-s2d-cartographer), the storage reports of a running instance | [`s2d-cartographer.yml`](../templates/tools/s2d-cartographer.yml) | 21 |
 
-The key counts are the keys below the file's own `_metadata` section, which every template keeps. [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools), [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) and [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) read no key of `infrastructure.yml`, so they have no template; their entries in `_tool_catalog` give the evidence. `ztp` is azurelocal-ztp and `monitoring` is azurelocal-sonar: the toolkit has no stage of its own for either. A test (`tests/variables/ToolTemplates.Tests.ps1`) fails when a template holds a key whose `used_by` does not name its tool, misses one that does, or when `used_by` names something that is not in `_tool_catalog`.
+The key counts are the keys below the file's own `_metadata` section, which every template keeps. Every tool of the chain reads, writes or produces keys of `infrastructure.yml`, so every tool has a template; the entries in `_tool_catalog` give the evidence and the relation (`reads`, `writes` or `produces`). A cut (`-Cut <tool>`) exists for the tools that read; Trailwright and Surveyor have none. `ztp` is azurelocal-ztp and `monitoring` is azurelocal-sonar: the toolkit has no stage of its own for either. A test (`tests/variables/ToolTemplates.Tests.ps1`) fails when a template holds a key whose `used_by` does not name its tool, misses one that does, or when `used_by` names something that is not in `_tool_catalog`.
 
 ## The own settings of a tool
 
@@ -61,6 +68,9 @@ The keys above are facts of the environment. A tool also has settings of its own
 | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `tools.ztp` | Script parameters, configuration keys, handoff and state fields, environment variables |
 | [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) | `tools.draftsman` | The URL parameters of the page and `VITE_BASE` |
 | [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright) | `tools.trailwright` | The parameters of its example script `docs/examples/ConvertTo-AsBuiltSnapshot.ps1` (it also writes `infrastructure.yml`: those keys are in the main sections) |
+| [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) | `tools.surveyor` | The fields of its sizing handoff (`handoff_fields`): each one says which key of `infrastructure.yml` it becomes (`source_key`), or that it becomes none (`no_key`) |
+| [azurelocal-beacon](https://github.com/AzureLocal/azurelocal-beacon) | `tools.beacon` | The keys of `validation-config.json` (`source_key` where the key is written from `infrastructure.yml`; `oem`, `arcGatewayFqdn`, `tlsInspectionHosts`, the timeouts and `brand` are Beacon's own) and the parameters of its scripts |
+| [azurelocal-s2d-cartographer](https://github.com/AzureLocal/azurelocal-s2d-cartographer) | `tools.s2d_cartographer` | The parameters of its commands (`MaintenanceReserveTarget`, `OutputDirectory`, `InfrastructureFile`, ...) and the weights, severities and score thresholds of `config/health-checks.json` |
 | [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) | none | It has no setting outside its page |
 
 An entry has the name as the tool writes it, `type`, the tool's own `default`, `enum` where the code fixes the values, `required`, `read_at` (the file and line, or "not read by code" for a setting that is only documented) and a one-line description. The test thresholds in the load tool's `alert-rules.yml` are the load tool's own limits for a test run, not Azure Monitor alert rules.

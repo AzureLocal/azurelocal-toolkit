@@ -17,6 +17,7 @@
 "sonar","config_keys","Config","ztpEvents.path","tools.sonar.config_keys.Config.ztpEvents_path","Config.ps1; ZtpEvents.ps1 Invoke-AzlSonarZtpEventLoop (all)"
 "sonar","config_keys","Config","osConfigEventsPath","tools.sonar.config_keys.Config.osConfigEventsPath","Config.ps1; OsConfigEvents.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory (all)"
 "sonar","config_keys","Config","armEventsPath","tools.sonar.config_keys.Config.armEventsPath","Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 Get-AzlSonarEventsDirectory (armmon)"
+"sonar","config_keys","Config","updateEventsPath","tools.sonar.config_keys.Config.updateEventsPath","Config.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory"
 "sonar","config_keys","Config","verificationEventsPath","tools.sonar.config_keys.Config.verificationEventsPath","Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)"
 "sonar","config_keys","Config","discoveryPath","tools.sonar.config_keys.Config.discoveryPath","Config.ps1; Discovery.ps1"
 "sonar","config_keys","Config","monitor","tools.sonar.config_keys.Config.monitor","Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan"

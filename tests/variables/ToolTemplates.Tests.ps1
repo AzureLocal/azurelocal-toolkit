@@ -136,9 +136,9 @@ Describe 'The list of tools' {
         $named = @($script:AllTools | Where-Object { $script:Catalog[$_].Contains('tools_section') } | ForEach-Object { [string]$script:Catalog[$_]['tools_section'] })
         $orphans = @($script:Registry['tools']['properties'].Keys | Where-Object { $_ -notin $named })
         $orphans | Should -BeNullOrEmpty -Because "add the tool to _tool_catalog with tools_section: $($orphans -join ', ')"
-        foreach ($id in 'ranger', 'loadtools', 'draftsman', 'trailwright') { $script:Catalog[$id]['tools_section'] | Should -Be $id }
-        # loadtools and draftsman read no key of infrastructure.yml: they keep their settings in tools.<tool> and have no template
-        foreach ($id in 'loadtools', 'draftsman') { $id | Should -BeIn $script:ToolsWithoutKeys }
+        foreach ($id in 'ranger', 'loadtools', 'draftsman', 'trailwright', 'surveyor', 'beacon', 's2d_cartographer') { $script:Catalog[$id]['tools_section'] | Should -Be $id }
+        # every tool of the chain reads a key of infrastructure.yml now (D145): each has a template and a schema, and its own settings in tools.<tool>
+        foreach ($id in 'loadtools', 'draftsman', 'surveyor', 'beacon', 's2d_cartographer') { $id | Should -BeIn $script:ToolsWithKeys }
     }
     It 'the tools_section of a tool is a section under tools: of the registry' {
         $sections = @($script:Registry['tools']['properties'].Keys)

@@ -142,8 +142,8 @@ Describe 'The cut command' {
 
 Describe 'A cut is a scoped file (_metadata.scope = the tool id)' {
     BeforeDiscovery {
-        # the tools that read the file (a tool that writes it, Trailwright, has no cut)
-        $script:Readers = @($script:Tools | Where-Object { $_ -ne 'trailwright' })
+        # the tools that read a part of the file (Trailwright writes it and Surveyor produces values for it: no cut)
+        $script:Readers = @($script:Tools | Where-Object { $_ -notin 'trailwright', 'surveyor' })
     }
 
     It 'the cut for <_> says which tool it is for' -ForEach $script:Readers {

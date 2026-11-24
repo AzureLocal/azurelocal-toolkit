@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer, loadtools, draftsman) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
@@ -34,7 +34,9 @@
             "discovery",
             "ranger",
             "beacon",
-            "s2d_cartographer"
+            "s2d_cartographer",
+            "loadtools",
+            "draftsman"
           ]
         },
         "file_version": {
@@ -52,6 +54,225 @@
         "notes": {
           "description": "Free text about this file for the people who keep it. Not read by the tools.",
           "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
+          "type": "string",
+          "enum": [
+            "active_directory",
+            "local_identity"
+          ]
+        }
+      }
+    },
+    "environment": {
+      "description": "Which environment this file describes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Environment identifier: lowercase letters, digits and hyphens. Documentation only; not read by the tools. It repeats site.name for the tools; Trailwright writes it.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
+        },
+        "type": {
+          "description": "Class of the environment: lab, demo, poc, dev, test, stg or prd. Documentation only; not read by the tools: scenario.environment_class is the key that changes what the tools allow.",
+          "type": "string",
+          "enum": [
+            "lab",
+            "demo",
+            "poc",
+            "dev",
+            "test",
+            "stg",
+            "prd"
+          ]
+        }
+      }
+    },
+    "azure": {
+      "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "$ref": "#/$defs/guid",
+          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
+        },
+        "location": {
+          "$ref": "#/$defs/azure_region",
+          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
+        },
+        "subscription_id": {
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
+        },
+        "resource_group": {
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
+        }
+      }
+    },
+    "key_vaults": {
+      "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/key_vault_name",
+            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
+          },
+          "subscription_id": {
+            "$ref": "#/$defs/guid",
+            "description": "Subscription (GUID) that holds the vault."
+          },
+          "resource_group": {
+            "$ref": "#/$defs/resource_group",
+            "description": "Resource group that holds the vault."
+          }
+        }
+      }
+    },
+    "cluster": {
+      "description": "The Azure Local instance (the cluster deployment).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/netbios_name",
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName."
+        },
+        "witness": {
+          "description": "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "type": "string",
+              "enum": [
+                "cloud",
+                "file_share",
+                "none"
+              ]
+            }
+          }
+        },
+        "key_vault": {
+          "description": "The Key Vault the deployment uses for the instance's secrets (one per instance). ARM keyVaultName.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/key_vault_name",
+              "description": "Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting with a letter."
+            }
+          }
+        }
+      }
+    },
+    "deployment": {
+      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the runs write their event feeds (events_directory). Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "solution_version": {
+          "description": "The solution version the nodes run (four numeric parts, for example 12.2611.1004.9). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously). The OS configuration also passes it to the Arc registration of a machine installed from an ISO as -TargetSolutionVersion, the version the first deployment uses; without it the registration cmdlet asks which version to use, which an unattended run cannot answer.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "nodes": {
+      "description": "The machines, one entry each. ARM physicalNodesSettings and arcNodeResourceIds. Up to 16 with Storage Spaces Direct, up to 64 disaggregated (the validator checks which applies).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/node",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/netbios_name",
+            "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this."
+          },
+          "management": {
+            "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address."
+              }
+            }
+          },
+          "serial_number": {
+            "description": "Serial number (Dell service tag). Maps each simplified-provisioning voucher to its machine.",
+            "type": "string",
+            "minLength": 1
+          },
+          "bmc": {
+            "description": "The baseboard management controller (BMC) of the machine: address, type and login. ZTP drives the machine through it over Redfish (virtual media, boot override, BIOS settings, power); hardware discovery reads the machine through it.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "IPv4 address of the BMC (iDRAC, iLO, XCC). It must answer HTTPS (TCP 443) from the host that runs ZTP or discovery."
+              },
+              "type": {
+                "description": "Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. Only Dell iDRAC is proven end to end in this phase; BMC kinds other than idrac are planned. Hardware inventory (Get-HardwareInventory.ps1) compares it with the vendor it detects from the Redfish answers; other is not compared.",
+                "type": "string",
+                "enum": [
+                  "idrac",
+                  "ilo",
+                  "xcc",
+                  "other"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "hardware": {
+      "description": "What every machine is. The layout is the same on every machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bmc": {
+          "$ref": "#/$defs/bmc_credentials",
+          "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
+          "properties": {
+            "username": {
+              "description": "The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp and hardware discovery read a reference through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1).",
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file://<name> or command://<name>, never the password itself. azurelocal-ztp (since 5b75c9a) and hardware discovery read it through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1)."
+            }
+          }
         }
       }
     },
@@ -137,6 +358,64 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 4094
+              }
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "description": "Accounts and the identity provider (scenario.identity).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "local_admin": {
+          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "description": "User name of the deployment local administrator on every machine (ARM localAdminUserName). Not Administrator or Guest: the deployment renames the built-in account.",
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+            }
+          }
+        },
+        "active_directory": {
+          "description": "The Active Directory the instance joins and its accounts. Applies when scenario.identity is active_directory.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "domain_fqdn": {
+              "description": "ARM domainFqdn.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+            },
+            "ou_path": {
+              "description": "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory",
+              "type": "string",
+              "pattern": "^[Oo][Uu]=.+,[Dd][Cc]=.+$"
+            },
+            "lcm_user": {
+              "description": "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "Name only, no domain. Up to 20 characters.",
+                  "type": "string",
+                  "pattern": "^[^@\\\\]+$",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+                }
               }
             }
           }

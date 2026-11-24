@@ -3,7 +3,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json",
   "title": "Azure Local infrastructure.yml",
-  "description": "The one environment file for an Azure Local instance: the design choices, the machines, the networks, identity, Azure targets, provisioning (ISO or simplified machine provisioning with ZTP) and the cluster deployment. Every Azure Local tool reads this file: azurelocal-toolkit, azurelocal-ztp, Trailwright (writes it), Beacon, Sonar and Ranger. Keys are snake_case. Secrets are never values: they are keyvault://<vault>/<secret> references. Sections reject unknown keys; put anything else under extensions.",
+  "description": "The one environment file for an Azure Local instance: the design choices, the machines, the networks, identity, Azure targets, provisioning (ISO or simplified machine provisioning with ZTP) and the cluster deployment. Every tool of the Azure Local set uses this file: azurelocal-toolkit, azurelocal-ztp, Beacon, Sonar and Cartographer read it, Trailwright writes it (and Surveyor produces values for it through its sizing handoff), Ranger compares it with the deployed instance and writes a drift report only (it never writes the file back). Keys are snake_case. Secrets are never values: they are keyvault://<vault>/<secret> references. Sections reject unknown keys; put anything else under extensions.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer, loadtools, draftsman) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
@@ -37,7 +37,9 @@
             "discovery",
             "ranger",
             "beacon",
-            "s2d_cartographer"
+            "s2d_cartographer",
+            "loadtools",
+            "draftsman"
           ]
         },
         "file_version": {
@@ -1233,6 +1235,18 @@
               "default": 60,
               "minimum": 5,
               "maximum": 600
+            }
+          }
+        },
+        "discovery": {
+          "description": "Schema 5.6.34. Where the hardware discovery (Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1) writes what it finds, so the discovery view of Sonar, Beacon's results and the deployment evidence meet in one folder. Leave the block out to use the default.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "output_directory": {
+              "description": "Schema 5.6.34. The folder the discovery results (the Redfish inventory and the write-back report) are written to; it is created when it is missing. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default: the folder discovery inside provisioning.simplified.evidence_path (<evidence_path>\\discovery); without an evidence_path, <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\discovery (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/discovery). Sonar follows this folder. hardware.inventory.output_directory is where Get-HardwareInventory.ps1 writes its own file.",
+              "type": "string",
+              "minLength": 1
             }
           }
         },

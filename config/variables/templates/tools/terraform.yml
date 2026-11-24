@@ -1,15 +1,15 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.33.
+# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.34.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.33"
+  schema_version: "5.6.34"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "terraform"
   # Your own version of this file.
   # used by: trailwright
@@ -38,32 +38,32 @@ site:
   name: "Azure Local Cloud"
 
 # Azure tags applied to the resources the tools create.
-# used by: ztp, cicd_infra, terraform
+# used by: ztp, cicd_infra, terraform, trailwright
 tags:
   example_name: "value"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform, ranger, beacon, loadtools
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, beacon, loadtools
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   resource_group: "rg-iic-azl-01"
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra, terraform
   automation_identity:
     # The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.
-    # required; one of: managed_identity | service_principal; used by: cicd_infra
+    # required; one of: managed_identity | service_principal; used by: cicd_infra, trailwright
     type: "managed_identity"
     # Managed identity resource name, or the service principal's display name.
-    # required; used by: cicd_infra
+    # required; used by: cicd_infra, trailwright
     name: "id-iic-cicd-01"
     # Object ID (GUID) of the identity's principal in Microsoft Entra ID.
     # used by: terraform
@@ -79,16 +79,16 @@ azure:
         roles: ["Contributor"]
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
-# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery, ranger, s2d_cartographer, loadtools
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform, ranger, s2d_cartographer, loadtools
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
     # (since 5.6.28) 
     # default: 90; used by: deployment, terraform
@@ -100,19 +100,19 @@ key_vaults:
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools
   name: "iic-azl-01"
   # The quorum witness of the cluster.
   # required
   witness:
     # cloud (an Azure Storage account), file_share (disconnected operations), or none.
-    # required; one of: cloud | file_share | none; used by: deployment, trailwright
+    # required; one of: cloud | file_share | none; used by: deployment, trailwright, ranger
     type: "cloud"
   # The Key Vault the deployment uses for the instance's secrets (one per instance).
   # required; used by: deployment
   key_vault:
     # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
-    # required; used by: deployment, trailwright, terraform
+    # required; used by: deployment, trailwright, terraform, beacon, loadtools
     name: "kv-iic-azl-01"
     # Days a deleted secret or vault stays recoverable, 7 to 90 (ARM softDeleteRetentionDays).
     # default: 30; used by: deployment, trailwright, terraform
@@ -137,7 +137,7 @@ operations:
   # Who hears about alerts.
   notifications:
     # Addresses (team mailboxes) that receive the notifications of the operations tools.
-    # used by: terraform
+    # used by: terraform, trailwright
     emails: ["noc@improbability.cloud"]
   # Azure Monitor for the instance.
   monitoring:
@@ -196,7 +196,7 @@ landing_zone:
   # used by: cicd_infra
   resource_groups:
     # Name of the resource group.
-    # required; used by: cicd_infra, terraform
+    # required; used by: cicd_infra, terraform, trailwright
     - name: "rg-iic-conn-01"
   # Azure Policy of the landing zone.
   policy:
@@ -249,16 +249,16 @@ landing_zone:
   # used by: cicd_infra
   networks:
     # Name of the virtual network.
-    # required; used by: cicd_infra, terraform
+    # required; used by: cicd_infra, terraform, trailwright
     - name: "vnet-iic-hub-01"
       # Name of the subscription (landing_zone.subscriptions[].name) that holds the network.
       # used by: cicd_infra, terraform
       subscription: "sub-iic-connectivity"
       # Resource group of the network.
-      # used by: cicd_infra, terraform
+      # used by: cicd_infra, terraform, trailwright
       resource_group: "rg-iic-conn-01"
       # Address ranges of the virtual network, in CIDR form.
-      # required; used by: cicd_infra, terraform
+      # required; used by: cicd_infra, terraform, trailwright
       address_space: ["10.20.0.0/22"]
       # DNS servers of the virtual network.
       # used by: cicd_infra, terraform
@@ -418,13 +418,13 @@ landing_zone:
   # used by: terraform, ansible
   virtual_machines:
     # Name of the virtual machine.
-    # required; used by: terraform, ansible
+    # required; used by: terraform, ansible, trailwright
     - name: "vm-iic-dc-01"
       # Up to 15 letters, digits and hyphens.
       # used by: terraform, ansible
       hostname: "iic-dc01"
       # What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other.
-      # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform, ansible
+      # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform, ansible, trailwright
       role: "domain_controller"
       # Where the VM runs.
       # one of: azure | azure_local | onprem; used by: terraform, ansible
@@ -436,10 +436,10 @@ landing_zone:
       # used by: terraform
       subnet: "snet-iic-mgmt-01"
       # Private IPv4 address of the machine.
-      # used by: terraform, ansible
+      # used by: terraform, ansible, trailwright
       private_ip: "10.20.4.10"
       # Azure VM size, for example Standard_D2s_v5.
-      # used by: terraform
+      # used by: terraform, trailwright
       size: "Standard_D2s_v5"
       # (since 5.6.19) 
       # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
@@ -467,13 +467,13 @@ landing_zone:
 # used by: cicd_infra
 devops:
   # The CI/CD platform: github, gitlab or azure_devops.
-  # required; one of: github | gitlab | azure_devops; used by: cicd_infra, ansible, terraform
+  # required; one of: github | gitlab | azure_devops; used by: cicd_infra, ansible, terraform, trailwright
   platform: "github"
   # URL of the CI/CD platform (an organization or instance URL).
   # used by: cicd_infra, ansible, terraform
   url: "https://github.com"
   # Organization, group or project collection.
-  # used by: cicd_infra, ansible, terraform
+  # used by: cicd_infra, ansible, terraform, trailwright
   organization: "improbability-cloud"
   # (since 5.5) 
   # used by: cicd_infra, terraform

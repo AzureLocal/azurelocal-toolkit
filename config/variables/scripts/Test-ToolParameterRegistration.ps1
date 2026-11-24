@@ -13,7 +13,7 @@
     repository (azurelocal-ztp, azurelocal-sonar): point -Root at its checkout.
 
 .PARAMETER Tool
-    os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools, draftsman or trailwright.
+    os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools, draftsman, trailwright, surveyor, beacon or s2d_cartographer.
 
 .PARAMETER Root
     The folder to scan for *.ps1 files.
@@ -35,7 +35,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman', 'trailwright')][string]$Tool,
+    [Parameter(Mandatory)][ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman', 'trailwright', 'surveyor', 'beacon', 's2d_cartographer')][string]$Tool,
     [Parameter(Mandatory)][string]$Root,
     [string]$RegistryPath = (Join-Path $PSScriptRoot '../schema/master-registry.yaml'),
     [object[]]$Registry,

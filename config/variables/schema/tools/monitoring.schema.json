@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer, loadtools, draftsman) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
@@ -34,7 +34,9 @@
             "discovery",
             "ranger",
             "beacon",
-            "s2d_cartographer"
+            "s2d_cartographer",
+            "loadtools",
+            "draftsman"
           ]
         },
         "file_version": {
@@ -251,6 +253,35 @@
             "description": "Name of the machine's Arc resource (Microsoft.HybridCompute/machines). Default: name. Simplified provisioning sets it when it claims the machine (edge machine arcMachineResourceId); without it the service names the Arc machine ROE1-<id>, and an Arc machine can't be renamed. The deployment uses it in ARM arcNodeResourceIds. An ISO install registers the Arc machine under the host name, so leave it out there. 1-54 letters, digits, '-', '_' and '.', not ending in '.'.",
             "type": "string",
             "pattern": "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
+          }
+        }
+      }
+    },
+    "hardware": {
+      "description": "What every machine is. The layout is the same on every machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
+          "type": "string",
+          "minLength": 1
+        },
+        "discovery": {
+          "description": "Schema 5.6.34. Where the hardware discovery (Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1) writes what it finds, so the discovery view of Sonar, Beacon's results and the deployment evidence meet in one folder. Leave the block out to use the default.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "output_directory": {
+              "description": "Schema 5.6.34. The folder the discovery results (the Redfish inventory and the write-back report) are written to; it is created when it is missing. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default: the folder discovery inside provisioning.simplified.evidence_path (<evidence_path>\\discovery); without an evidence_path, <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\discovery (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/discovery). Sonar follows this folder. hardware.inventory.output_directory is where Get-HardwareInventory.ps1 writes its own file.",
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }

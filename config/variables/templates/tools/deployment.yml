@@ -1,15 +1,15 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.33.
+# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.34.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.33"
+  schema_version: "5.6.34"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "deployment"
   # Your own version of this file.
   # used by: trailwright
@@ -25,65 +25,65 @@ _metadata:
 # The design choices.
 scenario:
   # active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity...
-  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright
+  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright, ranger, beacon
   identity: "active_directory"
   # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san...
   # one of: s2d | san | hybrid; default: "s2d"; used by: os_configuration, deployment, trailwright
   storage_architecture: "s2d"
   # switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage.
-  # one of: switched | switchless; default: "switched"; used by: deployment, trailwright
+  # one of: switched | switchless; default: "switched"; used by: deployment, trailwright, draftsman
   storage_connectivity: "switched"
   # standard, or rack_aware (machines split across two local availability zones; every node needs a zone).
-  # one of: standard | rack_aware; used by: deployment, trailwright
+  # one of: standard | rack_aware; used by: deployment, trailwright, draftsman, surveyor
   topology: "standard"
   # connected to Azure, or disconnected operations (needs the disconnected section).
   # one of: connected | disconnected; used by: deployment, trailwright
   connectivity: "connected"
   # Azure public cloud or Azure Government.
-  # one of: public | government; used by: os_configuration, deployment, trailwright, ansible
+  # one of: public | government; used by: os_configuration, deployment, trailwright, ansible, beacon
   cloud: "public"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform, ranger, beacon, loadtools
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, beacon, loadtools
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
   # used by: ztp, deployment, trailwright
   hci_resource_provider_object_id: "00000000-0000-0000-0000-000000000000"
   # Name of the custom location the deployment creates.
-  # used by: deployment, trailwright
+  # used by: deployment, trailwright, loadtools
   custom_location: "cl-iic-azl-01"
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra, terraform
   automation_identity:
     # The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.
-    # required; one of: managed_identity | service_principal; used by: cicd_infra
+    # required; one of: managed_identity | service_principal; used by: cicd_infra, trailwright
     type: "managed_identity"
     # Managed identity resource name, or the service principal's display name.
-    # required; used by: cicd_infra
+    # required; used by: cicd_infra, trailwright
     name: "id-iic-cicd-01"
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
-# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery, ranger, s2d_cartographer, loadtools
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform, ranger, s2d_cartographer, loadtools
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
     # (since 5.6.28) 
     # default: 90; used by: deployment, terraform
@@ -117,19 +117,19 @@ secrets:
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools
   name: "iic-azl-01"
   # Prefix of the Azure resources the deployment creates.
   # default: "hci"; used by: deployment, trailwright
   naming_prefix: "iicazl01"
   # ARM deploymentMode: validate runs the checks only; deploy deploys.
-  # one of: validate | deploy; default: "validate"; used by: deployment
+  # one of: validate | deploy; default: "validate"; used by: deployment, trailwright
   deployment_mode: "validate"
   # The quorum witness of the cluster.
   # required
   witness:
     # cloud (an Azure Storage account), file_share (disconnected operations), or none.
-    # required; one of: cloud | file_share | none; used by: deployment, trailwright
+    # required; one of: cloud | file_share | none; used by: deployment, trailwright, ranger
     type: "cloud"
     # Cloud witness storage account.
     # used by: deployment, trailwright
@@ -138,7 +138,7 @@ cluster:
   # required; used by: deployment
   key_vault:
     # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
-    # required; used by: deployment, trailwright, terraform
+    # required; used by: deployment, trailwright, terraform, beacon, loadtools
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
     # default: true; used by: deployment, trailwright
@@ -193,7 +193,7 @@ deployment:
   # used by: deployment
   deployment_settings_api_version: ""
   # The solution version the nodes run (four numeric parts, for example 12.2611.1004.9).
-  # used by: deployment, os_configuration, trailwright
+  # used by: deployment, os_configuration, trailwright, ranger
   solution_version: "12.2611.1004.9"
   # The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds...
   # used by: deployment
@@ -220,7 +220,7 @@ deployment:
   # used by: deployment, monitoring
   pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
   # (since 5.6.29) 
-  # used by: os_configuration, deployment, monitoring
+  # used by: os_configuration, deployment, monitoring, trailwright
   events_directory: "D:\\Data\\azl-events\\iic-clus01"
   # Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment...
   # default: false; used by: deployment
@@ -230,13 +230,13 @@ deployment:
 # used by: deployment, monitoring
 nodes:
   # Host name: up to 15 characters.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible, ranger, beacon, loadtools, draftsman, surveyor
   - name: "iic-azl-n01"
     # The machine's management port and address (schema 5.0 and 5.1).
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon
       ip_address: "192.0.2.11"
     # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
     # used by: ztp, os_configuration
@@ -245,7 +245,7 @@ nodes:
       # required; used by: ztp, os_configuration, discovery
       - name: "Embedded NIC 1"
         # Optional, off by default.
-        # used by: os_configuration, deployment
+        # used by: os_configuration, deployment, beacon
         os_name_override: "Storage1"
         # What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified...
         # required; used by: ztp, os_configuration, monitoring, discovery
@@ -266,7 +266,7 @@ nodes:
     # used by: os_configuration, deployment, trailwright
     storage_ips: []
     # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
-    # used by: ztp, os_configuration, deployment, monitoring
+    # used by: ztp, os_configuration, deployment, monitoring, trailwright, beacon
     arc_machine_name: "iic-azl-n01"
     # (since 5.3) 
     # used by: ztp, os_configuration, deployment
@@ -308,31 +308,31 @@ nodes:
 # What every machine is.
 hardware:
   # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
-  # required; used by: ztp, os_configuration, deployment, discovery, trailwright
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright, beacon
   vendor: "Dell"
   # Model, for example AX-760.
-  # required; used by: ztp, os_configuration, discovery, trailwright
+  # required; used by: ztp, os_configuration, discovery, trailwright, draftsman
   model: "AX-760"
   # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
   # used by: deployment
   sbe:
     # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement; with a package it is read from it).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     publisher: "Dell"
     # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     family: ""
     # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     version: ""
     # Where the SBE manifest comes from (a URL or a file path).
-    # used by: deployment
+    # used by: deployment, trailwright
     manifest_source: ""
     # Creation date of the SBE manifest, as the manifest states it.
-    # used by: deployment
+    # used by: deployment, trailwright
     manifest_creation_date: ""
     # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
     # one of: required | not_applicable | vendor; default: "vendor"; used by: os_configuration, deployment, trailwright
@@ -350,10 +350,10 @@ hardware:
     # used by: os_configuration, deployment, trailwright
     source_password: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
     # Optional.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     package_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     # Optional.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     package_size_bytes: 1048576
     # Optional (schema 5.6.24).
     # used by: deployment
@@ -380,43 +380,43 @@ networking:
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, beacon
     gateway: "192.0.2.1"
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible, ranger, beacon
     dns_servers: ["192.0.2.4", "192.0.2.5"]
     # Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters.
-    # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
+    # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment, trailwright
     ip_assignment: "static"
     # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
-    # default: false; used by: os_configuration, deployment, trailwright
+    # default: false; used by: os_configuration, deployment, trailwright, ztp
     use_dhcp: false
     # At least six contiguous addresses in the management subnet, outside the machines' addresses.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, beacon
     infrastructure_pool:
       # First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every...
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, beacon
       start: "192.0.2.20"
       # Last address of the infrastructure pool (ARM endingIPAddress).
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, beacon
       end: "192.0.2.29"
   # Time sources, as host names or addresses.
-  # used by: os_configuration, deployment, ansible
+  # used by: os_configuration, deployment, ansible, trailwright, beacon
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:
     # Name of the Network ATC intent, for example management_compute or storage.
-    # required; used by: os_configuration, deployment, trailwright, ranger
+    # required; used by: os_configuration, deployment, trailwright, ranger, beacon, draftsman
     - name: "management"
       # Traffic types the intent carries: management, compute and storage (ARM trafficType).
-      # required; used by: os_configuration, deployment, trailwright, ranger
+      # required; used by: os_configuration, deployment, trailwright, ranger, beacon, draftsman
       traffic: ["management"]
       # Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds...
-      # required; used by: os_configuration, deployment, trailwright, ranger
+      # required; used by: os_configuration, deployment, trailwright, ranger, beacon
       adapters: ["Port1", "Port2"]
       # Network ATC overrides.
       # used by: os_configuration
@@ -437,7 +437,7 @@ networking:
         # used by: os_configuration, deployment
         adapter:
           # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
-          # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment, trailwright
+          # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment, trailwright, draftsman
           jumbo_packet: 1514
           # RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'.
           # used by: os_configuration, deployment, trailwright
@@ -470,7 +470,7 @@ networking:
         # required; used by: os_configuration, deployment, trailwright
         adapter: "Port3"
         # Network ATC defaults are 711 and 712.
-        # required; used by: os_configuration, deployment, trailwright
+        # required; used by: os_configuration, deployment, trailwright, draftsman
         vlan_id: 711
         # Needed when auto_ip is false.
         # used by: os_configuration, deployment, trailwright
@@ -524,10 +524,10 @@ networking:
       # used by: deployment
       vm_switch_name: "ConvergedSwitch(management_compute_storage)"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
-      # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
+      # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment, draftsman
       purpose: "compute"
       # VLAN ID of the logical network; 0 for untagged.
-      # used by: deployment, trailwright
+      # used by: deployment, trailwright, draftsman
       vlan_id: 2204
       # Address prefix of the logical network in CIDR form.
       # used by: os_configuration, deployment, trailwright
@@ -593,13 +593,13 @@ identity:
   # required; used by: os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: os_configuration, deployment, monitoring, trailwright
+    # required; used by: os_configuration, deployment, monitoring, trailwright, s2d_cartographer
     username: "azl-admin"
     # Optional.
     # used by: deployment
     username_secret: "keyvault://kv-iic-mgmt-01/local-admin-username"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
-    # required; used by: os_configuration, deployment, trailwright, ansible
+    # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # Local identity with Key Vault.
   # when scenario.identity is local_identity
@@ -617,10 +617,10 @@ identity:
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
-    # required; used by: os_configuration, deployment, trailwright, ansible
+    # required; used by: os_configuration, deployment, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools
     domain_fqdn: "improbability.cloud"
     # Up to 15 letters, digits and hyphens.
-    # used by: os_configuration, deployment, monitoring, ansible
+    # used by: os_configuration, deployment, monitoring, ansible, trailwright, beacon, s2d_cartographer
     netbios_name: "IIC"
     # Distinguished name of the dedicated OU.
     # required; used by: os_configuration, deployment, trailwright, ansible
@@ -629,10 +629,10 @@ identity:
     # required; used by: deployment
     lcm_user:
       # Name only, no domain.
-      # required; used by: os_configuration, deployment, trailwright, ansible
+      # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
       username: "lcm-iic-azl-01"
       # At least 14 characters with lowercase, uppercase, a digit and a special character.
-      # required; used by: os_configuration, deployment, trailwright, ansible
+      # required; used by: os_configuration, deployment, trailwright, ansible, s2d_cartographer
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
     # Whether the instance uses group managed service accounts.
     # default: false; used by: deployment
@@ -671,7 +671,7 @@ storage:
   # used by: deployment
   volumes:
     # Name of the volume, for example vol-workloads-01.
-    # required; used by: deployment, trailwright, ranger
+    # required; used by: deployment, trailwright, ranger, loadtools
     - name: "vol-workloads-01"
       # Size of the volume in GiB (binary units, as Windows counts).
       # required; used by: deployment, trailwright, ranger
@@ -680,7 +680,7 @@ storage:
       # one of: two_way | three_way | four_way | parity | nested_two_way | mirror_accelerated_parity | nested_mirror_accelerated_parity; used by: deployment, trailwright, ranger
       resiliency: "two_way"
       # (since 5.6.9) thin (space is taken from the pool as data is written) or fixed (all space is taken when the volume is created).
-      # one of: thin | fixed; used by: deployment
+      # one of: thin | fixed; used by: deployment, trailwright
       provisioning_type: "thin"
       # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or...
       # one of: refs | ntfs; default: "refs"; used by: deployment
@@ -713,10 +713,10 @@ storage:
   # used by: deployment
   paths:
     # Name of the storage path resource: 3 to 64 letters, digits or hyphens.
-    # required; used by: deployment
+    # required; used by: deployment, loadtools
     - name: "sp-workloads-01"
       # The folder on a cluster shared volume, for example C:\ClusterStorage\vol-workloads-01\vms for a volume of storage.volumes, or the folder of...
-      # required; used by: deployment
+      # required; used by: deployment, loadtools
       path: "C:\\ClusterStorage\\vol-workloads-01\\vms"
   # (since 5.6.11) 
   # used by: deployment
@@ -935,7 +935,7 @@ provisioning:
   # when scenario.os_install is simplified; used by: ztp
   simplified:
     # Resource name of the Microsoft.Edge site.
-    # required; used by: ztp, monitoring, trailwright
+    # required; used by: ztp, monitoring, trailwright, beacon
     site_name: "iic-site-01"
     # Subscription of the site and edge machines, when it isn't azure.subscription_id.
     # used by: ztp, deployment
@@ -972,7 +972,7 @@ provisioning:
 # used by: cicd_infra
 devops:
   # The CI/CD platform: github, gitlab or azure_devops.
-  # required; one of: github | gitlab | azure_devops; used by: cicd_infra, ansible, terraform
+  # required; one of: github | gitlab | azure_devops; used by: cicd_infra, ansible, terraform, trailwright
   platform: "github"
   # (since 5.5) 
   # used by: cicd_infra, terraform

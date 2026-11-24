@@ -340,7 +340,7 @@ function Get-HandWritten {
             $area = [string]$group['area']
             foreach ($candidate in $area, "scripts/$area") {
                 if (-not $result.ContainsKey($candidate)) { $result[$candidate] = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal) }
-                if ($group.Contains('properties')) {
+                if ($group.Contains('properties') -and $group['properties'] -is [System.Collections.IDictionary]) {
                     foreach ($child in $group['properties'].Values) {
                         if ($child -is [System.Collections.IDictionary] -and $child.Contains('name')) { [void]$result[$candidate].Add([string]$child['name']) }
                     }

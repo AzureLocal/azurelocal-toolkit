@@ -4,7 +4,7 @@
     Writes the mapping from a tool's own names to registry paths, for a tool that lives outside this repository.
 
 .DESCRIPTION
-    azurelocal-ztp, azurelocal-sonar, azurelocal-ranger, azurelocal-loadtools, azurelocal-draftsman and azurelocal-trailwright are separate repositories. Their variables (script parameters, config-file keys, events,
+    azurelocal-ztp, azurelocal-sonar, azurelocal-ranger, azurelocal-loadtools, azurelocal-draftsman, azurelocal-trailwright, azurelocal-surveyor, azurelocal-beacon and azurelocal-s2d-cartographer are separate repositories. Their variables (script parameters, config-file keys, events,
     state and handoff fields, secret names, environment variables) are registered in the master registry under
     tools.<tool>.<kind>.<group>.<name>. This script lists them as a CSV, one row per variable: the tool, the kind, the group
     (the script, file or feed), the name as the tool writes it, the registry path and where the tool reads it.
@@ -14,7 +14,7 @@
     on disk differs.
 
 .PARAMETER Tool
-    One or more of: os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools, draftsman, trailwright. Default: ztp, sonar, ranger, loadtools, draftsman and trailwright (the tools that live in other repositories).
+    One or more of: os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools, draftsman, trailwright, surveyor, beacon, s2d_cartographer. Default: ztp, sonar, ranger, loadtools, draftsman, trailwright, surveyor, beacon and s2d_cartographer (the tools that live in other repositories).
 
 .PARAMETER OutputDirectory
     Default: config/variables/tool-mappings.
@@ -27,7 +27,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman', 'trailwright')][string[]]$Tool = @('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright'),
+    [ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman', 'trailwright', 'surveyor', 'beacon', 's2d_cartographer')][string[]]$Tool = @('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright', 'surveyor', 'beacon', 's2d_cartographer'),
     [string]$RegistryPath = (Join-Path $PSScriptRoot '../schema/master-registry.yaml'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '../tool-mappings'),
     [object[]]$Registry,

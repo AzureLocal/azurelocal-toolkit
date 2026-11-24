@@ -1,0 +1,75 @@
+# GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
+# Change the registry, then run the generator. A test regenerates this file and fails when it differs.
+# Template for the part of infrastructure.yml that azurelocal-surveyor ('surveyor') produces (through its sizing handoff) (a strict subset of the master file). Schema 5.6.34.
+# Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
+
+# About this file.
+_metadata:
+  # The schema version this file follows.
+  # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+  schema_version: "5.6.34"
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
+  scope: "surveyor"
+  # Your own version of this file.
+  # used by: trailwright
+  file_version: "1.0.0"
+  # Date of the last change, YYYY-MM-DD.
+  last_updated: "2026-11-06"
+  # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  # used by: trailwright
+  generated_by: ""
+  # Free text about this file for the people who keep it.
+  notes: ""
+
+# The design choices.
+scenario:
+  # standard, or rack_aware (machines split across two local availability zones; every node needs a zone).
+  # one of: standard | rack_aware; used by: deployment, trailwright, draftsman, surveyor
+  topology: "standard"
+
+# The machines, one entry each.
+# used by: deployment, monitoring
+nodes:
+  # Host name: up to 15 characters.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible, ranger, beacon, loadtools, draftsman, surveyor
+  - name: "iic-azl-n01"
+
+# What every machine is.
+hardware:
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright, beacon
+  vendor: "Dell"
+  # Model, for example AX-760.
+  # required; used by: ztp, os_configuration, discovery, trailwright, draftsman
+  model: "AX-760"
+  # Physical cores per machine.
+  # used by: discovery, trailwright, surveyor
+  cpu_cores: 64
+  # Memory per machine, GiB.
+  # used by: discovery, trailwright, surveyor
+  memory_gib: 1024
+  # Drives per machine.
+  drives:
+    # The capacity drives in each machine (Storage Spaces Direct).
+    capacity:
+      # Media type of the capacity drives: nvme, ssd or hdd.
+      # one of: nvme | ssd | hdd; used by: discovery, trailwright, surveyor
+      media: "nvme"
+      # Number of capacity drives in each machine.
+      # used by: discovery, trailwright, surveyor
+      count: 8
+      # Size of one capacity drive in TB (decimal terabytes).
+      # used by: discovery, trailwright, surveyor
+      size_tb: 3.84
+    # The cache drives in each machine (Storage Spaces Direct).
+    cache:
+      # Media type of the cache drives: nvme, ssd or hdd.
+      # one of: nvme | ssd | hdd; used by: discovery, trailwright, surveyor
+      media: "nvme"
+      # Number of cache drives in each machine.
+      # used by: discovery, trailwright, surveyor
+      count: 0
+      # Size of one cache drive in TB (decimal terabytes).
+      # used by: discovery, trailwright, surveyor
+      size_tb: 0

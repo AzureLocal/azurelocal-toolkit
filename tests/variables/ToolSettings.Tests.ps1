@@ -21,7 +21,7 @@ BeforeAll {
         $envName = 'AZL_{0}_REPO' -f $Tool.ToUpperInvariant()
         $fromEnv = [Environment]::GetEnvironmentVariable($envName)
         # azurelocal-trailwright lives in D:\git\hybrid-solutions-cloud, the other tools in D:\git\azurelocal.
-        $path = if ($fromEnv) { $fromEnv } else { @('D:\git\azurelocal', 'D:\git\hybrid-solutions-cloud' | ForEach-Object { Join-Path $_ "azurelocal-$Tool" } | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1) }
+        $path = if ($fromEnv) { $fromEnv } else { @('D:\git\azurelocal', 'D:\git\hybrid-solutions-cloud' | ForEach-Object { Join-Path $_ ("azurelocal-" + ($Tool -replace '_', '-')) } | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1) }
         if ($path -and (Test-Path -LiteralPath $path -PathType Container)) { (Resolve-Path -LiteralPath $path).ProviderPath } else { $null }
     }
 
@@ -86,7 +86,7 @@ Describe 'Registered settings of the external tools' {
         @(Get-ToolLeaf $_).Count | Should -BeGreaterThan 5
     }
 
-    It 'gives every setting of <_> a type, a place where it is read and a one-line description' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
+    It 'gives every setting of <_> a type, a place where it is read and a one-line description' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright', 'beacon', 's2d_cartographer', 'surveyor' {
         $bad = foreach ($l in (Get-ToolLeaf $_)) {
             foreach ($f in 'type', 'read_at', 'description') { if (-not $l.Node.Contains($f) -or [string]::IsNullOrWhiteSpace([string]$l.Node[$f])) { "$($l.Path): no $f" } }
             if ($l.Node.Contains('description') -and ([string]$l.Node['description']).Length -gt 900) { "$($l.Path): description is longer than 900 characters" }
@@ -94,21 +94,37 @@ Describe 'Registered settings of the external tools' {
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'gives every group of <_> an area that names a file of the tool' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
+    It 'gives every group of <_> an area that names a file of the tool' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright', 'beacon', 's2d_cartographer', 'surveyor' {
         $tool = $_
         $bad = foreach ($r in $script:All) { if ($r.Path -match "^tools\.$tool\.[^.]+\.[^.]+$" -and (-not $r.Node.Contains('area') -or [string]::IsNullOrWhiteSpace([string]$r.Node['area']))) { $r.Path } }
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'names, in source_key of <_>, only keys that exist in the master infrastructure file' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
+    It 'names, in source_key of <_>, only keys that exist in the master infrastructure file' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright', 'beacon', 's2d_cartographer', 'surveyor' {
         $bad = foreach ($l in (Get-ToolLeaf $_)) {
             if ($l.Node.Contains('source_key') -and -not $script:MasterPaths.Contains([string]$l.Node['source_key'])) { "$($l.Path): source_key $($l.Node['source_key']) is not a key of the master file" }
         }
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'lists the surveyor as a tool without settings of its own: it has no tools section' {
-        @($script:All | Where-Object { $_.Path -like 'tools.surveyor*' }).Count | Should -Be 0
+    It 'registers the surveyor only as the producer of the sizing handoff: every setting is a handoff field' {
+        @(Get-ToolLeaf 'surveyor' | Where-Object { $_.Kind -ne 'handoff_fields' }).Count | Should -Be 0
+        @(Get-ToolLeaf 'surveyor').Count | Should -BeGreaterThan 10
+    }
+
+    It 'gives every handoff field of the surveyor a source_key in the master file, or says in no_key that it becomes no key' {
+        $bad = foreach ($l in (Get-ToolLeaf 'surveyor')) {
+            $hasKey = $l.Node.Contains('source_key')
+            $noKey = $l.Node.Contains('no_key') -and $l.Node['no_key'] -eq $true
+            if ($hasKey -eq $noKey) { "$($l.Path): needs exactly one of source_key and no_key" }
+            if ($noKey -and ([string]$l.Node['description']).Length -lt 40) { "$($l.Path): no_key needs the reason in the description" }
+        }
+        @($bad) | Should -BeNullOrEmpty
+    }
+
+    It 'a handoff field without source_key or no_key is found (the check itself works)' {
+        $node = [ordered]@{ name = 'x'; description = 'a field with nothing said about its key' }
+        ($node.Contains('source_key') -eq ($node.Contains('no_key') -and $node['no_key'] -eq $true)) | Should -BeTrue
     }
 
     It 'a source_key that is not in the master file is found (the check itself works)' {
@@ -363,6 +379,29 @@ Describe 'azurelocal-trailwright: the registered settings match its source' {
         @($problems + $stale) | Should -BeNullOrEmpty
     }
 
+    It 'every key its question catalog asks, and every EXTRA_QUESTION_IDS key, has trailwright in used_by (no unattributed export key)' {
+        if (-not $script:TwRoot) { return (Skip-NoRepo 'trailwright' $null) }
+        $src = Join-Path $script:TwRoot 'apps\trailwright\src\questions'
+        if (-not (Test-Path -LiteralPath $src)) { return (Skip-NoRepo 'trailwright' $null) }
+        $paths = @(Get-ChildItem -LiteralPath (Join-Path $src 'catalog') -Filter '*.ts' | ForEach-Object { Select-String -LiteralPath $_.FullName -Pattern "path:\s*['""]([^'""]+)['""]" -AllMatches } | ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $paths.Count | Should -BeGreaterThan 100
+        # the extra questions are named by question id (nodes.rack); a list question (network_devices) covers its columns
+        $ids = @([regex]::Matches((Get-Content -LiteralPath (Join-Path $src 'answers.ts') -Raw), "(?m)^\s+'([A-Za-z0-9_.]+)',?\s*(//.*)?$") | ForEach-Object { $_.Groups[1].Value })
+        $ids.Count | Should -BeGreaterThan 30
+        $tw = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($v in $script:All) { if ($v.Path -notlike 'tools.*' -and @($v.UsedBy -split '\|') -contains 'trailwright') { [void]$tw.Add($v.Path) } }
+        $notAttributed = foreach ($p in $paths) {
+            $q = $p -replace '\[\]$', ''
+            if (-not ($tw.Contains($p) -or $tw.Contains($q) -or @($tw | Where-Object { $_.StartsWith("$q.") -or $_.StartsWith("$q[]") }).Count)) { $p }
+        }
+        @($notAttributed) | Should -BeNullOrEmpty -Because 'add trailwright to used_by of these keys in the registry'
+        $idMiss = foreach ($i in $ids) {
+            $p = $i -replace '^nodes\.', 'nodes[].'
+            if (-not ($tw.Contains($p) -or @($tw | Where-Object { $_.StartsWith("$p.") -or $_.StartsWith("$p[]") }).Count)) { $i }
+        }
+        @($idMiss) | Should -BeNullOrEmpty -Because 'add trailwright to used_by of these keys in the registry'
+    }
+
     It 'Test-ToolParameterRegistration.ps1 finds no unregistered parameter in the checkout' {
         if (-not $script:TwRoot) { return (Skip-NoRepo 'trailwright' $null) }
         $found = @(& (Join-Path $script:Vars 'scripts\Test-ToolParameterRegistration.ps1') -Tool trailwright -Root $script:TwRoot -Registry $script:All -ReportUnregisteredScripts)
@@ -370,6 +409,125 @@ Describe 'azurelocal-trailwright: the registered settings match its source' {
     }
 }
 
+Describe 'azurelocal-beacon: the registered settings match its source' {
+    BeforeAll {
+        $script:BcRoot = Get-ToolRepo 'beacon'
+        $script:BcLeaf = @(Get-ToolLeaf 'beacon')
+    }
+
+    It 'registers its configuration keys and its script parameters, and the catalog entry names them' {
+        @($script:BcLeaf | Where-Object { $_.Kind -eq 'config_keys' }).Count | Should -BeGreaterThan 20
+        @($script:BcLeaf | Where-Object { $_.Kind -eq 'parameters' }).Count | Should -BeGreaterThan 20
+        $catalog = (Read-RegistryYaml -Path $script:RegistryPath)['_tool_catalog']['tools']['beacon']
+        $catalog['tools_section'] | Should -Be 'beacon'
+    }
+
+    It 'every key of src/config/validation-config.example.json is registered, and every registered key is in the example or in the code' {
+        if (-not $script:BcRoot) { return (Skip-NoRepo 'beacon' $null) }
+        $example = Get-Content -LiteralPath (Join-Path $script:BcRoot 'src\config\validation-config.example.json') -Raw | ConvertFrom-Json -AsHashtable
+        $inExample = @($example.Keys | Where-Object { $_ -notlike '_*Note' -and $_ -ne '_comment' })
+        $registered = @($script:BcLeaf | Where-Object { $_.Kind -eq 'config_keys' } | ForEach-Object { $_.Name })
+        $c = Compare-Name $inExample $registered
+        $c.NotRegistered | Should -BeNullOrEmpty -Because "register them under tools.beacon.config_keys: $($c.NotRegistered -join ', ')"
+        $text = (Get-ChildItem -LiteralPath (Join-Path $script:BcRoot 'src') -Recurse -Filter '*.ps1' | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join "`n"
+        $gone = foreach ($l in ($script:BcLeaf | Where-Object { $_.Kind -eq 'config_keys' })) {
+            if ($l.Name -in $inExample) { continue }
+            if ($text -notmatch ('(?<![A-Za-z0-9_])' + [regex]::Escape($l.Name) + '(?![A-Za-z0-9_])')) { $l.Name }
+        }
+        @($gone) | Should -BeNullOrEmpty -Because 'these registered keys are neither in the example file nor in the code'
+    }
+
+    It 'a registered key that the code reads says where (read_at) and one that nothing reads says so' {
+        $bad = foreach ($l in ($script:BcLeaf | Where-Object { $_.Kind -eq 'config_keys' })) {
+            $r = [string]$l.Node['read_at']
+            if ($r -ne 'not read by code' -and $r -notmatch '^[A-Za-z0-9_./-]+\.ps1:\d+$') { "$($l.Path): read_at '$r'" }
+        }
+        @($bad) | Should -BeNullOrEmpty
+    }
+
+    It 'every parameter of every script of the repository that has parameters is registered, and every registered parameter exists' {
+        if (-not $script:BcRoot) { return (Skip-NoRepo 'beacon' $null) }
+        $files = @(Get-ChildItem -LiteralPath $script:BcRoot -Recurse -Filter '*.ps1' -File | Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git|tools|archive|tests)[\\/]' })
+        $seen = @()
+        $problems = foreach ($file in $files) {
+            $rel = $file.FullName.Substring($script:BcRoot.Length + 1).Replace('\', '/')
+            $inCode = @(Get-ParamName $file.FullName $null)
+            if (-not $inCode.Count) { continue }
+            $seen += $rel
+            $registered = @($script:BcLeaf | Where-Object { $_.Kind -eq 'parameters' -and $_.Area -eq $rel } | ForEach-Object { $_.Name })
+            if (-not $registered.Count) { "${rel}: no tools.beacon.parameters group has this area"; continue }
+            $c = Compare-Name $inCode $registered
+            foreach ($n in $c.NotRegistered) { "${rel}: -$n is not registered" }
+            foreach ($n in $c.NotInSource) { "${rel}: -$n is registered but the script has no such parameter" }
+        }
+        $stale = foreach ($a in @($script:BcLeaf | Where-Object { $_.Kind -eq 'parameters' } | Select-Object -ExpandProperty Area -Unique)) { if ($a -notin $seen) { "${a}: registered, but the repository has no such script with parameters" } }
+        @($problems + $stale) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'azurelocal-s2d-cartographer: the registered settings match its source' {
+    BeforeAll {
+        $script:CgRoot = Get-ToolRepo 's2d_cartographer'
+        $script:CgLeaf = @(Get-ToolLeaf 's2d_cartographer')
+    }
+
+    It 'registers the health-check thresholds and the parameters, and ties ClusterName and KeyVaultName to the master file' {
+        @($script:CgLeaf | Where-Object { $_.Kind -eq 'config_keys' }).Count | Should -BeGreaterThan 20
+        $byArea = @($script:CgLeaf | Where-Object { $_.Kind -eq 'parameters' -and $_.Area -like '*(Invoke-S2DCartographer)' })
+        ($byArea | Where-Object { $_.Name -eq 'ClusterName' }).Node['source_key'] | Should -Be 'cluster.name'
+        ($byArea | Where-Object { $_.Name -eq 'KeyVaultName' }).Node['source_key'] | Should -Be 'key_vaults[].name'
+        ($byArea | Where-Object { $_.Name -eq 'MaintenanceReserveTarget' }) | Should -Not -BeNullOrEmpty
+        ($byArea | Where-Object { $_.Name -eq 'OutputDirectory' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'every threshold, weight and severity of config/health-checks.json is registered, and every registered one exists' {
+        if (-not $script:CgRoot) { return (Skip-NoRepo 's2d_cartographer' $null) }
+        $hc = Get-Content -LiteralPath (Join-Path $script:CgRoot 'config\health-checks.json') -Raw | ConvertFrom-Json -AsHashtable
+        $inFile = @(foreach ($k in $hc.scoreThresholds.Keys) { "scoreThresholds.$k" }) + @('weighting.warnFactor') + @(foreach ($c in $hc.checks) { "checks.$($c.id).weight"; "checks.$($c.id).severity" })
+        $registered = @($script:CgLeaf | Where-Object { $_.Kind -eq 'config_keys' } | ForEach-Object { $_.Name })
+        $c = Compare-Name $inFile $registered
+        $c.NotRegistered | Should -BeNullOrEmpty
+        $c.NotInSource | Should -BeNullOrEmpty
+    }
+
+    It 'every parameter of every exported command is registered, and every registered parameter exists' {
+        if (-not $script:CgRoot) { return (Skip-NoRepo 's2d_cartographer' $null) }
+        $psd1 = Import-PowerShellDataFile -LiteralPath (Join-Path $script:CgRoot 'S2DCartographer.psd1')
+        $problems = foreach ($fn in $psd1.FunctionsToExport) {
+            $file = Join-Path $script:CgRoot "Modules\Public\$fn.ps1"
+            if (-not (Test-Path -LiteralPath $file)) { "${fn}: Modules/Public/$fn.ps1 does not exist"; continue }
+            $inCode = @(Get-ParamName $file $fn)
+            $registered = @($script:CgLeaf | Where-Object { $_.Kind -eq 'parameters' -and $_.Area -like "*($fn)" } | ForEach-Object { $_.Name })
+            if (-not $registered.Count -and $inCode.Count) { "${fn}: no tools.s2d_cartographer.parameters group has the area '... ($fn)'"; continue }
+            $c = Compare-Name $inCode $registered
+            foreach ($n in $c.NotRegistered) { "${fn}: -$n is not registered" }
+            foreach ($n in $c.NotInSource) { "${fn}: -$n is registered but the command has no such parameter" }
+        }
+        @($problems) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'azurelocal-surveyor: the registered handoff fields match the sizing handoff schema' {
+    It 'every field of docs/reference/sizing-handoff.schema.json that becomes a value of infrastructure.yml is registered' {
+        $root = Get-ToolRepo 'surveyor'
+        if (-not $root) { return (Skip-NoRepo 'surveyor' $null) }
+        $schema = Get-Content -LiteralPath (Join-Path $root 'docs\reference\sizing-handoff.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $fields = [System.Collections.Generic.List[string]]::new()
+        foreach ($section in 'cluster', 'hardware', 'storage') {
+            $props = $schema.properties[$section].properties
+            foreach ($k in $props.Keys) {
+                $n = $props[$k]
+                if ($k -eq 'drives') { foreach ($tier in $n.properties.Keys) { foreach ($m in $schema.'$defs'.driveTier.properties.Keys) { $fields.Add("hardware.drives.$tier.$m") } }; continue }
+                if ($k -eq 'volumes') { foreach ($m in $n.items.properties.Keys) { if ($m -ne 'provisioning') { $fields.Add("storage.volumes[].$m") } }; continue }
+                $fields.Add("$section.$k")
+            }
+        }
+        $registered = @(Get-ToolLeaf 'surveyor' | ForEach-Object { $_.Name })
+        $c = Compare-Name @($fields) $registered
+        $c.NotRegistered | Should -BeNullOrEmpty -Because "register them under tools.surveyor.handoff_fields: $($c.NotRegistered -join ', ')"
+        $c.NotInSource | Should -BeNullOrEmpty
+    }
+}
 Describe 'azurelocal-draftsman and azurelocal-surveyor: the settings outside the page' {
     It 'every URL parameter of draftsman is registered, and VITE_BASE is still read' {
         $root = Get-ToolRepo 'draftsman'

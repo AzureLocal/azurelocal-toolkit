@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.68
+# Version: 5.0.71
 # Schema: infrastructure.schema.json (generated from this file)
 # Last Updated: 2026-11-24
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.71 (2026-11-24):
+#     - Every tool of the chain is in the registry (owner directive D145, items R5 to R10 and the tool repositories that landed; infrastructure schema 5.6.34; the only new key, hardware.discovery.output_directory, is optional, so a file of any 5.6 version stays valid). (1) Trailwright: used_by names trailwright on the 71 keys its export writes and its questions ask (the EXTRA_QUESTION_IDS keys, the exporter keys, storage.volumes[].provisioning_type among them), so templates/tools/trailwright.yml holds every key an export can contain; a test compares the question catalog of the repository with used_by. (2) Surveyor: the catalog relation is produces (a new value: a tool that makes values through a handoff); tools.surveyor.handoff_fields lists every field of the sizing handoff (1.1) with source_key, or no_key with the reason; Surveyor reads hardware.cpu_cores, memory_gib, hardware.drives, nodes[] and scenario.topology for its as-built record (owner decision O8). (3) Ranger: used_by names ranger on the keys it resolves and compares (cluster, environment.name, nodes[] name, address, serial number, BMC address and type, the Azure scope, scenario.identity, the domain, the witness type, the DNS servers, deployment.solution_version, hardware.bmc username and password, key_vaults); -InfrastructureFile is registered on its three commands; the catalog says Ranger is compare-only for day 2 with a drift report and no write-back (owner decision O6). (4) Beacon is in _tool_catalog with used_by on the keys ConvertTo-BeaconValidationConfig.ps1 reads; tools.beacon registers the keys of validation-config.json (oem, arcGatewayFqdn, tlsInspectionHosts, the timeouts and brand are Beacon's own, every other key has source_key) and the parameters of its scripts. (5) azurelocal-s2d-cartographer is in _tool_catalog and tools.s2d_cartographer: it reads cluster.name, the domain, the lcm_user or local_admin account and key_vaults; the parameters of its commands (InfrastructureFile, MaintenanceReserveTarget, OutputDirectory, ...) and the weights, severities and score thresholds of config/health-checks.json are registered. (6) LoadTools reads cluster.name, nodes[].name, the domain, storage.paths[] and volumes, the Azure scope and custom location and the Key Vault from infrastructure.yml: it has used_by, a template, a cut and the scope loadtools; the five config keys that variables.yml no longer holds are removed from tools.loadtools and Initialize-Environment.ps1 -InfrastructureFile is registered. (7) Draftsman reads the network design (nodes[], scenario.topology and storage_connectivity, intents, VLANs, logical networks, hardware.model, network_devices[]): used_by, template, scope draftsman. (8) ZTP: networking.management.use_dhcp is read by ztp; Convert-ZtpHandoffToClusterInputs.ps1 takes -InfrastructureFile and writes nodes[].arc_machine_name and deployment.solution_version (its handoff fields are those keys, not arc_machine_names and release.azure_local_version). (9) Sonar: updateEventsPath is registered. (10) New key hardware.discovery.output_directory (discovery, monitoring, beacon): the one folder for the discovery results, default <evidence_path>\discovery. New-ToolMapping.ps1 and Test-ToolParameterRegistration.ps1 know surveyor, beacon and s2d_cartographer; the generated templates/tools and schema/tools gain beacon, s2d-cartographer, surveyor, loadtools and draftsman.
 #   v5.0.70 (2026-11-24):
 #     - A cut is a scoped file, and the planning scopes (owner decisions O2 and D145; infrastructure schema 5.6.33; every change is a relaxation or an optional addition, so a file of any 5.6 version stays valid). (1) _metadata.scope takes more values: trailwright and surveyor (a whole design written by a planning tool: everything full requires is required, except the MACs of the ports, nodes[].network_adapters[].mac_address and nodes[].management.mac_address, which hardware discovery fills; with scope full or ztp or a deployment cut they are still required) and the id of every tool that has keys (a cut). (2) New-InfrastructureArtifacts.ps1 -Cut <tool> sets _metadata.scope to the tool id, keeps the required children of every object it keeps (identity.active_directory keeps domain_fqdn, ou_path and lcm_user), and copies a free-key map whole (hardware.bios, nodes[].bios, tags), so the ZTP plan from a cut has the same BIOS blocks as the plan from the whole file. The cut for a tool that writes the file (trailwright) is refused. (3) Test-AzlInfrastructure and Import-AzlInfrastructure check a file whose scope is a tool id against schema/tools/<tool>.schema.json and run only the secret reference rules of the semantic checks. (4) key_vaults (and its name, subscription_id and resource_group) is read by os_configuration, deployment, monitoring and discovery as well, so a cut that keeps a keyvault:// reference keeps the vault list. (5) Azure Local 2611 pins: the example files use maintenance_iso latest and no max_train; Microsoft Learn (view azloc-2611) publishes no maintenance image version for 2611, and the descriptions of maintenance_iso and max_train say so. The generator stops when a tool that has keys is not a value of _metadata.scope.
 #   v5.0.69 (2026-11-24):
@@ -255,15 +257,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.70"
+  version: "5.0.71"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.33"
+  infrastructure_schema_version: "5.6.34"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.71"
+      change: "Every tool of the chain is in the registry (owner directive D145, items R5 to R10 and the tool repositories that landed; infrastructure schema 5.6.34; the only new key, hardware.discovery.output_directory, is optional, so a file of any 5.6 version stays valid). (1) Trailwright: used_by names trailwright on the 71 keys its export writes and its questions ask (the EXTRA_QUESTION_IDS keys, the exporter keys, storage.volumes[].provisioning_type among them), so templates/tools/trailwright.yml holds every key an export can contain; a test compares the question catalog of the repository with used_by. (2) Surveyor: the catalog relation is produces (a new value: a tool that makes values through a handoff); tools.surveyor.handoff_fields lists every field of the sizing handoff (1.1) with source_key, or no_key with the reason; Surveyor reads hardware.cpu_cores, memory_gib, hardware.drives, nodes[] and scenario.topology for its as-built record (owner decision O8). (3) Ranger: used_by names ranger on the keys it resolves and compares (cluster, environment.name, nodes[] name, address, serial number, BMC address and type, the Azure scope, scenario.identity, the domain, the witness type, the DNS servers, deployment.solution_version, hardware.bmc username and password, key_vaults); -InfrastructureFile is registered on its three commands; the catalog says Ranger is compare-only for day 2 with a drift report and no write-back (owner decision O6). (4) Beacon is in _tool_catalog with used_by on the keys ConvertTo-BeaconValidationConfig.ps1 reads; tools.beacon registers the keys of validation-config.json (oem, arcGatewayFqdn, tlsInspectionHosts, the timeouts and brand are Beacon's own, every other key has source_key) and the parameters of its scripts. (5) azurelocal-s2d-cartographer is in _tool_catalog and tools.s2d_cartographer: it reads cluster.name, the domain, the lcm_user or local_admin account and key_vaults; the parameters of its commands (InfrastructureFile, MaintenanceReserveTarget, OutputDirectory, ...) and the weights, severities and score thresholds of config/health-checks.json are registered. (6) LoadTools reads cluster.name, nodes[].name, the domain, storage.paths[] and volumes, the Azure scope and custom location and the Key Vault from infrastructure.yml: it has used_by, a template, a cut and the scope loadtools; the five config keys that variables.yml no longer holds are removed from tools.loadtools and Initialize-Environment.ps1 -InfrastructureFile is registered. (7) Draftsman reads the network design (nodes[], scenario.topology and storage_connectivity, intents, VLANs, logical networks, hardware.model, network_devices[]): used_by, template, scope draftsman. (8) ZTP: networking.management.use_dhcp is read by ztp; Convert-ZtpHandoffToClusterInputs.ps1 takes -InfrastructureFile and writes nodes[].arc_machine_name and deployment.solution_version (its handoff fields are those keys, not arc_machine_names and release.azure_local_version). (9) Sonar: updateEventsPath is registered. (10) New key hardware.discovery.output_directory (discovery, monitoring, beacon): the one folder for the discovery results, default <evidence_path>\\discovery. New-ToolMapping.ps1 and Test-ToolParameterRegistration.ps1 know surveyor, beacon and s2d_cartographer; the generated templates/tools and schema/tools gain beacon, s2d-cartographer, surveyor, loadtools and draftsman."
+      reason: "Owner directive D145: one variables solution used by every tool of the chain. The tool repositories now read infrastructure.yml (Beacon, Cartographer, LoadTools, Draftsman, Surveyor, Ranger) and say so in code; the registry has to say it too, or their cuts, templates and settings tests stay empty. Trailwright exported 59 keys no template attributed to it, and Surveyor was recorded as reading no key although its handoff makes values."
     - date: "2026-11-24"
       version: "5.0.70"
       change: "A cut is a scoped file, and the planning scopes (owner decisions O2 and D145; infrastructure schema 5.6.33; every change is a relaxation or an optional addition, so a file of any 5.6 version stays valid). (1) _metadata.scope takes more values: trailwright and surveyor (a whole design written by a planning tool: everything full requires is required, except the MACs of the ports, nodes[].network_adapters[].mac_address and nodes[].management.mac_address, which hardware discovery fills; with scope full or ztp or a deployment cut they are still required) and the id of every tool that has keys (a cut). (2) New-InfrastructureArtifacts.ps1 -Cut <tool> sets _metadata.scope to the tool id, keeps the required children of every object it keeps (identity.active_directory keeps domain_fqdn, ou_path and lcm_user), and copies a free-key map whole (hardware.bios, nodes[].bios, tags), so the ZTP plan from a cut has the same BIOS blocks as the plan from the whole file. The cut for a tool that writes the file (trailwright) is refused. (3) Test-AzlInfrastructure and Import-AzlInfrastructure check a file whose scope is a tool id against schema/tools/<tool>.schema.json and run only the secret reference rules of the semantic checks. (4) key_vaults (and its name, subscription_id and resource_group) is read by os_configuration, deployment, monitoring and discovery as well, so a cut that keeps a keyvault:// reference keeps the vault list. (5) Azure Local 2611 pins: the example files use maintenance_iso latest and no max_train; Microsoft Learn (view azloc-2611) publishes no maintenance image version for 2611, and the descriptions of maintenance_iso and max_train say so. The generator stops when a tool that has keys is not a value of _metadata.scope."
@@ -685,6 +691,7 @@ site:
     description: "Physical location"
     required: false
     example: "Raleigh, NC"
+    used_by: [trailwright]
 
   datacenter:
     file_schema: {"type":"string","description":"Short code or name of the datacenter or room that holds the machines. Documentation only; not read by the tools."}
@@ -865,7 +872,7 @@ environment:
     name:
       description: "Environment identifier: lowercase letters, digits and hyphens. Documentation only; not read by the tools. It repeats site.name for the tools; Trailwright writes it."
       type: string
-      used_by: [trailwright]
+      used_by: [trailwright, ranger]
       required: true
       pattern: "^[a-z0-9][a-z0-9-]{1,40}$"
       example: "iic-azl-01"
@@ -881,18 +888,20 @@ environment:
       type: string
       required: false
       example: "platform-team@improbability.cloud"
+      used_by: [trailwright]
     description:
       description: "One sentence on what the environment is for. Documentation only; not read by the tools."
       type: string
       required: false
       example: "Example two-machine Azure Local instance."
+      used_by: [trailwright]
 
 # =============================================================================
 # 5. TAGS
 # =============================================================================
 tags:
   file_schema: {"description":"Azure tags applied to the resources the tools create. A policy that requires tags isn't supported by simplified provisioning.","type":"object","additionalProperties":{"type":"string","description":"The value of the tag."}}
-  used_by: [ztp, cicd_infra, terraform]
+  used_by: [ztp, cicd_infra, terraform, trailwright]
   additionalProperties:
     type: string
     description: "Any other tag name and its value (infrastructure.yml tags is a map of strings)."
@@ -2309,7 +2318,7 @@ identity:
         required: true
         pattern: "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
         example: "improbability.cloud"
-        used_by: [os_configuration, deployment, trailwright, ansible]
+        used_by: [os_configuration, deployment, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools]
       netbios_name:
         description: "Up to 15 letters, digits and hyphens."
         type: string
@@ -2317,7 +2326,7 @@ identity:
         required: false
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "IIC"
-        used_by: [os_configuration, deployment, monitoring, ansible]
+        used_by: [os_configuration, deployment, monitoring, ansible, trailwright, beacon, s2d_cartographer]
       ou_path:
         description: "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory"
         type: string
@@ -2333,7 +2342,7 @@ identity:
         additionalProperties: false
         properties:
           username:
-            used_by: [os_configuration, deployment, trailwright, ansible]
+            used_by: [os_configuration, deployment, trailwright, ansible, s2d_cartographer]
             description: "Name only, no domain. Up to 20 characters."
             type: string
             required: true
@@ -2342,7 +2351,7 @@ identity:
             maxLength: 20
             example: "lcm-iic-azl-01"
           password:
-            used_by: [os_configuration, deployment, trailwright, ansible]
+            used_by: [os_configuration, deployment, trailwright, ansible, s2d_cartographer]
             description: "At least 14 characters with lowercase, uppercase, a digit and a special character."
             type: string
             format: kv_ref
@@ -2397,7 +2406,7 @@ identity:
         type: array
         required: false
         example: [["192.0.2.4", "192.0.2.5"]]
-        used_by: [os_configuration]
+        used_by: [os_configuration, trailwright, beacon]
         items:
           {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
       use_gmsa:
@@ -2465,13 +2474,13 @@ identity:
           properties:
             name:
               description: "Name of the security group in Active Directory."
-              used_by: [os_configuration]
+              used_by: [os_configuration, trailwright]
               type: string
               required: true
               example: "sg-iic-azl-01-admins"
             purpose:
               description: "What the group is for, in words. The OS configuration reads local_groups, not this text."
-              used_by: [os_configuration]
+              used_by: [os_configuration, trailwright]
               type: string
               required: false
               example: "Administrators of the instance"
@@ -2835,7 +2844,7 @@ identity:
           required: true
           minLength: 1
           example: "azl-admin"
-          used_by: [os_configuration, deployment, monitoring, trailwright]
+          used_by: [os_configuration, deployment, monitoring, trailwright, s2d_cartographer]
           schema_extra: {"not":{"type":"string","pattern":"^([Aa][Dd][Mm][Ii][Nn][Ii][Ss][Tt][Rr][Aa][Tt][Oo][Rr]|[Gg][Uu][Ee][Ss][Tt])$"}}
         username_secret:
           description: "Optional. The Key Vault secret that holds this user name, as a keyvault://<vault>/<secret> reference, for the tools that read the user name from the vault. The pre-cluster verification (IDN-016) reads it and fails when it differs from username. Default: the secret local-admin-username in the vault of the password reference; a default secret that does not exist is a warning, a secret named here that does not exist is a failure. (since 5.6)"
@@ -2853,7 +2862,7 @@ identity:
           required: true
           pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/local-admin-password"
-          used_by: [os_configuration, deployment, trailwright, ansible]
+          used_by: [os_configuration, deployment, trailwright, ansible, s2d_cartographer]
     local_identity:
       description: "Local identity with Key Vault. The instance's secrets go to cluster.key_vault."
       type: object
@@ -2898,11 +2907,13 @@ identity:
                 type: string
                 required: true
                 example: "grp-iic-azl-operators"
+                used_by: [trailwright]
               purpose:
                 description: "What the group is for, in words."
                 type: string
                 required: false
                 example: "Operate the instance"
+                used_by: [trailwright]
               roles:
                 description: "Azure role names assigned to the group."
                 type: array
@@ -2915,6 +2926,7 @@ identity:
                 type: string
                 required: false
                 example: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01"
+                used_by: [trailwright]
 
   # =============================================================================
   # GITLAB CI/CD CONFIGURATION
@@ -7204,7 +7216,7 @@ networking:
           required: true
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
           example: "192.0.2.0/24"
-          used_by: [ztp, os_configuration, deployment, trailwright, ansible]
+          used_by: [ztp, os_configuration, deployment, trailwright, ansible, beacon]
         gateway:
           description: "The one default gateway. ARM defaultGateway."
           type: string
@@ -7212,7 +7224,7 @@ networking:
           required: true
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
           example: "192.0.2.1"
-          used_by: [ztp, os_configuration, deployment, trailwright, ansible]
+          used_by: [ztp, os_configuration, deployment, trailwright, ansible, beacon]
         vlan_id:
           description: "0 means untagged. Can't be changed after deployment. The VLAN the host tags on the management port: simplified provisioning sets it on that port (edge machine networkAdapters[].vlanId). With nodes[].network_adapters the management port's host VLAN (0 when its vlan_mode is access) must match it."
           type: integer
@@ -7220,14 +7232,14 @@ networking:
           minimum: 0
           maximum: 4094
           example: 0
-          used_by: [ztp, os_configuration, trailwright, ansible]
+          used_by: [ztp, os_configuration, trailwright, ansible, beacon, draftsman]
         dns_servers:
           description: "ARM dnsServers."
           type: array
           required: true
           minItems: 1
           example: [["192.0.2.4", "192.0.2.5"]]
-          used_by: [ztp, os_configuration, deployment, trailwright, ansible]
+          used_by: [ztp, os_configuration, deployment, trailwright, ansible, ranger, beacon]
           items:
             {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
         ip_assignment:
@@ -7238,14 +7250,14 @@ networking:
           default: "static"
           enum: ["static", "dhcp", "preconfigured"]
           example: "static"
-          used_by: [ztp, os_configuration, deployment]
+          used_by: [ztp, os_configuration, deployment, trailwright]
         use_dhcp:
           description: "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment."
           type: boolean
           required: false
           default: false
           example: false
-          used_by: [os_configuration, deployment, trailwright]
+          used_by: [os_configuration, deployment, trailwright, ztp]
         site_ip_range:
           description: "Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressRange) when the management addresses are static. Default: the lowest to the highest static management address. Inside the management subnet, and holding every static management address."
           type: object
@@ -7274,7 +7286,7 @@ networking:
           default: "dhcp"
           enum: ["dhcp", "static"]
           example: "dhcp"
-          used_by: [ztp, os_configuration]
+          used_by: [ztp, os_configuration, trailwright]
         static_method:
           type: string
           description: "Schema 5.3. Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (default): azurelocal-ztp's Device stage sets it on the management port, found by its MAC, through the maintenance environment's Configurator service before the machine is claimed. The Arc site's network setting is then Automatic and the claim carries no Manual adapter. site: the older path. The site's network setting is Manual with an address range (site_ip_range) and Microsoft's OS install assigns the address. Microsoft ignores the MAC there and uses the first ready port, which was observed live on Dell AX-760, so use it only when the first ready port is the management port."
@@ -7299,7 +7311,7 @@ networking:
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.100"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, trailwright]
             end:
               description: "Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start)."
               type: string
@@ -7307,12 +7319,12 @@ networking:
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.199"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, trailwright]
         infrastructure_pool:
           description: "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress."
           type: object
           required: false
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, beacon]
           additionalProperties: false
           properties:
             start:
@@ -7322,7 +7334,7 @@ networking:
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.20"
-              used_by: [os_configuration, deployment, trailwright]
+              used_by: [os_configuration, deployment, trailwright, beacon]
             end:
               description: "Last address of the infrastructure pool (ARM endingIPAddress). The pool holds at least 6 contiguous addresses."
               type: string
@@ -7330,7 +7342,7 @@ networking:
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.29"
-              used_by: [os_configuration, deployment, trailwright]
+              used_by: [os_configuration, deployment, trailwright, beacon]
     oob:
       description: "The out-of-band network of the BMCs and of the switches' management ports. subnet is read by the remote management security profile; New-SwitchConfiguration.ps1 reads subnet (the prefix length of a switch's management address and the source the switch accepts SSH from), gateway (the management route) and vlan_id (a VLAN on the switch trunks)."
       type: object
@@ -7340,7 +7352,7 @@ networking:
       properties:
         subnet:
           description: "Subnet of the out-of-band (BMC) network in CIDR form."
-          used_by: [os_configuration]
+          used_by: [os_configuration, trailwright]
           type: string
           format: cidr
           required: false
@@ -7353,6 +7365,7 @@ networking:
           required: false
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
           example: "198.51.100.1"
+          used_by: [trailwright]
         vlan_id:
           description: "VLAN ID of the out-of-band network; 0 for an untagged port. No tool sets the BMC network. New-SwitchConfiguration.ps1 defines it on a switch and carries it on the uplinks when it is not 0."
           type: integer
@@ -7364,7 +7377,7 @@ networking:
       type: array
       required: false
       example: [["192.0.2.4", "192.0.2.5"]]
-      used_by: [os_configuration, deployment, ansible]
+      used_by: [os_configuration, deployment, ansible, trailwright, beacon]
       items:
         {"type":"string","minLength":1}
     intents:
@@ -7384,7 +7397,7 @@ networking:
             required: true
             minLength: 1
             example: "management"
-            used_by: [os_configuration, deployment, trailwright, ranger]
+            used_by: [os_configuration, deployment, trailwright, ranger, beacon, draftsman]
           traffic:
             description: "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number."
             type: array
@@ -7392,7 +7405,7 @@ networking:
             minItems: 1
             uniqueItems: true
             example: [["management"]]
-            used_by: [os_configuration, deployment, trailwright, ranger]
+            used_by: [os_configuration, deployment, trailwright, ranger, beacon, draftsman]
             items:
               {"enum":["management","compute","storage"]}
           adapters:
@@ -7402,7 +7415,7 @@ networking:
             minItems: 1
             uniqueItems: true
             example: [["Port1", "Port2"]]
-            used_by: [os_configuration, deployment, trailwright, ranger]
+            used_by: [os_configuration, deployment, trailwright, ranger, beacon]
             items:
               {"type":"string","minLength":1}
           overrides:
@@ -7455,7 +7468,7 @@ networking:
                     type: integer
                     required: false
                     enum: [1514, 4088, 9014]
-                    used_by: [os_configuration, deployment, trailwright]
+                    used_by: [os_configuration, deployment, trailwright, draftsman]
                   network_direct:
                     description: "RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'. Leave out for the default this tool sets: on for an intent that carries storage traffic, off for any other. Set false to disable RDMA, for example when you test in virtual machines."
                     type: boolean
@@ -7551,7 +7564,7 @@ networking:
                 minimum: 1
                 maximum: 4094
                 example: 711
-                used_by: [os_configuration, deployment, trailwright]
+                used_by: [os_configuration, deployment, trailwright, draftsman]
               subnet:
                 description: "Needed when auto_ip is false."
                 type: string
@@ -7660,7 +7673,7 @@ networking:
             type: string
             required: true
             example: "storage-1"
-            used_by: [os_configuration, trailwright, ranger]
+            used_by: [os_configuration, trailwright, ranger, draftsman]
           id:
             description: "The VLAN number, 1 to 4094. The pre-cluster verification compares it with the VLANs the switch ports are meant to allow."
             type: integer
@@ -7668,7 +7681,7 @@ networking:
             minimum: 1
             maximum: 4094
             example: 711
-            used_by: [os_configuration, trailwright, ranger]
+            used_by: [os_configuration, trailwright, ranger, draftsman]
           subnet:
             description: "Subnet that runs in this VLAN, in CIDR form. When the purpose is management or oob, the remote management security profile treats the subnet as a source the machines may be reached from."
             type: string
@@ -7681,7 +7694,7 @@ networking:
             description: "Free text. The values management, oob, automation, compute, storage and other (any case) are the purpose marker: management and oob make the subnet a candidate source for the remote management security profile of dev and production. Any other text has no effect."
             type: string
             required: false
-            used_by: [os_configuration]
+            used_by: [os_configuration, draftsman]
     logical_networks:
       description: "Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create). Also read by the remote management security profile (purpose, address_prefix) and by the pre-cluster verification (name, vlan_id, address_prefix, purpose). The older form networking.onprem.logical_networks[] (default_gateway, ip_pools) is deprecated. A Static network needs address_prefix, gateway, dns_servers, vlan_id and ip_pool (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). Microsoft Learn: once a logical network exists you cannot change its gateway, IP pool, address space, VLAN ID or virtual switch name, so the script never changes an existing one."
       type: array
@@ -7728,7 +7741,7 @@ networking:
             example: "ConvergedSwitch(management_compute_storage)"
           purpose:
             type: string
-            used_by: [os_configuration, deployment]
+            used_by: [os_configuration, deployment, draftsman]
             description: "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management."
             required: false
             enum: ["management", "oob", "automation", "compute", "storage", "other"]
@@ -7737,7 +7750,7 @@ networking:
             description: "VLAN ID of the logical network; 0 for untagged. Needed when ip_allocation_method is Static (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). For a Dynamic network, leave it out for 0."
             type: integer
             required: false
-            used_by: [deployment, trailwright]
+            used_by: [deployment, trailwright, draftsman]
             minimum: 0
             maximum: 4094
             example: 2204
@@ -7924,13 +7937,13 @@ networking:
             url:
               description: "URL of the proxy server, for example http://proxy.example.test:3128. A plain proxy: no PAC file and no credentials. Passed to the Arc registration as -Proxy."
               type: string
-              used_by: [os_configuration, trailwright, ansible, ztp]
+              used_by: [os_configuration, trailwright, ansible, ztp, beacon]
               required: true
               pattern: "^https?://"
             bypass:
               description: "Addresses and names that go direct, not through the proxy. Learn (Register Azure Local with Azure Arc): include the address and the NetBIOS name of each machine and of the cluster, and the infrastructure addresses; use localhost, not <local>; use a wildcard such as 192.168.1.* for a subnet (no CIDR) and *.example.test for a domain. Passed to the Arc registration as -ProxyBypass, joined with commas."
               type: array
-              used_by: [os_configuration, ztp]
+              used_by: [os_configuration, ztp, trailwright, beacon]
               required: false
               items:
                 {"type":"string"}
@@ -7984,14 +7997,14 @@ networking:
             firewall_private_ip:
               description: "Private address of the Azure Firewall on that path. The OS configuration passes it, with firewall_port, as the proxy server of the Arc registration: http://<address>:<port> (Invoke-AzStackHciArcInitialization -Proxy). Learn: the Azure Firewall internal IP and port as the proxy server."
               type: string
-              used_by: [os_configuration, trailwright]
+              used_by: [os_configuration, trailwright, beacon]
               format: ipv4
               required: false
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             firewall_port:
               description: "TCP port of the Azure Firewall explicit proxy on that path (it proxies HTTP and HTTPS). Passed with firewall_private_ip as the proxy server of the Arc registration."
               type: integer
-              used_by: [os_configuration, trailwright]
+              used_by: [os_configuration, trailwright, beacon]
               required: false
               minimum: 1
               maximum: 65535
@@ -8003,7 +8016,7 @@ networking:
             proxy_bypass:
               description: "Host names and address ranges that bypass the proxy on this path. Passed to the Arc registration as -ProxyBypass, joined with commas. Same rules as networking.outbound.proxy.bypass: localhost, not <local>; a wildcard for a subnet or a domain, no CIDR; no .svc (the registration script handles it)."
               type: array
-              used_by: [os_configuration, trailwright]
+              used_by: [os_configuration, trailwright, beacon]
               required: false
               items:
                 {"type":"string"}
@@ -13836,6 +13849,7 @@ operations:
           description: "Name of the Recovery Services vault used for replication. Not read by the tools yet: a documented placeholder."
           type: string
           required: false
+          used_by: [trailwright]
         resource_group:
           description: "Resource group of the Recovery Services vault."
           type: string
@@ -13869,11 +13883,13 @@ operations:
           type: integer
           required: false
           minimum: 0
+          used_by: [trailwright]
         target_rpo_minutes:
           description: "Recovery point objective in minutes. Not read by the tools yet: a documented placeholder."
           type: integer
           required: false
           minimum: 0
+          used_by: [trailwright]
     notifications:
       description: "Who hears about alerts. Only email addresses: the action group of Azure Local alerting is an email group."
       type: object
@@ -13885,7 +13901,7 @@ operations:
           type: array
           required: false
           example: [["noc@improbability.cloud"]]
-          used_by: [terraform]
+          used_by: [terraform, trailwright]
           items:
             {"type":"string"}
     licensing:
@@ -13899,6 +13915,7 @@ operations:
           type: boolean
           required: false
           example: true
+          used_by: [trailwright]
         windows_server_subscription:
           description: "true to turn on the Windows Server subscription add-on of the Azure Local instance: every Windows Server VM on the instance is then activated through automatic VM activation (AVMA), with a generic AVMA key in the guest. Enable-WindowsServerSubscription.ps1 (stage 05, phase 05, task 02) turns it on with Update-AzStackHciCluster -DesiredPropertyWindowsServerSubscription Enabled, the Azure PowerShell form of az stack-hci cluster update --desired-properties windows-server-subscription=Enabled that Microsoft Learn documents. It is a paid add-on, at no extra cost with Azure Hybrid Benefit (operations.licensing.azure_hybrid_benefit); Learn requires every machine to be online and registered to Azure. The script refuses scenario.connectivity disconnected. false or missing: the script does nothing; it never turns the add-on off."
           type: boolean
@@ -14026,7 +14043,7 @@ devops:
       required: true
       enum: ["github", "gitlab", "azure_devops"]
       example: "github"
-      used_by: [cicd_infra, ansible, terraform]
+      used_by: [cicd_infra, ansible, terraform, trailwright]
     url:
       description: "URL of the CI/CD platform (an organization or instance URL)."
       type: string
@@ -14038,7 +14055,7 @@ devops:
       type: string
       required: false
       example: "improbability-cloud"
-      used_by: [cicd_infra, ansible, terraform]
+      used_by: [cicd_infra, ansible, terraform, trailwright]
     project:
       description: "Name of the project or organization on the platform."
       type: string
@@ -14925,13 +14942,13 @@ devops:
           description: "Name of the runner."
           type: string
           required: true
-          used_by: [cicd_infra]
+          used_by: [cicd_infra, trailwright]
         type:
           type: string
           description: "Kind of runner: vm, container_app or existing."
           required: true
           enum: ["vm", "container_app", "existing"]
-          used_by: [cicd_infra]
+          used_by: [cicd_infra, trailwright]
         subscription:
           description: "Subscription of the runner."
           type: string
@@ -15118,7 +15135,7 @@ scenario:
   properties:
     identity:
       type: string
-      used_by: [os_configuration, deployment, monitoring, trailwright]
+      used_by: [os_configuration, deployment, monitoring, trailwright, ranger, beacon]
       description: "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault"
       required: false
       enum: ["active_directory", "local_identity"]
@@ -15133,7 +15150,7 @@ scenario:
       example: "s2d"
     storage_connectivity:
       type: string
-      used_by: [deployment, trailwright]
+      used_by: [deployment, trailwright, draftsman]
       description: "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched."
       required: false
       enum: ["switched", "switchless"]
@@ -15141,7 +15158,7 @@ scenario:
       example: "switched"
     topology:
       type: string
-      used_by: [deployment, trailwright]
+      used_by: [deployment, trailwright, draftsman, surveyor]
       description: "standard, or rack_aware (machines split across two local availability zones; every node needs a zone)."
       required: false
       enum: ["standard", "rack_aware"]
@@ -15155,14 +15172,14 @@ scenario:
       example: "connected"
     cloud:
       type: string
-      used_by: [os_configuration, deployment, trailwright, ansible]
+      used_by: [os_configuration, deployment, trailwright, ansible, beacon]
       description: "Azure public cloud or Azure Government."
       required: false
       enum: ["public", "government"]
       example: "public"
     outbound_path:
       type: string
-      used_by: [os_configuration, trailwright, ansible, ztp]
+      used_by: [os_configuration, trailwright, ansible, ztp, beacon]
       description: "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path."
       required: false
       enum: ["direct", "proxy", "arc_gateway", "proxy_arc_gateway", "private_path"]
@@ -15203,7 +15220,7 @@ azure:
       required: true
       pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
       example: "00000000-0000-0000-0000-000000000000"
-      used_by: [ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform, ranger, beacon, loadtools]
     location:
       description: "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
       type: string
@@ -15211,7 +15228,7 @@ azure:
       required: true
       pattern: "^[a-z][a-z0-9]{2,30}$"
       example: "eastus"
-      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, beacon, loadtools]
     subscription_id:
       description: "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
       type: string
@@ -15219,7 +15236,7 @@ azure:
       required: true
       pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
       example: "00000000-0000-0000-0000-000000000000"
-      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools]
     resource_group:
       description: "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
       type: string
@@ -15227,7 +15244,7 @@ azure:
       required: true
       pattern: "^[-\\w\\._\\(\\)]{1,90}$"
       example: "rg-iic-azl-01"
-      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform, ranger, beacon, loadtools]
     hci_resource_provider_object_id:
       description: "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory."
       type: string
@@ -15237,7 +15254,7 @@ azure:
       example: "00000000-0000-0000-0000-000000000000"
       used_by: [ztp, deployment, trailwright]
     custom_location:
-      used_by: [deployment, trailwright]
+      used_by: [deployment, trailwright, loadtools]
       description: "Name of the custom location the deployment creates."
       type: string
       required: false
@@ -15255,13 +15272,13 @@ azure:
           required: true
           enum: ["managed_identity", "service_principal"]
           example: "managed_identity"
-          used_by: [cicd_infra]
+          used_by: [cicd_infra, trailwright]
         name:
           description: "Managed identity resource name, or the service principal's display name."
           type: string
           required: true
           example: "id-iic-cicd-01"
-          used_by: [cicd_infra]
+          used_by: [cicd_infra, trailwright]
         client_id:
           description: "Client (application) ID of the identity (GUID). Not a secret."
           type: string
@@ -15326,7 +15343,7 @@ key_vaults:
   description: "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it."
   type: array
   required: false
-  used_by: [ztp, cicd_infra, os_configuration, deployment, monitoring, discovery]
+  used_by: [ztp, cicd_infra, os_configuration, deployment, monitoring, discovery, ranger, s2d_cartographer, loadtools]
   items:
     type: object
     additionalProperties: false
@@ -15338,7 +15355,7 @@ key_vaults:
         required: true
         pattern: "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
         example: "kv-iic-mgmt-01"
-        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform, ranger, s2d_cartographer, loadtools]
       subscription_id:
         description: "Subscription (GUID) that holds the vault."
         type: string
@@ -15346,7 +15363,7 @@ key_vaults:
         required: true
         pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
         example: "00000000-0000-0000-0000-000000000000"
-        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer]
       resource_group:
         description: "Resource group that holds the vault."
         type: string
@@ -15354,13 +15371,13 @@ key_vaults:
         required: true
         pattern: "^[-\\w\\._\\(\\)]{1,90}$"
         example: "rg-iic-mgmt-01"
-        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer]
       purpose:
         description: "What the vault holds, for example management, deployment or backup."
         type: string
         required: false
         example: "management"
-        used_by: [cicd_infra, trailwright]
+        used_by: [cicd_infra, trailwright, loadtools]
       soft_delete_retention_days:
         description: "Schema 5.6.28. Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). Default 90, the Azure default. The cluster vault takes cluster.key_vault.soft_delete_retention_days. Read by the Terraform identity module and by Deploy-KeyVaults.ps1 (task 10), which creates the vault with it."
         type: integer
@@ -15463,7 +15480,7 @@ cluster:
       required: true
       pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
       example: "iic-azl-01"
-      used_by: [os_configuration, deployment, monitoring, trailwright, ansible]
+      used_by: [os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon, s2d_cartographer, loadtools]
     naming_prefix:
       description: "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix."
       type: string
@@ -15479,7 +15496,7 @@ cluster:
       enum: ["validate", "deploy"]
       default: "validate"
       example: "validate"
-      used_by: [deployment]
+      used_by: [deployment, trailwright]
     witness:
       description: "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type."
       type: object
@@ -15489,7 +15506,7 @@ cluster:
       properties:
         type:
           type: string
-          used_by: [deployment, trailwright]
+          used_by: [deployment, trailwright, ranger]
           description: "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness"
           required: true
           enum: ["cloud", "file_share", "none"]
@@ -15516,7 +15533,7 @@ cluster:
       properties:
         name:
           description: "Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting with a letter."
-          used_by: [deployment, trailwright, terraform]
+          used_by: [deployment, trailwright, terraform, beacon, loadtools]
           type: string
           format: key_vault_name
           required: true
@@ -15653,7 +15670,7 @@ deployment:
       required: false
       pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
       example: "12.2611.1004.9"
-      used_by: [deployment, os_configuration, trailwright]
+      used_by: [deployment, os_configuration, trailwright, ranger]
     sbe_catalog_path:
       description: "The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds SBE_Discovery_*.xml. Default: the SBE_Discovery_*.xml in hardware.sbe.source_path, else hardware.sbe.bundle_path. Nothing is downloaded."
       type: string
@@ -15721,7 +15738,7 @@ deployment:
       required: false
       minLength: 1
       example: "D:\\Data\\azl-events\\iic-clus01"
-      used_by: [os_configuration, deployment, monitoring]
+      used_by: [os_configuration, deployment, monitoring, trailwright]
     register_resource_providers:
       description: "Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment) that are not registered in the subscription, and waiting until they are Registered, when the precondition ResourceProviders runs in Mode Validate or Deploy. Default false: the run never changes Azure by itself and a mandatory provider that is not registered fails the precondition, with the Register-AzResourceProvider command for each. Needs Owner or Contributor on the subscription. Never done in Plan or with WhatIf. Set by the -RegisterResourceProviders switch. (since 5.6)"
       type: boolean
@@ -15749,7 +15766,7 @@ nodes:
         required: true
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "iic-azl-n01"
-        used_by: [ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible, ranger, beacon, loadtools, draftsman, surveyor]
       management:
         description: "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters."
         type: object
@@ -15764,7 +15781,7 @@ nodes:
             required: true
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "192.0.2.11"
-            used_by: [ztp, os_configuration, deployment, monitoring, trailwright, ansible]
+            used_by: [ztp, os_configuration, deployment, monitoring, trailwright, ansible, ranger, beacon]
           mac_address:
             description: "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning."
             type: string
@@ -15862,7 +15879,7 @@ nodes:
               maxLength: 64
               pattern: "^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$"
               example: "Storage1"
-              used_by: [os_configuration, deployment]
+              used_by: [os_configuration, deployment, beacon]
             model:
               description: "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed."
               type: string
@@ -15982,7 +15999,7 @@ nodes:
         required: false
         minLength: 1
         example: "SERIAL01"
-        used_by: [ztp, discovery, trailwright]
+        used_by: [ztp, discovery, trailwright, ranger]
         applies_when: "scenario.os_install is simplified"
       bmc:
         description: "The baseboard management controller (BMC) of the machine: address, type and login. ZTP drives the machine through it over Redfish (virtual media, boot override, BIOS settings, power); hardware discovery reads the machine through it."
@@ -15999,12 +16016,12 @@ nodes:
             required: false
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "198.51.100.11"
-            used_by: [ztp, discovery, trailwright]
+            used_by: [ztp, discovery, trailwright, ranger]
             applies_when: "scenario.os_install is simplified"
           type:
             type: string
             description: "Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. Only Dell iDRAC is proven end to end in this phase; BMC kinds other than idrac are planned. Hardware inventory (Get-HardwareInventory.ps1) compares it with the vendor it detects from the Redfish answers; other is not compared."
-            used_by: [discovery]
+            used_by: [discovery, ranger]
             required: false
             enum: ["idrac", "ilo", "xcc", "other"]
             example: "idrac"
@@ -16027,12 +16044,13 @@ nodes:
         type: string
         required: false
         example: "R01"
+        used_by: [trailwright]
       rack_position:
         description: "Position in the rack, for example U12, for the as-built record."
         type: string
         required: false
         example: "24"
-        used_by: [ztp]
+        used_by: [ztp, trailwright]
       zone:
         description: "Rack-aware: the local availability zone. ARM localAvailabilityZones."
         type: string
@@ -16052,7 +16070,7 @@ nodes:
         required: false
         pattern: "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
         example: "iic-azl-n01"
-        used_by: [ztp, os_configuration, deployment, monitoring]
+        used_by: [ztp, os_configuration, deployment, monitoring, trailwright, beacon]
       arc_resource_name:
         description: "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set."
         type: string
@@ -16197,28 +16215,28 @@ hardware:
       required: true
       minLength: 1
       example: "Dell"
-      used_by: [ztp, os_configuration, deployment, discovery, trailwright]
+      used_by: [ztp, os_configuration, deployment, discovery, trailwright, beacon]
     model:
       description: "Model, for example AX-760. Used to select the SBE."
       type: string
       required: true
       minLength: 1
       example: "AX-760"
-      used_by: [ztp, os_configuration, discovery, trailwright]
+      used_by: [ztp, os_configuration, discovery, trailwright, draftsman]
     cpu_cores:
       description: "Physical cores per machine. Get-HardwareInventory.ps1 compares it with the cores the BMC reports (the sum over all processors)."
       type: integer
       required: false
       minimum: 1
       example: 64
-      used_by: [discovery, trailwright]
+      used_by: [discovery, trailwright, surveyor]
     memory_gib:
       description: "Memory per machine, GiB. Get-HardwareInventory.ps1 compares it with the memory the BMC reports."
       type: integer
       required: false
       minimum: 1
       example: 1024
-      used_by: [discovery, trailwright]
+      used_by: [discovery, trailwright, surveyor]
     gpu:
       description: "GPUs fitted in every machine. Leave out when there are none. Get-HardwareInventory.ps1 compares these keys with the GPUs the BMC reports."
       type: object
@@ -16230,12 +16248,12 @@ hardware:
           type: boolean
           required: false
           example: false
-          used_by: [discovery]
+          used_by: [discovery, trailwright]
         model:
           description: "GPU model, as the machine reports it."
           type: string
           required: false
-          used_by: [discovery]
+          used_by: [discovery, trailwright]
         count_per_node:
           description: "Number of GPUs in each machine."
           type: integer
@@ -16256,7 +16274,7 @@ hardware:
           required: true
           minLength: 1
           example: "keyvault://kv-iic-mgmt-01/bmc-username"
-          used_by: [ztp, discovery]
+          used_by: [ztp, discovery, trailwright, ranger]
         password:
           description: "The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file://<name> or command://<name>, never the password itself. azurelocal-ztp (since 5b75c9a) and hardware discovery read it through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1)."
           type: string
@@ -16265,7 +16283,7 @@ hardware:
           required: true
           pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/bmc-password"
-          used_by: [ztp, discovery]
+          used_by: [ztp, discovery, trailwright, ranger]
         rfs_write_attribute:
           description: "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour."
           type: boolean
@@ -16280,7 +16298,7 @@ hardware:
           required: false
           default: false
           example: false
-          used_by: [ztp, discovery]
+          used_by: [ztp, discovery, trailwright]
     inventory:
       description: "Schema 5.6.14. Where Get-HardwareInventory.ps1 writes the hardware inventory it reads from the BMCs, in which format, and how long it waits for a BMC. The script reads every BMC over the standard Redfish API (read only), for any maker, and writes one file per run. Leave the block out to use the defaults. The file holds serial numbers and MAC addresses: keep the folder out of git."
       type: object
@@ -16326,6 +16344,22 @@ hardware:
           default: 60
           example: 120
           used_by: [discovery]
+    discovery:
+      description: "Schema 5.6.34. Where the hardware discovery (Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1) writes what it finds, so the discovery view of Sonar, Beacon's results and the deployment evidence meet in one folder. Leave the block out to use the default."
+      type: object
+      required: false
+      since: "5.6.34"
+      used_by: [discovery, monitoring, beacon]
+      additionalProperties: false
+      properties:
+        output_directory:
+          description: "Schema 5.6.34. The folder the discovery results (the Redfish inventory and the write-back report) are written to; it is created when it is missing. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default: the folder discovery inside provisioning.simplified.evidence_path (<evidence_path>\\discovery); without an evidence_path, <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\discovery (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/discovery). Sonar follows this folder. hardware.inventory.output_directory is where Get-HardwareInventory.ps1 writes its own file."
+          type: string
+          required: false
+          since: "5.6.34"
+          minLength: 1
+          example: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence\\discovery"
+          used_by: [discovery, monitoring, beacon]
     bios:
       description: "BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged over it. azurelocal-ztp applies them at its Boot stage, and in its Restore stage sets back to these values any key that bios_during_provisioning changed for the OS install. See $defs/bios_settings."
       type: object
@@ -16360,28 +16394,28 @@ hardware:
       properties:
         publisher:
           description: "Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement; with a package it is read from it). The SBE's publisher, for example Dell."
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
           type: string
           required: false
           example: "Dell"
         family:
           description: "Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement). The SBE family of your hardware, for example 16G-45n0c-Intel. With bundle_path it may be empty: it is then read from the package's manifest."
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
           type: string
           required: false
         version:
           description: "Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement). The SBE version, for example 5.0.2609.1611, validated with the solution version you install. With bundle_path it may be empty: it is then read from the package's manifest."
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
           type: string
           required: false
         manifest_source:
           description: "Where the SBE manifest comes from (a URL or a file path). Only read when an SBE is asked for; the SBE is opt-in and never delivered by default."
-          used_by: [deployment]
+          used_by: [deployment, trailwright]
           type: string
           required: false
         manifest_creation_date:
           description: "Creation date of the SBE manifest, as the manifest states it. Only read when an SBE is asked for."
-          used_by: [deployment]
+          used_by: [deployment, trailwright]
           type: string
           required: false
         bundle_path:
@@ -16389,7 +16423,7 @@ hardware:
           type: string
           required: false
           example: "D:\\sbe\\dell"
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
         requirement:
           description: "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. vendor (the default, also when the key is absent; value since 5.6.28): the vendor fact in the vendor catalog decides, config/oem/<hardware.vendor>.json sbe.requiredByDefault (read by Get-AzlSbeRequirement in scripts/common/sbe/AzlSbePackage.psm1): true, so required, for a vendor whose package is a manual download (Dell, HPE, DataON); false for a vendor whose cluster downloads the package itself (Lenovo Premier), which the pre-cluster verification reports as a Warning that asks you to state it; Skipped for a vendor the catalog does not know. The catalog value is a vendor fact (how the vendor delivers its package), not a deployment choice; a deployment that differs states required or not_applicable here. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off."
           type: string
@@ -16437,7 +16471,7 @@ hardware:
           required: false
           pattern: "^[A-Fa-f0-9]{64}$"
           example: "0000000000000000000000000000000000000000000000000000000000000000"
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
         package_size_bytes:
           description: "Optional. The size of the payload zip in bytes, as downloaded. The gate compares the file on the share with it."
           type: integer
@@ -16445,7 +16479,7 @@ hardware:
           required: false
           minimum: 1
           example: 1048576
-          used_by: [os_configuration, deployment]
+          used_by: [os_configuration, deployment, trailwright]
         delivery:
           description: "Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hardware.sbe block with no delivery copies nothing and touches no C:\\SBE. Nothing in the toolkit sets this key for you. How the SBE package reaches the nodes. It lands in each node's C:\\SBE during OS configuration. winrm_copy: the toolkit copies the files over WinRM (a PSSession, TCP 5985) from the host it runs on, so that host must reach the nodes' management subnet (the operator host if it can, or a runner that can); needs the nodes' local administrator as -Credential. node_pull: each node downloads the files itself from node_pull_url, a read-only HTTPS or SMB location that you serve from a host the nodes can reach; the toolkit checks the SHA-256 on the node after the download. skip (default, also when the key is absent): the toolkit does not deliver the package, the Sbe step reports it as not delivered (an SBE you configured and placed yourself), and no other step is affected. There is no Azure storage account route: Azure Arc Run Command cannot carry a file."
           type: string
@@ -16461,12 +16495,13 @@ hardware:
           since: "5.4.2"
           required: false
           example: "https://sbe.iic.example/sbe/dell"
-          used_by: [os_configuration]
+          used_by: [os_configuration, trailwright]
         allow_unvalidated:
           description: "Test only. Use the SBE in bundle_path even though the OEM's manifest doesn't list it as validated with provisioning.os_version. The hash is still checked. Default false. Documentation only; not read by the tools. The deployment gate fails an SBE the OEM has not validated, whatever this key says."
           type: boolean
           required: false
           example: false
+          used_by: [trailwright]
         partner_properties:
           description: "Optional (schema 5.6.24). Properties the hardware vendor's SBE asks for, as name and value pairs (ARM partnerProperties; Learn lists it as a parameter of every deployment template, each entry a name and a value). What a vendor needs is in the vendor's SBE documentation: copy the pairs as it gives them. Sent only when an SBE is configured (hardware.sbe.version); leave it out when the vendor names none. The deployment sends an empty list then."
           type: array
@@ -16594,21 +16629,21 @@ hardware:
               required: false
               enum: ["nvme", "ssd", "hdd"]
               example: "nvme"
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
             count:
               description: "Number of capacity drives in each machine."
               type: integer
               required: false
               minimum: 0
               example: 8
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
             size_tb:
               description: "Size of one capacity drive in TB (decimal terabytes). Get-HardwareInventory.ps1 compares it with the size the BMC reports (within 5 percent)."
               type: number
               required: false
               minimum: 0
               example: 3.84
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
         cache:
           description: "The cache drives in each machine (Storage Spaces Direct). Leave out when there is no cache tier."
           type: object
@@ -16621,19 +16656,19 @@ hardware:
               description: "Media type of the cache drives: nvme, ssd or hdd."
               required: false
               enum: ["nvme", "ssd", "hdd"]
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
             count:
               description: "Number of cache drives in each machine."
               type: integer
               required: false
               minimum: 0
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
             size_tb:
               description: "Size of one cache drive in TB (decimal terabytes). Get-HardwareInventory.ps1 compares it with the size the BMC reports (within 5 percent)."
               type: number
               required: false
               minimum: 0
-              used_by: [discovery, trailwright]
+              used_by: [discovery, trailwright, surveyor]
 
 storage:
   description: "Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only when scenario.storage_architecture is san or hybrid)."
@@ -16703,7 +16738,7 @@ storage:
             type: string
             required: true
             example: "vol-workloads-01"
-            used_by: [deployment, trailwright, ranger]
+            used_by: [deployment, trailwright, ranger, loadtools]
           size_gib:
             description: "Size of the volume in GiB (binary units, as Windows counts)."
             type: number
@@ -16725,7 +16760,7 @@ storage:
             enum: ["thin", "fixed"]
             since: "5.6.9"
             example: "thin"
-            used_by: [deployment]
+            used_by: [deployment, trailwright]
           file_system:
             type: string
             description: "Schema 5.6.9. refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or ntfs."
@@ -16822,14 +16857,14 @@ storage:
             pattern: "^[A-Za-z0-9][A-Za-z0-9-]{1,62}[A-Za-z0-9]$"
             since: "5.6.9"
             example: "sp-workloads-01"
-            used_by: [deployment]
+            used_by: [deployment, loadtools]
           path:
             description: "The folder on a cluster shared volume, for example C:\\ClusterStorage\\vol-workloads-01\\vms for a volume of storage.volumes, or the folder of the cluster shared volume of a SAN LUN. Never on the infrastructure volume. It cannot be changed later."
             type: string
             required: true
             since: "5.6.9"
             example: "C:\\ClusterStorage\\vol-workloads-01\\vms"
-            used_by: [deployment]
+            used_by: [deployment, loadtools]
     vm_images:
       description: "Schema 5.6.11. The Azure Marketplace images to download to the instance as Azure Local VM images (Learn: Create Azure Local VM image using Azure Marketplace images). New-VmImage.ps1 (phase 06, task 06) creates each image that does not exist yet in azure.resource_group, on azure.custom_location, in azure.location, with the file-level tags. An image that exists is left alone; a failed one is reported, never deleted. Needs the Microsoft.EdgeMarketplace resource provider registered in the subscription and the Azure Connected Machine Resource Manager role for the Microsoft.AzureStackHCI resource provider app on the resource group. Only Azure Marketplace images are supported: images from a local path, a storage account, an existing virtual machine or an Azure compute gallery are not (they need image preparation that this file does not describe). The list lives in storage because an image is kept on a storage path of the instance."
       type: array
@@ -17233,6 +17268,7 @@ provisioning:
           description: "microsoft (the Azure portal download) or oem (the OEM's image). Documentation only; not read by the tools. A record of where the ISO came from."
           required: false
           enum: ["microsoft", "oem"]
+          used_by: [trailwright]
         image_uri:
           description: "Schema 5.6.19. Where each machine's BMC fetches the OS ISO from, as the address you give the virtual media of the BMC (Redfish VirtualMedia.InsertMedia): an http, https, nfs or cifs address of the ISO. Invoke-MountGoldImageISO.ps1 (phase 02, task 02) inserts it as the virtual CD of every machine in nodes[]."
           type: string
@@ -17254,7 +17290,7 @@ provisioning:
           required: true
           pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
           example: "iic-site-01"
-          used_by: [ztp, monitoring, trailwright]
+          used_by: [ztp, monitoring, trailwright, beacon]
         subscription_id:
           description: "Subscription of the site and edge machines, when it isn't azure.subscription_id. Set-AzlDeploymentPolicyExemption.ps1 exempts the site's resource groups there."
           type: string
@@ -17335,7 +17371,7 @@ provisioning:
               description: "Instead of host: the local adapter whose IPv4 address the BMCs reach. Wins over host."
               type: string
               required: false
-              used_by: [ztp]
+              used_by: [ztp, trailwright]
             account_name:
               description: "Schema 5.4. The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and removes the account with the share). Default: svc-ztp-media."
               type: string
@@ -17368,7 +17404,7 @@ provisioning:
           required: false
           minLength: 1
           example: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"
-          used_by: [ztp, monitoring]
+          used_by: [ztp, monitoring, beacon]
         isolate_san_adapters:
           description: "Schema 5.4. While the OS installs, turn off the PCIe slots that hold the SAN adapters listed in nodes[].san.hbas[], so the maintenance environment can't install onto a SAN LUN; put each back in the Restore stage to the value it had before the install (the vendor's enabled value if it was already disabled). azurelocal-ztp derives the BIOS attribute from the slot label and the vendor (config/oem/<vendor>.json, bios section). Default: true when any node lists san.hbas, false otherwise. An explicit hardware.bios or bios_during_provisioning key for the same attribute wins. A vendor without a slot mapping needs the raw attribute in bios_during_provisioning."
           type: boolean
@@ -17941,28 +17977,33 @@ network_devices:
         required: true
         minLength: 1
         example: "sw01-iic"
+        used_by: [trailwright]
       type:
         type: string
         description: "Kind of device: switch, firewall, router, console_server, load_balancer or wireless_controller."
         required: true
         enum: ["switch", "firewall", "router", "console_server", "load_balancer", "wireless_controller"]
         example: "switch"
+        used_by: [trailwright, draftsman]
       role:
         type: string
         description: "primary, secondary or standalone."
         required: false
         enum: ["primary", "secondary", "standalone"]
         example: "primary"
+        used_by: [trailwright]
       vendor:
         description: "Vendor of the device."
         type: string
         required: false
         example: "Dell"
+        used_by: [trailwright, draftsman]
       model:
         description: "Model of the device. Written into the cluster document by Generate-ClusterConfigMD.ps1; no deployment step reads it."
         type: string
         required: false
         example: "S5248F-ON"
+        used_by: [trailwright, draftsman]
       serial_number:
         description: "Serial number of the device. Documentation only; not read by the tools. A record of the device."
         type: string
@@ -18215,13 +18256,13 @@ landing_zone:
             required: true
             pattern: "^[-\\w\\._\\(\\)]{1,90}$"
             example: "rg-iic-conn-01"
-            used_by: [cicd_infra, terraform]
+            used_by: [cicd_infra, terraform, trailwright]
           subscription:
             description: "Name of a subscription in landing_zone.subscriptions."
             type: string
             required: false
             example: "sub-iic-connectivity"
-            used_by: [cicd_infra]
+            used_by: [cicd_infra, trailwright]
           location:
             description: "Azure region of the resource group."
             type: string
@@ -18229,13 +18270,13 @@ landing_zone:
             required: false
             pattern: "^[a-z][a-z0-9]{2,30}$"
             example: "eastus"
-            used_by: [cicd_infra]
+            used_by: [cicd_infra, trailwright]
           purpose:
             description: "What the resource group is for, in words."
             type: string
             required: false
             example: "hub network"
-            used_by: [cicd_infra]
+            used_by: [cicd_infra, trailwright]
     budgets:
       description: "Cost Management budgets of the landing zone (schema 5.6.30; Microsoft Learn: Tutorial: Create and manage budgets). A budget is free: it tracks the cost of a subscription or a resource group and sends an e-mail when a threshold is passed; it never stops or deletes anything. Deploy-CostBudgets.ps1 and Deploy-CostBudgets.azcli.ps1 (phase 01, task 04) create each entry, and update an existing budget of the same name to what the file says. Leave the list out for no budget."
       type: array
@@ -18489,7 +18530,7 @@ landing_zone:
             type: string
             required: true
             example: "vnet-iic-hub-01"
-            used_by: [cicd_infra, terraform]
+            used_by: [cicd_infra, terraform, trailwright]
           subscription:
             description: "Name of the subscription (landing_zone.subscriptions[].name) that holds the network."
             type: string
@@ -18503,7 +18544,7 @@ landing_zone:
             required: false
             pattern: "^[-\\w\\._\\(\\)]{1,90}$"
             example: "rg-iic-conn-01"
-            used_by: [cicd_infra, terraform]
+            used_by: [cicd_infra, terraform, trailwright]
           location:
             description: "Azure region of the network."
             type: string
@@ -18518,14 +18559,14 @@ landing_zone:
             required: false
             enum: ["hub", "spoke"]
             example: "hub"
-            used_by: [cicd_infra]
+            used_by: [cicd_infra, trailwright]
           address_space:
             description: "Address ranges of the virtual network, in CIDR form."
             type: array
             required: true
             minItems: 1
             example: [["10.20.0.0/22"]]
-            used_by: [cicd_infra, terraform]
+            used_by: [cicd_infra, terraform, trailwright]
             items:
               {"format":"cidr","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"}
           dns_servers:
@@ -19032,7 +19073,7 @@ landing_zone:
             type: string
             required: true
             example: "vm-iic-dc-01"
-            used_by: [terraform, ansible]
+            used_by: [terraform, ansible, trailwright]
           hostname:
             description: "Up to 15 letters, digits and hyphens."
             type: string
@@ -19047,7 +19088,7 @@ landing_zone:
             required: true
             enum: ["domain_controller", "jumpbox", "windows_admin_center", "syslog", "management", "other"]
             example: "domain_controller"
-            used_by: [terraform, ansible]
+            used_by: [terraform, ansible, trailwright]
           deploy_target:
             type: string
             description: "Where the VM runs."
@@ -19086,13 +19127,13 @@ landing_zone:
             required: false
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "10.20.4.10"
-            used_by: [terraform, ansible]
+            used_by: [terraform, ansible, trailwright]
           size:
             description: "Azure VM size, for example Standard_D2s_v5."
             type: string
             required: false
             example: "Standard_D2s_v5"
-            used_by: [terraform]
+            used_by: [terraform, trailwright]
           os:
             description: "Schema 5.6.19. Operating system image of the machine: windows_server_2022 or windows_server_2025 (Windows Server Datacenter: Azure Edition) or ubuntu_2404 (Ubuntu Server 24.04 LTS). Deploy-ManagementVMs.ps1 (phase 04, manual deployment, task 11) turns it into the Azure Marketplace image (publisher, offer, SKU, latest version) and sets the machine up as a Windows or Linux machine."
             type: string
@@ -19181,6 +19222,7 @@ landing_zone:
           type: string
           required: true
           example: "log-iic-azl-01"
+          used_by: [trailwright]
     storage_accounts:
       description: "Storage accounts of the landing zone."
       type: array
@@ -19234,11 +19276,11 @@ file_metadata:
       example: "5.6.0"
       used_by: [ztp, os_configuration, deployment, monitoring, trailwright]
     scope:
-      description: "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing)."
+      description: "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer, loadtools, draftsman) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing)."
       since: "5.3"
       required: false
       default: "full"
-      enum: ["full", "ztp", "trailwright", "surveyor", "os_configuration", "deployment", "cicd_infra", "terraform", "ansible", "monitoring", "discovery", "ranger", "beacon", "s2d_cartographer"]
+      enum: ["full", "ztp", "trailwright", "surveyor", "os_configuration", "deployment", "cicd_infra", "terraform", "ansible", "monitoring", "discovery", "ranger", "beacon", "s2d_cartographer", "loadtools", "draftsman"]
       example: "ztp"
       used_by: [ztp, trailwright]
     file_version:
@@ -19295,7 +19337,7 @@ _schema_root:
   $schema: https://json-schema.org/draft/2020-12/schema
   $id: https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json
   title: Azure Local infrastructure.yml
-  description: 'The one environment file for an Azure Local instance: the design choices, the machines, the networks, identity, Azure targets, provisioning (ISO or simplified machine provisioning with ZTP) and the cluster deployment. Every Azure Local tool reads this file: azurelocal-toolkit, azurelocal-ztp, Trailwright (writes it), Beacon, Sonar and Ranger. Keys are snake_case. Secrets are never values: they are keyvault://<vault>/<secret> references. Sections reject unknown keys; put anything else under extensions.'
+  description: 'The one environment file for an Azure Local instance: the design choices, the machines, the networks, identity, Azure targets, provisioning (ISO or simplified machine provisioning with ZTP) and the cluster deployment. Every tool of the Azure Local set uses this file: azurelocal-toolkit, azurelocal-ztp, Beacon, Sonar and Cartographer read it, Trailwright writes it (and Surveyor produces values for it through its sizing handoff), Ranger compares it with the deployed instance and writes a drift report only (it never writes the file back). Keys are snake_case. Secrets are never values: they are keyvault://<vault>/<secret> references. Sections reject unknown keys; put anything else under extensions.'
   type: object
   additionalProperties: false
   required:
@@ -20566,7 +20608,7 @@ _tool_catalog:
       repository: "AzureLocal/azurelocal-ranger"
       tools_section: ranger
       evidence: ["Modules/Core/50-DesignCompare.ps1 (ConvertFrom-RangerDesignRecord, kind infrastructure)", "docs/reference/design-vs-as-built.md"]
-      note: "Compares a finished build with the design when -DesignPath names an infrastructure.yml. Its reader of the infrastructure kind uses key paths from the earlier layout; only the paths that exist in this registry with the same meaning are keys here."
+      note: "Compares a finished build with the design when -DesignPath names an infrastructure.yml, and writes a drift report (drift-report.json). It is compare-only for day 2: it never writes back to infrastructure.yml (owner decision O6). The keys it compares are the ones that list ranger in used_by: the cluster name, the machines (name, address, serial number, BMC), the Azure targets, the identity scenario, the witness, the DNS servers, the solution version, the networks, the intents, the volumes and SDN. Its own settings and the parameters of its commands are in tools.ranger."
     loadtools:
       title: "azurelocal-loadtools"
       kind: external
@@ -20574,14 +20616,15 @@ _tool_catalog:
       repository: "AzureLocal/azurelocal-loadtools"
       tools_section: loadtools
       evidence: ["common/modules/ConfigManager/ConfigManager.psm1 (Import-MasterConfig reads its own config/variables/variables.yml)", "config/variables/schema/variables.schema.json"]
-      note: "Reads no key of infrastructure.yml, so it has no template. Its own file config/variables/variables.yml has its own schema. No source file names infrastructure.yml, schema 5 or Import-AzlInfrastructure. Its own settings (variables.yml, the per-cluster file, profiles, test thresholds and script parameters) are in tools.loadtools; where a setting is the same fact as a key of infrastructure.yml, the entry carries source_key."
+      note: "Reads infrastructure.yml for the cluster facts (owner directive D145): cluster.name, nodes[].name, the domain, the cluster shared volume (storage.paths[], storage.volumes[]), the Azure scope and custom location, and the Key Vault (key_vaults[], else cluster.key_vault.name), through Initialize-Environment.ps1 -InfrastructureFile, from the whole file or its loadtools cut (New-InfrastructureArtifacts.ps1 -Cut loadtools, _metadata.scope loadtools). Its own file config/variables/variables.yml keeps the test settings only, with its own schema. Its settings (variables.yml, the per-cluster file, profiles, test thresholds and script parameters) are in tools.loadtools; where a setting is the same fact as a key of infrastructure.yml, the entry carries source_key."
     surveyor:
       title: "azurelocal-surveyor"
       kind: external
-      relation: reads
+      relation: produces
       repository: "AzureLocal/azurelocal-surveyor"
-      evidence: ["src/state/project.ts", "src/engine/as-built.ts", "package.json"]
-      note: "Reads no key of infrastructure.yml, so it has no template. It reads and writes JSON only (project files, plan manifests, as-built records); package.json has no YAML library and no source file names infrastructure.yml. It has no settings of its own outside the page: no configuration file, no URL parameter and no command line; the only environment variable, PLAYWRIGHT_BASE_URL, belongs to the browser test configuration. So it has no tools section."
+      tools_section: surveyor
+      evidence: ["src/exporters/sizing-handoff.ts", "docs/reference/sizing-handoff.schema.json", "docs/reference/sizing-handoff.md", "src/engine/as-built.ts"]
+      note: "Sizes a cluster and exports the sizing handoff (kind azurelocal-sizing-handoff, schemaVersion 1.x) that Trailwright imports. It produces values of infrastructure.yml through that handoff; it does not write the file. tools.surveyor.handoff_fields lists every field of the handoff and says which key of infrastructure.yml it becomes (source_key), or that it becomes none (no_key, with the reason). Its as-built input (src/engine/as-built.ts) is infrastructure.yml (owner decision O8): the keys it reads are not listed with surveyor in used_by yet, so it has no template. It has no settings of its own outside the page: no configuration file, no URL parameter and no command line; the only environment variable, PLAYWRIGHT_BASE_URL, belongs to the browser test configuration."
     draftsman:
       title: "azurelocal-draftsman"
       kind: external
@@ -20589,7 +20632,23 @@ _tool_catalog:
       repository: "AzureLocal/azurelocal-draftsman"
       tools_section: draftsman
       evidence: ["src/features/export/fileActions.ts", "src/lib/serialization/storage.ts", "package.json"]
-      note: "Reads no key of infrastructure.yml, so it has no template. It reads and writes JSON only (drawing files); package.json has no YAML library and no source file names infrastructure.yml. Its own settings outside the page are in tools.draftsman: the URL parameters of src/lib/urlParams.ts and VITE_BASE of vite.config.ts."
+      note: "Reads the network design of infrastructure.yml for its guided setup (owner decision O9; src/features/wizard/fromInfrastructure.ts): the node count, scenario.topology and scenario.storage_connectivity, the intents (name, traffic, jumbo packet), the VLANs (networking.vlans[], the management VLAN, the VLANs of the storage networks, the logical networks), hardware.model and network_devices[] (type, vendor, model). It reads the whole file (YAML or JSON) and never writes it; its drawing files are JSON. Its own settings outside the page are in tools.draftsman: the URL parameters of src/lib/urlParams.ts and VITE_BASE of vite.config.ts."
+    beacon:
+      title: "azurelocal-beacon"
+      kind: external
+      relation: reads
+      repository: "AzureLocal/azurelocal-beacon"
+      tools_section: beacon
+      evidence: ["src/Start-AzlValidation.ps1 (the checks read the validation config)", "src/lib/Beacon.Common.ps1 (Resolve-ConfigDefaults)", "src/config/validation-config.example.json", "docs/reference/results-schema.md"]
+      note: "Validates the site from the WinPE image before the deployment (network, time, Active Directory, DNS, Arc readiness) and writes a results JSON (docs/reference/results.schema.json) that Sonar shows in its Discovery view and that goes to the evidence folder (owner decision O5). It reads infrastructure.yml directly: ConvertTo-BeaconValidationConfig.ps1 -InfrastructureFile (and Build-WinPEImage.ps1 -InfrastructureFile) writes validation-config.json, the file the checks and the WinPE menu read, from the keys that list beacon in used_by (its cut is New-InfrastructureArtifacts.ps1 -Cut beacon). Beacon's own settings are tools.beacon.config_keys oem, arcGatewayFqdn, tlsInspectionHosts, tcpConnectTimeoutMs, pingTimeoutMs and brand, which come from -SettingsPath or the defaults; every other key of validation-config.json carries source_key, the key of infrastructure.yml it is written from. The parameters of its scripts are in tools.beacon.parameters."
+    s2d_cartographer:
+      title: "azurelocal-s2d-cartographer"
+      kind: external
+      relation: reads
+      repository: "AzureLocal/azurelocal-s2d-cartographer"
+      tools_section: s2d_cartographer
+      evidence: ["Modules/Public/Connect-S2DCluster.ps1", "Modules/Public/Invoke-S2DCartographer.ps1", "config/health-checks.json", "S2DCartographer.psd1 (FunctionsToExport)"]
+      note: "Reads the storage of a running Azure Local instance (Storage Spaces Direct) and writes the capacity and health reports. Connect-S2DCluster, Invoke-S2DCartographer and Invoke-S2DCapacityWhatIf take -InfrastructureFile (the whole file or its s2d_cartographer cut): the cluster name (cluster.name), the domain (identity.active_directory.domain_fqdn, netbios_name) and the account with its Key Vault secret (identity.active_directory.lcm_user, else identity.local_admin) come from it, and the vault from the keyvault:// reference (key_vaults[]). Its own settings, MaintenanceReserveTarget, OutputDirectory and the thresholds, weights and severities of config/health-checks.json, are in tools.s2d_cartographer; a setting that is the same fact as a key of infrastructure.yml carries source_key."
 
 # =============================================================================
 # TOOLS (registry 4.2.0)
@@ -21395,7 +21454,7 @@ tools:
               type: object
               area: "config/variables/scripts/New-ToolMapping.ps1"
               properties:
-                Tool: {"name":"Tool","type":"array","declared_type":"string[]","default":"@('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright')","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright"],"required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Tool (no help text for this parameter)."}
+                Tool: {"name":"Tool","type":"array","declared_type":"string[]","default":"@('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright', 'surveyor', 'beacon', 's2d_cartographer')","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright","surveyor","beacon","s2d_cartographer"],"required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Tool (no help text for this parameter)."}
                 RegistryPath: {"name":"RegistryPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../schema/master-registry.yaml')","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Registry path (no help text for this parameter)."}
                 OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../tool-mappings')","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Output directory (no help text for this parameter)."}
                 Registry: {"name":"Registry","type":"array","declared_type":"object[]","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Registry (no help text for this parameter)."}
@@ -21414,7 +21473,7 @@ tools:
               type: object
               area: "config/variables/scripts/Test-ToolParameterRegistration.ps1"
               properties:
-                Tool: {"name":"Tool","type":"string","declared_type":"string","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright"],"required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Tool (no help text for this parameter)."}
+                Tool: {"name":"Tool","type":"string","declared_type":"string","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright","surveyor","beacon","s2d_cartographer"],"required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Tool (no help text for this parameter)."}
                 Root: {"name":"Root","type":"string","declared_type":"string","required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Root (no help text for this parameter)."}
                 RegistryPath: {"name":"RegistryPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../schema/master-registry.yaml')","required":"N","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Registry path (no help text for this parameter)."}
                 Registry: {"name":"Registry","type":"array","declared_type":"object[]","required":"N","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Registry (no help text for this parameter)."}
@@ -24747,6 +24806,325 @@ tools:
               area: "scripts/common/idrac-management/Enable-IdracVnc.ps1"
               properties:
                 VncSecretReference_value_keyvault_vault_secret: {"name":"VncSecretReference value (keyvault://<vault>/<secret>)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","required":"N","read_at":"scripts/common/idrac-management/Enable-IdracVnc.ps1:69","description":"Key Vault secret that holds the iDRAC VNC password (4 to 8 characters). Enable-IdracVnc.ps1 only."}
+    surveyor:
+      type: object
+      properties:
+        handoff_fields:
+          type: object
+          properties:
+            docs_reference_sizing_handoff_schema_json:
+              type: object
+              area: "docs/reference/sizing-handoff.schema.json (kind azurelocal-sizing-handoff, schemaVersion 1.x)"
+              properties:
+                cluster_node_count: {"name":"cluster.node_count","type":"integer","declared_type":"integer","required":"Y","read_at":"src/exporters/sizing-handoff.ts","no_key":true,"description":"Number of machines of the sized cluster (1 to 16). infrastructure.yml has no key for it: the count is the number of entries of nodes[]. Trailwright creates that many machines from it."}
+                cluster_topology: {"name":"cluster.topology","type":"string","declared_type":"string","enum":["standard","rack_aware"],"required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"scenario.topology","description":"standard, or rack_aware (two local zones with node_count / 2 machines each)."}
+                hardware_cpu_cores: {"name":"hardware.cpu_cores","type":"integer","declared_type":"integer","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.cpu_cores","description":"Physical CPU cores per machine."}
+                hardware_memory_gib: {"name":"hardware.memory_gib","type":"integer","declared_type":"integer","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.memory_gib","description":"Memory per machine in GiB, as entered in Surveyor."}
+                hardware_hyperthreading: {"name":"hardware.hyperthreading","type":"boolean","declared_type":"boolean","required":"Y","read_at":"src/exporters/sizing-handoff.ts","no_key":true,"description":"Whether the CPUs run two threads per core. infrastructure.yml has no key for it: it changes how many vCPUs Surveyor counts, not how a machine is deployed."}
+                hardware_drives_capacity_media: {"name":"hardware.drives.capacity.media","type":"string","declared_type":"string","enum":["nvme","ssd","hdd"],"required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.capacity.media","description":"Media of the capacity drives."}
+                hardware_drives_capacity_count: {"name":"hardware.drives.capacity.count","type":"integer","declared_type":"integer","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.capacity.count","description":"Capacity drives per machine."}
+                hardware_drives_capacity_size_tb: {"name":"hardware.drives.capacity.size_tb","type":"number","declared_type":"number","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.capacity.size_tb","description":"Size of one capacity drive in decimal TB."}
+                hardware_drives_cache_media: {"name":"hardware.drives.cache.media","type":"string","declared_type":"string","enum":["nvme","ssd","hdd"],"required":"N","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.cache.media","description":"Media of the cache drives."}
+                hardware_drives_cache_count: {"name":"hardware.drives.cache.count","type":"integer","declared_type":"integer","required":"N","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.cache.count","description":"Cache drives per machine."}
+                hardware_drives_cache_size_tb: {"name":"hardware.drives.cache.size_tb","type":"number","declared_type":"number","required":"N","read_at":"src/exporters/sizing-handoff.ts","source_key":"hardware.drives.cache.size_tb","description":"Size of one cache drive in decimal TB."}
+                storage_default_resiliency: {"name":"storage.default_resiliency","type":"string","declared_type":"string","enum":["two_way","three_way","four_way","parity","nested_two_way"],"required":"Y","read_at":"src/exporters/sizing-handoff.ts","no_key":true,"description":"The resiliency Surveyor gave the volumes it sized by default. infrastructure.yml sets the resiliency of each volume (storage.volumes[].resiliency, which the handoff also carries), so the default is not kept."}
+                storage_infrastructure_volume_tb: {"name":"storage.infrastructure_volume_tb","type":"number","declared_type":"number","required":"Y","read_at":"src/exporters/sizing-handoff.ts","no_key":true,"description":"The space Surveyor reserved for the infrastructure volume, in decimal TB. infrastructure.yml has no key for it: Azure Local creates that volume itself."}
+                storage_volumes_name: {"name":"storage.volumes[].name","type":"string","declared_type":"string","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"storage.volumes[].name","description":"Name of the volume."}
+                storage_volumes_size_gib: {"name":"storage.volumes[].size_gib","type":"integer","declared_type":"integer","required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"storage.volumes[].size_gib","description":"Planned size of the volume in GiB (decimal TB rounded down), the size to give New-Volume."}
+                storage_volumes_resiliency: {"name":"storage.volumes[].resiliency","type":"string","declared_type":"string","enum":["two_way","three_way","four_way","parity","nested_two_way"],"required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"storage.volumes[].resiliency","description":"Resiliency of the volume."}
+                storage_volumes_provisioning_type: {"name":"storage.volumes[].provisioning_type","type":"string","declared_type":"string","enum":["fixed","thin"],"required":"Y","read_at":"src/exporters/sizing-handoff.ts","source_key":"storage.volumes[].provisioning_type","description":"Thin or fixed provisioning of the volume. Written since schemaVersion 1.1; schemaVersion 1.0 wrote it as provisioning, which a reader still accepts."}
+    beacon:
+      type: object
+      properties:
+        config_keys:
+          type: object
+          properties:
+            src_config_validation_config_json:
+              type: object
+              area: "src/config/validation-config.json (written by src/ConvertTo-BeaconValidationConfig.ps1 from infrastructure.yml; example: src/config/validation-config.example.json)"
+              properties:
+                _engagement: {"name":"_engagement","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:147","source_key":"cluster.name","description":"A label of the engagement (the cluster name). Written for the person who reads the file; no check reads it."}
+                brand: {"name":"brand","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:253","description":"Beacon's own setting: the customer name shown in the banner and the report header. infrastructure.yml has no key for it."}
+                azureRegion: {"name":"azureRegion","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:149","source_key":"azure.location","description":"Azure region that selects the endpoint list of the sweep: one of the nine regions of config/endpoints (eastus, westeurope, australiaeast, canadacentral, centralindia, southeastasia, japaneast, southcentralus, usgovvirginia). -Region wins over it."}
+                oem: {"name":"oem","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:235","description":"Beacon's own setting: the OEM whose endpoint list is appended to the sweep (dell is available). Empty: Beacon uses dell when hardware.vendor is Dell, else none."}
+                dnsServers: {"name":"dnsServers","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:150","source_key":"networking.management.dns_servers","description":"DNS servers the checks query (A record of the domain and of the nodes)."}
+                adDomainFqdn: {"name":"adDomainFqdn","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:166","source_key":"identity.active_directory.domain_fqdn","description":"Active Directory domain name of the instance (empty for a local identity design)."}
+                adNetbios: {"name":"adNetbios","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:167","source_key":"identity.active_directory.netbios_name","description":"NetBIOS name of the domain."}
+                dcIps: {"name":"dcIps","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:168","source_key":"identity.active_directory.domain_controllers","description":"Addresses of the domain controllers: the checks probe the Active Directory ports of each, and the time source when ntpServers is empty."}
+                dcFqdns: {"name":"dcFqdns","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:169","source_key":"identity.active_directory.domain_controllers","description":"Names of the domain controllers: the entries of identity.active_directory.domain_controllers that are not addresses."}
+                ntpServers: {"name":"ntpServers","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:151","source_key":"networking.ntp_servers","description":"Time sources probed on UDP 123, with the clock offset reported. Empty: the domain controllers, else time.windows.com."}
+                managementGateway: {"name":"managementGateway","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:171","source_key":"networking.management.gateway","description":"Default gateway of the management network: pinged by the basic network check."}
+                managementSubnetCidr: {"name":"managementSubnetCidr","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:172","source_key":"networking.management.subnet","description":"Management subnet (CIDR) for the Environment Checker network validator."}
+                managementVlan: {"name":"managementVlan","type":"integer","declared_type":"int","default":"0","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:175","source_key":"networking.management.vlan_id","description":"VLAN of the management network (0: untagged)."}
+                nodeFqdns: {"name":"nodeFqdns","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:191","source_key":"nodes[].name","description":"Names of the machines, resolved and probed by the checks: nodes[].name plus identity.active_directory.domain_fqdn."}
+                nodeIps: {"name":"nodeIps","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:190","source_key":"nodes[].management.ip_address","description":"Management addresses of the machines (the management port of nodes[].network_adapters[] when nodes[].management is absent)."}
+                keyVaultFqdn: {"name":"keyVaultFqdn","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:199","source_key":"cluster.key_vault.name","description":"Address of the cluster Key Vault, probed on HTTPS: <cluster.key_vault.name>.vault.azure.net for the public cloud (scenario.cloud picks the suffix of another cloud)."}
+                keyVaultName: {"name":"keyVaultName","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:198","source_key":"cluster.key_vault.name","description":"Name of the cluster Key Vault."}
+                clusterName: {"name":"clusterName","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:200","source_key":"cluster.name","description":"Name of the instance: the Arc cluster check and the report use it."}
+                proxyUrl: {"name":"proxyUrl","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:203","source_key":"networking.outbound.proxy.url","description":"Explicit proxy for the HTTPS probes, for example http://proxy.example.com:8080. -ProxyUrl wins over it. From networking.outbound.proxy.url, or the firewall address of a private path."}
+                proxyBypass: {"name":"proxyBypass","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:204","source_key":"networking.outbound.proxy.bypass","description":"Addresses and names that go direct, not through the proxy: host, *.domain, .domain, a CIDR or <local>."}
+                arcGatewayFqdn: {"name":"arcGatewayFqdn","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:238","description":"Beacon's own setting: the address of the Arc gateway (<id>.gw.arc.azure.com). Set: the endpoints the gateway carries are not probed directly, the gateway is. infrastructure.yml holds the name of the gateway resource (networking.outbound.arc_gateway.name), not its address."}
+                tlsInspectionHosts: {"name":"tlsInspectionHosts","type":"array","declared_type":"string[]","default":"[\"login.microsoftonline.com\",\"management.azure.com\"]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:243","description":"Beacon's own setting: the hosts checked for TLS inspection (a certificate that is not the public one)."}
+                infraIpPools: {"name":"infraIpPools","type":"array","declared_type":"object[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:210","source_key":"networking.management.infrastructure_pool","description":"Infrastructure address pools (StartingAddress, EndingAddress) for the Environment Checker network validator. The file has one pool."}
+                hostNetworkIntents: {"name":"hostNetworkIntents","type":"array","declared_type":"object[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:221","source_key":"networking.intents","description":"Network intents (name, traffic, adapters) for the Environment Checker network validator."}
+                arcSubscriptionId: {"name":"arcSubscriptionId","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:224","source_key":"azure.subscription_id","description":"Subscription of the Arc readiness checks. Written only with -IncludeAzureTargets."}
+                arcTenantId: {"name":"arcTenantId","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:225","source_key":"azure.tenant_id","description":"Tenant of the Arc readiness checks. Written only with -IncludeAzureTargets."}
+                arcResourceGroup: {"name":"arcResourceGroup","type":"string","declared_type":"string","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:226","source_key":"azure.resource_group","description":"Resource group of the Arc readiness checks. Written only with -IncludeAzureTargets."}
+                arcNodeNames: {"name":"arcNodeNames","type":"array","declared_type":"string[]","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:227","source_key":"nodes[].arc_machine_name","description":"Arc machine names of the nodes: nodes[].arc_machine_name, else nodes[].name."}
+                tcpConnectTimeoutMs: {"name":"tcpConnectTimeoutMs","type":"integer","declared_type":"int","default":"5000","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:248","description":"Beacon's own setting: how long a TCP connect probe waits, in milliseconds."}
+                pingTimeoutMs: {"name":"pingTimeoutMs","type":"integer","declared_type":"int","default":"2000","required":"N","read_at":"src/lib/Beacon.Infrastructure.ps1:252","description":"Beacon's own setting: how long a ping waits, in milliseconds."}
+        parameters:
+          type: object
+          properties:
+            src_Start_AzlValidation_ps1:
+              type: object
+              area: "src/Start-AzlValidation.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:109","description":"The InfrastructureFile parameter of Start-AzlValidation.ps1."}
+                Plan: {"name":"Plan","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-AzlValidation.ps1:110","description":"The Plan parameter of Start-AzlValidation.ps1."}
+                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:111","description":"The ConfigPath parameter of Start-AzlValidation.ps1."}
+                ValidationConfigFile: {"name":"ValidationConfigFile","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:112","description":"The ValidationConfigFile parameter of Start-AzlValidation.ps1."}
+                ResultsPath: {"name":"ResultsPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:113","description":"The ResultsPath parameter of Start-AzlValidation.ps1."}
+                Categories: {"name":"Categories","type":"array","declared_type":"String[]","default":"@()","required":"N","read_at":"src/Start-AzlValidation.ps1:114","description":"The Categories parameter of Start-AzlValidation.ps1."}
+                SkipEnvironmentChecker: {"name":"SkipEnvironmentChecker","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-AzlValidation.ps1:115","description":"The SkipEnvironmentChecker parameter of Start-AzlValidation.ps1."}
+                SkipArc: {"name":"SkipArc","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-AzlValidation.ps1:116","description":"The SkipArc parameter of Start-AzlValidation.ps1."}
+                Region: {"name":"Region","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:117","source_key":"azure.location","description":"The Region parameter of Start-AzlValidation.ps1."}
+                ProxyUrl: {"name":"ProxyUrl","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:118","source_key":"networking.outbound.proxy.url","description":"The ProxyUrl parameter of Start-AzlValidation.ps1."}
+                ProxyBypass: {"name":"ProxyBypass","type":"array","declared_type":"String[]","default":"@()","required":"N","read_at":"src/Start-AzlValidation.ps1:119","source_key":"networking.outbound.proxy.bypass","description":"The ProxyBypass parameter of Start-AzlValidation.ps1."}
+                ArcGatewayFqdn: {"name":"ArcGatewayFqdn","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:120","description":"The ArcGatewayFqdn parameter of Start-AzlValidation.ps1."}
+                Redact: {"name":"Redact","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-AzlValidation.ps1:121","description":"The Redact parameter of Start-AzlValidation.ps1."}
+                ExportTo: {"name":"ExportTo","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:122","description":"The ExportTo parameter of Start-AzlValidation.ps1."}
+                ArcSubscriptionId: {"name":"ArcSubscriptionId","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:123","source_key":"azure.subscription_id","description":"The ArcSubscriptionId parameter of Start-AzlValidation.ps1."}
+                ArcTenantId: {"name":"ArcTenantId","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:124","source_key":"azure.tenant_id","description":"The ArcTenantId parameter of Start-AzlValidation.ps1."}
+                ArcResourceGroup: {"name":"ArcResourceGroup","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:125","source_key":"azure.resource_group","description":"The ArcResourceGroup parameter of Start-AzlValidation.ps1."}
+                ArcNodeNames: {"name":"ArcNodeNames","type":"array","declared_type":"String[]","default":"@()","required":"N","read_at":"src/Start-AzlValidation.ps1:126","source_key":"nodes[].name","description":"The ArcNodeNames parameter of Start-AzlValidation.ps1."}
+                PartialResultsPath: {"name":"PartialResultsPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Start-AzlValidation.ps1:127","description":"The PartialResultsPath parameter of Start-AzlValidation.ps1."}
+            src_ConvertTo_BeaconValidationConfig_ps1:
+              type: object
+              area: "src/ConvertTo-BeaconValidationConfig.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"src/ConvertTo-BeaconValidationConfig.ps1:40","description":"The InfrastructureFile parameter of ConvertTo-BeaconValidationConfig.ps1."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot 'config\\validation-config.json')","required":"N","read_at":"src/ConvertTo-BeaconValidationConfig.ps1:41","description":"The OutputPath parameter of ConvertTo-BeaconValidationConfig.ps1."}
+                SettingsPath: {"name":"SettingsPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/ConvertTo-BeaconValidationConfig.ps1:42","description":"The SettingsPath parameter of ConvertTo-BeaconValidationConfig.ps1."}
+                IncludeAzureTargets: {"name":"IncludeAzureTargets","type":"boolean","declared_type":"switch","required":"N","read_at":"src/ConvertTo-BeaconValidationConfig.ps1:43","description":"The IncludeAzureTargets parameter of ConvertTo-BeaconValidationConfig.ps1."}
+                ShowSources: {"name":"ShowSources","type":"boolean","declared_type":"switch","required":"N","read_at":"src/ConvertTo-BeaconValidationConfig.ps1:44","description":"The ShowSources parameter of ConvertTo-BeaconValidationConfig.ps1."}
+            src_Start_AzlBeacon_ps1:
+              type: object
+              area: "src/Start-AzlBeacon.ps1"
+              properties:
+                SkipNetworkBootstrap: {"name":"SkipNetworkBootstrap","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-AzlBeacon.ps1:37","description":"The SkipNetworkBootstrap parameter of Start-AzlBeacon.ps1."}
+            src_Start_NetworkBootstrap_ps1:
+              type: object
+              area: "src/Start-NetworkBootstrap.ps1"
+              properties:
+                DhcpWaitSeconds: {"name":"DhcpWaitSeconds","type":"integer","declared_type":"int","default":"15","required":"N","read_at":"src/Start-NetworkBootstrap.ps1:52","description":"The DhcpWaitSeconds parameter of Start-NetworkBootstrap.ps1."}
+                SkipVerification: {"name":"SkipVerification","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Start-NetworkBootstrap.ps1:56","description":"The SkipVerification parameter of Start-NetworkBootstrap.ps1."}
+            src_Build_WinPEImage_ps1:
+              type: object
+              area: "src/Build-WinPEImage.ps1"
+              properties:
+                WorkspacePath: {"name":"WorkspacePath","type":"string","declared_type":"string","default":"C:\\WinPE_build","required":"N","read_at":"src/Build-WinPEImage.ps1:120","description":"The WorkspacePath parameter of Build-WinPEImage.ps1."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot 'output')","required":"N","read_at":"src/Build-WinPEImage.ps1:124","description":"The OutputPath parameter of Build-WinPEImage.ps1."}
+                DriverPath: {"name":"DriverPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '..\\drivers\\dell-ax')","required":"N","read_at":"src/Build-WinPEImage.ps1:128","description":"The DriverPath parameter of Build-WinPEImage.ps1."}
+                PS7ZipPath: {"name":"PS7ZipPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:131","description":"The PS7ZipPath parameter of Build-WinPEImage.ps1."}
+                PS7ZipSha256: {"name":"PS7ZipSha256","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:134","description":"The PS7ZipSha256 parameter of Build-WinPEImage.ps1."}
+                PS7Version: {"name":"PS7Version","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:137","description":"The PS7Version parameter of Build-WinPEImage.ps1."}
+                AllowUnverifiedPS7: {"name":"AllowUnverifiedPS7","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Build-WinPEImage.ps1:140","description":"The AllowUnverifiedPS7 parameter of Build-WinPEImage.ps1."}
+                Brand: {"name":"Brand","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:143","description":"The Brand parameter of Build-WinPEImage.ps1."}
+                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:146","description":"The ConfigPath parameter of Build-WinPEImage.ps1."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:149","description":"The InfrastructureFile parameter of Build-WinPEImage.ps1."}
+                ModulesPath: {"name":"ModulesPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '..\\tools\\modules')","required":"N","read_at":"src/Build-WinPEImage.ps1:152","description":"The ModulesPath parameter of Build-WinPEImage.ps1."}
+                BuildUSB: {"name":"BuildUSB","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Build-WinPEImage.ps1:155","description":"The BuildUSB parameter of Build-WinPEImage.ps1."}
+                UsbDriveLetter: {"name":"UsbDriveLetter","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Build-WinPEImage.ps1:158","description":"The UsbDriveLetter parameter of Build-WinPEImage.ps1."}
+            src_Convert_EndpointsToJson_ps1:
+              type: object
+              area: "src/Convert-EndpointsToJson.ps1"
+              properties:
+                EndpointsDir: {"name":"EndpointsDir","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Convert-EndpointsToJson.ps1:49","description":"The EndpointsDir parameter of Convert-EndpointsToJson.ps1."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"src/Convert-EndpointsToJson.ps1:50","description":"The OutputPath parameter of Convert-EndpointsToJson.ps1."}
+                Refresh: {"name":"Refresh","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Convert-EndpointsToJson.ps1:51","description":"The Refresh parameter of Convert-EndpointsToJson.ps1."}
+                Strict: {"name":"Strict","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Convert-EndpointsToJson.ps1:52","description":"The Strict parameter of Convert-EndpointsToJson.ps1."}
+                Force: {"name":"Force","type":"boolean","declared_type":"switch","required":"N","read_at":"src/Convert-EndpointsToJson.ps1:53","description":"The Force parameter of Convert-EndpointsToJson.ps1."}
+            scripts_New_DriverManifest_ps1:
+              type: object
+              area: "scripts/New-DriverManifest.ps1"
+              properties:
+                DriversRoot: {"name":"DriversRoot","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/New-DriverManifest.ps1:26","description":"The DriversRoot parameter of New-DriverManifest.ps1."}
+                SetSource: {"name":"SetSource","type":"object","declared_type":"Hashtable","default":"@{ 'dell-ax' = 'Dell Solution Builder Extension SBE_Dell_AX-16G-45n0c_5.0.2603.1641 (Bundle_SBE_Dell_AX-16G-45n0c_5.0.2603.1641.zip, DriversGE\\Network)' }","required":"N","read_at":"scripts/New-DriverManifest.ps1:27","description":"The SetSource parameter of New-DriverManifest.ps1."}
+            scripts_Update_BeaconModules_ps1:
+              type: object
+              area: "scripts/Update-BeaconModules.ps1"
+              properties:
+                Refresh: {"name":"Refresh","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/Update-BeaconModules.ps1:43","description":"The Refresh parameter of Update-BeaconModules.ps1."}
+                Version: {"name":"Version","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/Update-BeaconModules.ps1:44","description":"The Version parameter of Update-BeaconModules.ps1."}
+                UpdateLock: {"name":"UpdateLock","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/Update-BeaconModules.ps1:45","description":"The UpdateLock parameter of Update-BeaconModules.ps1."}
+                SkipSignatureCheck: {"name":"SkipSignatureCheck","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/Update-BeaconModules.ps1:46","description":"The SkipSignatureCheck parameter of Update-BeaconModules.ps1."}
+                ModuleRoot: {"name":"ModuleRoot","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/Update-BeaconModules.ps1:47","description":"The ModuleRoot parameter of Update-BeaconModules.ps1."}
+    s2d_cartographer:
+      type: object
+      properties:
+        config_keys:
+          type: object
+          properties:
+            config_health_checks_json:
+              type: object
+              area: "config/health-checks.json"
+              properties:
+                scoreThresholds_excellent: {"name":"scoreThresholds.excellent","type":"integer","declared_type":"int","default":"80","required":"N","read_at":"config/health-checks.json","description":"Health score (0 to 100) at or above which the cluster is rated excellent."}
+                scoreThresholds_good: {"name":"scoreThresholds.good","type":"integer","declared_type":"int","default":"60","required":"N","read_at":"config/health-checks.json","description":"Health score (0 to 100) at or above which the cluster is rated good."}
+                scoreThresholds_fair: {"name":"scoreThresholds.fair","type":"integer","declared_type":"int","default":"40","required":"N","read_at":"config/health-checks.json","description":"Health score (0 to 100) at or above which the cluster is rated fair."}
+                scoreThresholds_needsImprovement: {"name":"scoreThresholds.needsImprovement","type":"integer","declared_type":"int","default":"0","required":"N","read_at":"config/health-checks.json","description":"Health score (0 to 100) at or above which the cluster is rated needsImprovement (the lowest rating)."}
+                weighting_warnFactor: {"name":"weighting.warnFactor","type":"number","declared_type":"double","default":"0.5","required":"N","read_at":"config/health-checks.json","description":"A check that warns earns this fraction of its weight; a pass earns the whole weight and a fail earns none."}
+                checks_ReserveAdequacy_weight: {"name":"checks.ReserveAdequacy.weight","type":"integer","declared_type":"int","default":"3","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check ReserveAdequacy (Rebuild reserve adequacy) in the score."}
+                checks_ReserveAdequacy_severity: {"name":"checks.ReserveAdequacy.severity","type":"string","declared_type":"string","default":"Critical","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check ReserveAdequacy: Critical, Warning or Info."}
+                checks_DiskSymmetry_weight: {"name":"checks.DiskSymmetry.weight","type":"integer","declared_type":"int","default":"2","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check DiskSymmetry (Pool-member disk symmetry) in the score."}
+                checks_DiskSymmetry_severity: {"name":"checks.DiskSymmetry.severity","type":"string","declared_type":"string","default":"Warning","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check DiskSymmetry: Critical, Warning or Info."}
+                checks_VolumeHealth_weight: {"name":"checks.VolumeHealth.weight","type":"integer","declared_type":"int","default":"3","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check VolumeHealth (Volume health) in the score."}
+                checks_VolumeHealth_severity: {"name":"checks.VolumeHealth.severity","type":"string","declared_type":"string","default":"Critical","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check VolumeHealth: Critical, Warning or Info."}
+                checks_DiskHealth_weight: {"name":"checks.DiskHealth.weight","type":"integer","declared_type":"int","default":"3","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check DiskHealth (Physical disk health) in the score."}
+                checks_DiskHealth_severity: {"name":"checks.DiskHealth.severity","type":"string","declared_type":"string","default":"Critical","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check DiskHealth: Critical, Warning or Info."}
+                checks_NVMeWear_weight: {"name":"checks.NVMeWear.weight","type":"integer","declared_type":"int","default":"2","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check NVMeWear (NVMe drive wear) in the score."}
+                checks_NVMeWear_severity: {"name":"checks.NVMeWear.severity","type":"string","declared_type":"string","default":"Warning","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check NVMeWear: Critical, Warning or Info."}
+                checks_ThinOvercommit_weight: {"name":"checks.ThinOvercommit.weight","type":"integer","declared_type":"int","default":"2","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check ThinOvercommit (Thin volume overcommit) in the score."}
+                checks_ThinOvercommit_severity: {"name":"checks.ThinOvercommit.severity","type":"string","declared_type":"string","default":"Warning","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check ThinOvercommit: Critical, Warning or Info."}
+                checks_FirmwareConsistency_weight: {"name":"checks.FirmwareConsistency.weight","type":"integer","declared_type":"int","default":"1","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check FirmwareConsistency (Firmware consistency) in the score."}
+                checks_FirmwareConsistency_severity: {"name":"checks.FirmwareConsistency.severity","type":"string","declared_type":"string","default":"Info","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check FirmwareConsistency: Critical, Warning or Info."}
+                checks_RebuildCapacity_weight: {"name":"checks.RebuildCapacity.weight","type":"integer","declared_type":"int","default":"3","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check RebuildCapacity (Rebuild capacity) in the score."}
+                checks_RebuildCapacity_severity: {"name":"checks.RebuildCapacity.severity","type":"string","declared_type":"string","default":"Critical","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check RebuildCapacity: Critical, Warning or Info."}
+                checks_InfrastructureVolume_weight: {"name":"checks.InfrastructureVolume.weight","type":"integer","declared_type":"int","default":"1","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check InfrastructureVolume (Infrastructure volume) in the score."}
+                checks_InfrastructureVolume_severity: {"name":"checks.InfrastructureVolume.severity","type":"string","declared_type":"string","default":"Info","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check InfrastructureVolume: Critical, Warning or Info."}
+                checks_CacheTierHealth_weight: {"name":"checks.CacheTierHealth.weight","type":"integer","declared_type":"int","default":"2","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check CacheTierHealth (Cache tier health) in the score."}
+                checks_CacheTierHealth_severity: {"name":"checks.CacheTierHealth.severity","type":"string","declared_type":"string","default":"Warning","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check CacheTierHealth: Critical, Warning or Info."}
+                checks_ThinReserveRisk_weight: {"name":"checks.ThinReserveRisk.weight","type":"integer","declared_type":"int","default":"2","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check ThinReserveRisk (Thin provisioning reserve risk) in the score."}
+                checks_ThinReserveRisk_severity: {"name":"checks.ThinReserveRisk.severity","type":"string","declared_type":"string","default":"Warning","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check ThinReserveRisk: Critical, Warning or Info."}
+                checks_MaintenanceReserveN1_weight: {"name":"checks.MaintenanceReserveN1.weight","type":"integer","declared_type":"int","default":"1","required":"N","read_at":"config/health-checks.json","description":"Weight (1 to 3) of the health check MaintenanceReserveN1 (Compute maintenance reserve (N+1 advisory)) in the score."}
+                checks_MaintenanceReserveN1_severity: {"name":"checks.MaintenanceReserveN1.severity","type":"string","declared_type":"string","default":"Info","required":"Critical Warning Info","read_at":"config/health-checks.json","description":"Severity the report shows for the health check MaintenanceReserveN1: Critical, Warning or Info."}
+        parameters:
+          type: object
+          properties:
+            Modules_Public_Connect_S2DCluster:
+              type: object
+              area: "Modules/Public/Connect-S2DCluster.ps1 (Connect-S2DCluster)"
+              properties:
+                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:85","source_key":"cluster.name","description":"DNS name or FQDN of the Failover Cluster (e.g. \"c01-prd-bal\" or \"c01-prd-bal.corp.local\")."}
+                Credential: {"name":"Credential","type":"object","declared_type":"PSCredential","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:90","description":"PSCredential to authenticate with. Prompted interactively if not supplied."}
+                Authentication: {"name":"Authentication","type":"string","declared_type":"string","default":"Negotiate","enum":["Default","Digest","Negotiate","Basic","Kerberos","ClientCertificate","CredSsp"],"required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:94","description":"Authentication method passed to New-CimSession. Defaults to 'Negotiate', which auto-selects NTLM or Kerberos and works in both domain-joined and workgroup/lab environments. Use 'Kerberos' to enforce Kerberos explicitly."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:99","description":"Path to the environment's infrastructure.yml (azurelocal-toolkit, schema 5). Supplies ClusterName from cluster.name and, when the LCM user's password (identity.active_directory.lcm_user.password; for a design without Active Directory identity.local_admin.password) is a keyvault://<vault>/<secret> reference, KeyVaultName, SecretName and Username. Every parameter you pass explicitly wins over the file. Needs powershell-yaml."}
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:102","description":"An existing CimSession to use instead of creating a new one."}
+                PSSession: {"name":"PSSession","type":"object","declared_type":"PSSession","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:105","description":"An existing PSSession to use instead of creating a new one."}
+                Local: {"name":"Local","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:108","description":"Run against the local machine. Use this when executing directly on a cluster node."}
+                KeyVaultName: {"name":"KeyVaultName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:111","source_key":"key_vaults[].name","description":"Azure Key Vault name to retrieve credentials from. Requires Az.KeyVault."}
+                SecretName: {"name":"SecretName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:115","source_key":"identity.active_directory.lcm_user.password","description":"Name of the Key Vault secret containing the password (username encoded as secret tags or prefixed by convention)."}
+                Username: {"name":"Username","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Connect-S2DCluster.ps1:119","source_key":"identity.active_directory.lcm_user.username","description":"Optional explicit username to pair with the Key Vault secret's password. When not provided, the module reads the username from the secret's ContentType tag (convention: 'domain\\user'). Use this when the secret does not have a ContentType populated — for example, when an infrastructure automation pipeline writes the password without also setting the tag."}
+            Modules_Public_Get_S2DPhysicalDiskInventory:
+              type: object
+              area: "Modules/Public/Get-S2DPhysicalDiskInventory.ps1 (Get-S2DPhysicalDiskInventory)"
+              properties:
+                NodeName: {"name":"NodeName","type":"array","declared_type":"String[]","required":"N","read_at":"Modules/Public/Get-S2DPhysicalDiskInventory.ps1:36","description":"Limit results to one or more specific node names."}
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Get-S2DPhysicalDiskInventory.ps1:39","description":"Override the module session and use this CimSession directly. Useful for ad-hoc calls without a full Connect-S2DCluster session."}
+            Modules_Public_Get_S2DStoragePoolInfo:
+              type: object
+              area: "Modules/Public/Get-S2DStoragePoolInfo.ps1 (Get-S2DStoragePoolInfo)"
+              properties:
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Get-S2DStoragePoolInfo.ps1:29","description":"Override the module session and target this CimSession directly."}
+            Modules_Public_Get_S2DVolumeMap:
+              type: object
+              area: "Modules/Public/Get-S2DVolumeMap.ps1 (Get-S2DVolumeMap)"
+              properties:
+                VolumeName: {"name":"VolumeName","type":"array","declared_type":"String[]","required":"N","read_at":"Modules/Public/Get-S2DVolumeMap.ps1:32","description":"Limit results to one or more specific volume friendly names."}
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Get-S2DVolumeMap.ps1:35","description":"Override the module session and target this CimSession directly."}
+            Modules_Public_Get_S2DCacheTierInfo:
+              type: object
+              area: "Modules/Public/Get-S2DCacheTierInfo.ps1 (Get-S2DCacheTierInfo)"
+              properties:
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Get-S2DCacheTierInfo.ps1:31","description":"Override the module session and target this CimSession directly."}
+            Modules_Public_Get_S2DCapacityWaterfall:
+              type: object
+              area: "Modules/Public/Get-S2DCapacityWaterfall.ps1 (Get-S2DCapacityWaterfall)"
+              properties:
+                RackAware: {"name":"RackAware","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Get-S2DCapacityWaterfall.ps1:31","description":"The cluster is a rack aware cluster (Rack Level Nested Mirror): the resiliency is two-way mirror for 1+1 and four-way mirror for 2+2 and larger, regardless of what the pool settings report."}
+            Modules_Public_Get_S2DHealthStatus:
+              type: object
+              area: "Modules/Public/Get-S2DHealthStatus.ps1 (Get-S2DHealthStatus)"
+              properties:
+                CheckName: {"name":"CheckName","type":"array","declared_type":"String[]","required":"N","read_at":"Modules/Public/Get-S2DHealthStatus.ps1:31","description":"Limit results to one or more specific check names."}
+            Modules_Public_ConvertTo_S2DCapacity:
+              type: object
+              area: "Modules/Public/ConvertTo-S2DCapacity.ps1 (ConvertTo-S2DCapacity)"
+              properties:
+                Bytes: {"name":"Bytes","type":"integer","declared_type":"Int64","required":"N","read_at":"Modules/Public/ConvertTo-S2DCapacity.ps1:47","description":"Capacity in bytes (int64)."}
+                TB: {"name":"TB","type":"object","declared_type":"Double","required":"N","read_at":"Modules/Public/ConvertTo-S2DCapacity.ps1:50","description":"Capacity in terabytes — decimal (drive manufacturer labeling). 1 TB = 1,000,000,000,000 bytes."}
+                TiB: {"name":"TiB","type":"object","declared_type":"Double","required":"N","read_at":"Modules/Public/ConvertTo-S2DCapacity.ps1:53","description":"Capacity in tebibytes — binary (Windows reporting). 1 TiB = 1,099,511,627,776 bytes."}
+                GB: {"name":"GB","type":"object","declared_type":"Double","required":"N","read_at":"Modules/Public/ConvertTo-S2DCapacity.ps1:56","description":"Capacity in gigabytes — decimal. 1 GB = 1,000,000,000 bytes."}
+                GiB: {"name":"GiB","type":"object","declared_type":"Double","required":"N","read_at":"Modules/Public/ConvertTo-S2DCapacity.ps1:59","description":"Capacity in gibibytes — binary. 1 GiB = 1,073,741,824 bytes."}
+            Modules_Public_Invoke_S2DCartographer:
+              type: object
+              area: "Modules/Public/Invoke-S2DCartographer.ps1 (Invoke-S2DCartographer)"
+              properties:
+                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:102","source_key":"cluster.name","description":"Cluster name or FQDN. Required unless -CimSession, -PSSession, or -Local is used."}
+                Credential: {"name":"Credential","type":"object","declared_type":"PSCredential","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:105","description":"PSCredential for cluster authentication. Resolved from Key Vault when -KeyVaultName is provided."}
+                CimSession: {"name":"CimSession","type":"object","declared_type":"CimSession","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:108","description":"Existing CimSession to the cluster. Skips Connect-S2DCluster."}
+                Local: {"name":"Local","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:111","description":"Run locally from a cluster node."}
+                Authentication: {"name":"Authentication","type":"string","declared_type":"string","default":"Negotiate","enum":["Default","Digest","Negotiate","Basic","Kerberos","ClientCertificate","CredSsp"],"required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:114","description":"Authentication method passed through to Connect-S2DCluster / New-CimSession. Defaults to 'Negotiate', which works in both domain-joined and workgroup/lab environments."}
+                KeyVaultName: {"name":"KeyVaultName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:118","source_key":"key_vaults[].name","description":"Azure Key Vault name to resolve credentials from."}
+                SecretName: {"name":"SecretName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:121","source_key":"identity.active_directory.lcm_user.password","description":"Key Vault secret name containing the cluster password."}
+                Username: {"name":"Username","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:124","source_key":"identity.active_directory.lcm_user.username","description":"Optional explicit username for the Key Vault credential path. When not provided, the username is read from the secret's ContentType tag (convention: 'domain\\user'). Use this when the secret does not have a ContentType populated."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:127","description":"Path to the environment's infrastructure.yml (azurelocal-toolkit, schema 5). Supplies -ClusterName from cluster.name and, when no -Credential is given, -KeyVaultName, -SecretName and -Username from the LCM user (identity.active_directory.lcm_user; identity.local_admin without Active Directory) when its password is a keyvault://<vault>/<secret> reference. Parameters you pass explicitly win. Needs powershell-yaml. Ignored with -Local or -CimSession."}
+                OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"C:\\S2DCartographer","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:130","description":"Root folder for all output files. Created if it does not exist. Defaults to C:\\S2DCartographer."}
+                Format: {"name":"Format","type":"array","declared_type":"String[]","default":"@('All')","enum":["Html","Word","Pdf","Excel","Json","Csv","All"],"required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:133","description":"Report formats to generate: Html, Word, Pdf, Excel, Json, Csv, All. Defaults to All (= HTML + Word + PDF + Excel + JSON). CSV is opt-in because it produces multiple files per run."}
+                IncludeNonPoolDisks: {"name":"IncludeNonPoolDisks","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:137","description":"Include non-pool disks (boot drives, SAN LUNs) in the Physical Disk Inventory tables. Default is to show pool members only. JSON and CSV outputs always include every disk with an IsPoolMember flag regardless of this switch."}
+                IncludeDiagrams: {"name":"IncludeDiagrams","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:140","description":"Also generate all six SVG diagram types."}
+                PrimaryUnit: {"name":"PrimaryUnit","type":"string","declared_type":"string","default":"TiB","enum":["TiB","TB"],"required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:143","description":"Preferred display unit for capacity values: TiB (default) or TB."}
+                SkipHealthChecks: {"name":"SkipHealthChecks","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:147","description":"Skip the health check phase (faster runs when only capacity data is needed)."}
+                Author: {"name":"Author","type":"string","declared_type":"string","default":"","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:150","description":"Author name embedded in generated reports."}
+                Company: {"name":"Company","type":"string","declared_type":"string","default":"","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:153","description":"Company or organization name embedded in generated reports."}
+                MaintenanceReserveTarget: {"name":"MaintenanceReserveTarget","type":"string","declared_type":"string","default":"N+1","enum":["None","N+1","N+2"],"required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:156","description":"The MaintenanceReserveTarget parameter of Invoke-S2DCartographer."}
+                PassThru: {"name":"PassThru","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCartographer.ps1:160","description":"Return the S2DClusterData object in addition to writing files."}
+            Modules_Public_Invoke_S2DCapacityWhatIf:
+              type: object
+              area: "Modules/Public/Invoke-S2DCapacityWhatIf.ps1 (Invoke-S2DCapacityWhatIf)"
+              properties:
+                BaselineSnapshot: {"name":"BaselineSnapshot","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:72","description":"Path to a JSON snapshot file produced by S2DCartographer (SchemaVersion 1.0)."}
+                InputObject: {"name":"InputObject","type":"object","declared_type":"Object","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:75","description":"An S2DClusterData object piped from Invoke-S2DCartographer -PassThru."}
+                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:78","description":"Connect to a live cluster, collect data, then immediately model. Re-running with different scenario parameters will not re-hit the cluster."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:82","description":"Like -ClusterName, but the cluster and its credential come from the environment's infrastructure.yml (azurelocal-toolkit, schema 5): cluster.name, and the Key Vault secret of the LCM user (identity.active_directory.lcm_user.password as a keyvault://<vault>/<secret> reference). -ClusterName overrides the name from the file. See Connect-S2DCluster -InfrastructureFile. Needs powershell-yaml."}
+                AddNodes: {"name":"AddNodes","type":"integer","declared_type":"int","default":"0","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:85","description":"Number of nodes to add. New nodes are assumed to have the same disk configuration as the average existing node (disk count × disk size)."}
+                AddDisksPerNode: {"name":"AddDisksPerNode","type":"integer","declared_type":"int","default":"0","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:86","description":"Number of capacity disks to add per existing node. Enforces symmetry."}
+                NewDiskSizeTB: {"name":"NewDiskSizeTB","type":"object","declared_type":"Double","default":"0","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:87","description":"Size in decimal TB of new disks added via -AddNodes or -AddDisksPerNode. Defaults to the existing largest disk size."}
+                ReplaceDiskSizeTB: {"name":"ReplaceDiskSizeTB","type":"object","declared_type":"Double","default":"0","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:88","description":"Model replacing all capacity disks with disks of this size in decimal TB. Node and disk counts remain the same."}
+                ChangeResiliency: {"name":"ChangeResiliency","type":"integer","declared_type":"int","default":"0","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:89","description":"Override the resiliency factor (NumberOfDataCopies). E.g. 2 = 2-way mirror, 3 = 3-way mirror."}
+                OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:91","description":"Directory to write reports to. If omitted no files are written."}
+                Format: {"name":"Format","type":"array","declared_type":"String[]","default":"@('Html')","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:92","description":"Report formats to generate. Accepts Html, Json. Default: Html."}
+                PassThru: {"name":"PassThru","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Invoke-S2DCapacityWhatIf.ps1:93","description":"Return the what-if result object to the pipeline."}
+            Modules_Public_New_S2DReport:
+              type: object
+              area: "Modules/Public/New-S2DReport.ps1 (New-S2DReport)"
+              properties:
+                InputObject: {"name":"InputObject","type":"object","declared_type":"Object","required":"Y","read_at":"Modules/Public/New-S2DReport.ps1:55","description":"S2DClusterData object from Invoke-S2DCartographer -PassThru. Accepts pipeline input."}
+                Format: {"name":"Format","type":"array","declared_type":"String[]","enum":["Html","Word","Pdf","Excel","Json","Csv","All"],"required":"Y","read_at":"Modules/Public/New-S2DReport.ps1:58","description":"One or more output formats: Html, Word, Pdf, Excel, Json, Csv, All. All = Html + Word + Pdf + Excel + Json (everything except Csv, which is opt-in)."}
+                OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"C:\\S2DCartographer","required":"N","read_at":"Modules/Public/New-S2DReport.ps1:62","description":"Destination folder for report files. Created if it does not exist."}
+                Author: {"name":"Author","type":"string","declared_type":"string","default":"","required":"N","read_at":"Modules/Public/New-S2DReport.ps1:65","description":"Author name embedded in the report header."}
+                Company: {"name":"Company","type":"string","declared_type":"string","default":"","required":"N","read_at":"Modules/Public/New-S2DReport.ps1:68","description":"Company or organization name embedded in the report header."}
+                IncludeNonPoolDisks: {"name":"IncludeNonPoolDisks","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/New-S2DReport.ps1:71","description":"Include non-pool disks (boot drives, SAN LUNs) in the Physical Disk Inventory table. Default is to show pool members only. Does NOT affect the Json or Csv outputs — those always contain every disk with an IsPoolMember flag so downstream tooling has full fidelity."}
+            Modules_Public_New_S2DDiagram:
+              type: object
+              area: "Modules/Public/New-S2DDiagram.ps1 (New-S2DDiagram)"
+              properties:
+                InputObject: {"name":"InputObject","type":"object","declared_type":"Object","required":"Y","read_at":"Modules/Public/New-S2DDiagram.ps1:40","description":"S2DClusterData object from Invoke-S2DCartographer -PassThru. Accepts pipeline input."}
+                DiagramType: {"name":"DiagramType","type":"array","declared_type":"String[]","default":"All","enum":["Waterfall","DiskNodeMap","PoolLayout","Resiliency","HealthCard","TiBTBReference","All"],"required":"N","read_at":"Modules/Public/New-S2DDiagram.ps1:43","description":"One or more diagram types to generate, or 'All'."}
+                OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"C:\\S2DCartographer","required":"N","read_at":"Modules/Public/New-S2DDiagram.ps1:47","description":"Destination folder for SVG files. Created if it does not exist."}
+            Modules_Public_Export_S2DHealthConfig:
+              type: object
+              area: "Modules/Public/Export-S2DHealthConfig.ps1 (Export-S2DHealthConfig)"
+              properties:
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"(Join-Path (Get-Location) 'health-checks.json')","required":"N","read_at":"Modules/Public/Export-S2DHealthConfig.ps1:34","description":"Path to write the exported JSON. Defaults to 'health-checks.json' in the current directory."}
+            Modules_Public_Import_S2DHealthConfig:
+              type: object
+              area: "Modules/Public/Import-S2DHealthConfig.ps1 (Import-S2DHealthConfig)"
+              properties:
+                Path: {"name":"Path","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/Import-S2DHealthConfig.ps1:43","description":"Path to the health-checks.json file to load and activate."}
+                Validate: {"name":"Validate","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Import-S2DHealthConfig.ps1:46","description":"Schema-check the file without activating it. Returns a result object."}
+                Default: {"name":"Default","type":"boolean","declared_type":"switch","required":"N","read_at":"Modules/Public/Import-S2DHealthConfig.ps1:49","description":"Reset to the shipped default config. Clears any active in-memory override."}
     draftsman:
       type: object
       properties:
@@ -24798,10 +25176,6 @@ tools:
               type: object
               area: "config/variables/variables.yml"
               properties:
-                cluster_name: {"name":"cluster_name","type":"string","declared_type":"string","default":"(empty)","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","source_key":"cluster.name","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Azure Local cluster name. The per-cluster file (config/clusters/cluster.yml) replaces it when -ClusterConfigPath is given."}
-                cluster_domain: {"name":"cluster_domain","type":"string","declared_type":"string","default":"(empty)","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","source_key":"identity.active_directory.domain_fqdn","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Active Directory domain for the cluster. The per-cluster file replaces it when given."}
-                cluster_nodes: {"name":"cluster_nodes","type":"array","declared_type":"array","default":"(empty list)","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","source_key":"nodes[].name","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. List of cluster node hostnames. The per-cluster file replaces it when given."}
-                csv_path: {"name":"csv_path","type":"string","declared_type":"string","default":"C:\\ClusterStorage\\Volume1","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio. Path to the Cluster Shared Volume for VM storage"}
                 collect_volume_path: {"name":"collect_volume_path","type":"string","declared_type":"string","default":"C:\\ClusterStorage\\Collect","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet. Path to the VMFleet Collect volume (ReFS, 200GB+)"}
                 base_vhd_path: {"name":"base_vhd_path","type":"string","declared_type":"string","default":"(empty)","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet. Path to the Windows Server Core base VHDX for fleet VMs"}
                 vm_count_per_node: {"name":"vm_count_per_node","type":"integer","declared_type":"integer","default":"10","required":"Y","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet. Number of fleet VMs to create per cluster node"}
@@ -24840,7 +25214,6 @@ tools:
                 report_author: {"name":"report_author","type":"string","declared_type":"string","default":"Azure Local Load Tools","required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Author attribution on generated reports"}
                 include_raw_data: {"name":"include_raw_data","type":"boolean","declared_type":"boolean","default":"true","required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Include raw metric data in Excel report"}
                 credential_source: {"name":"credential_source","type":"string","declared_type":"string","default":"Auto","enum":["Auto","KeyVault","Environment","Parameter"],"required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON (fio, iperf, hammerdb, stress-ng and vmfleet.json ship Auto); not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Where a credential comes from: Auto (a parameter, then an environment variable, then the Key Vault mapping; stops when none has a value), KeyVault, Environment or Parameter. Nothing prompts."}
-                keyvault_name: {"name":"keyvault_name","type":"string","declared_type":"string","default":"(empty)","required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","source_key":"key_vaults[].name","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Azure Key Vault name for credential storage"}
                 log_level: {"name":"log_level","type":"string","declared_type":"string","default":"INFO","enum":["DEBUG","INFO","WARNING","ERROR","CRITICAL"],"required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Minimum log severity: DEBUG, INFO, WARNING, ERROR, CRITICAL"}
                 log_retention_days: {"name":"log_retention_days","type":"integer","declared_type":"integer","default":"30","required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Number of days to retain log files"}
                 log_max_file_size_mb: {"name":"log_max_file_size_mb","type":"integer","declared_type":"integer","default":"50","required":"N","read_at":"common/modules/ConfigManager/ConfigManager.psm1 Export-SolutionConfig copies it to the solution JSON; not read by code in a script","description":"Used by vmfleet, fio, iperf, hammerdb, stress-ng. Maximum log file size in MB before rotation"}
@@ -25172,6 +25545,7 @@ tools:
                 ClusterConfigPath: {"name":"ClusterConfigPath","type":"string","declared_type":"string","required":"N","read_at":"common/helpers/Initialize-Environment.ps1:19","description":"The per-cluster YAML file (cluster name, nodes, CSV path)."}
                 Solution: {"name":"Solution","type":"string","declared_type":"string","default":"VMFleet","enum":["VMFleet","fio","iPerf","HammerDB","StressNg"],"required":"N","read_at":"common/helpers/Initialize-Environment.ps1:22","description":"Tool to prepare the environment for."}
                 SkipPrerequisiteCheck: {"name":"SkipPrerequisiteCheck","type":"boolean","declared_type":"switch","required":"N","read_at":"common/helpers/Initialize-Environment.ps1:26","description":"Skip the check for installed prerequisites."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"common/helpers/Initialize-Environment.ps1:28","description":"The environment's infrastructure.yml (schema 5) or its loadtools cut: the cluster facts (cluster name, nodes, domain, cluster shared volume, Azure scope, Key Vault) come from it. config/variables/variables.yml holds the test settings only."}
             tools_fio_scripts_Collect_FioResults_ps1:
               type: object
               area: "tools/fio/scripts/Collect-FioResults.ps1"
@@ -26100,6 +26474,7 @@ tools:
                 RedactMapPath: {"name":"RedactMapPath","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:235","description":"Invoke-AzureLocalRanger. Write the private mapping file that reverses the redaction to this path (relative paths are placed next to the manifest). Only written when this parameter or config output.redactMapPath is set. Keep the file out of any shared or published package."}
                 RedactTerm: {"name":"RedactTerm","type":"array","declared_type":"string[]","required":"N","read_at":"Modules/Public/10-Commands.ps1:236","description":"Invoke-AzureLocalRanger. Extra words that must disappear from every output (for example a customer short name embedded in resource names). Replaced everywhere, including inside longer names."}
                 RedactSeed: {"name":"RedactSeed","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:237","description":"Invoke-AzureLocalRanger. Optional seed that makes GUID and serial pseudonyms reproducible across runs."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:180","description":"Path to the Azure Local infrastructure.yml (schema 5), or its ranger cut. Ranger resolves the cluster FQDN and nodes, the BMC endpoints and Key Vault credential references and the Azure scope from it; a value in -ConfigPath, -ConfigObject or a structural override parameter wins. Ranger only reads the file: after the deployment it compares and reports drift, it never writes back to the registry (owner decision O6)."}
             Modules_Public_10_Commands_ps1_New_AzureLocalRangerConfig:
               type: object
               area: "Modules/Public/10-Commands.ps1 (New-AzureLocalRangerConfig)"
@@ -26173,6 +26548,7 @@ tools:
                 SubscriptionId: {"name":"SubscriptionId","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1084","source_key":"azure.subscription_id","description":"Test-AzureLocalRangerPrerequisites. Same as Invoke-AzureLocalRanger -SubscriptionId."}
                 TenantId: {"name":"TenantId","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1085","source_key":"azure.tenant_id","description":"Test-AzureLocalRangerPrerequisites. Same as Invoke-AzureLocalRanger -TenantId."}
                 ResourceGroup: {"name":"ResourceGroup","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1086","source_key":"azure.resource_group","description":"Test-AzureLocalRangerPrerequisites. Same as Invoke-AzureLocalRanger -ResourceGroup."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1095","description":"Optional infrastructure.yml (schema 5) whose targets are resolved into the configuration that is validated."}
             Modules_Public_10_Commands_ps1_Test_RangerPermissions:
               type: object
               area: "Modules/Public/10-Commands.ps1 (Test-RangerPermissions)"
@@ -26180,6 +26556,7 @@ tools:
                 ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1292","description":"Test-RangerPermissions. Optional path to a Ranger YAML/JSON config. When omitted the audit uses the built-in defaults merged with any -ConfigObject supplied."}
                 ConfigObject: {"name":"ConfigObject","type":"object","declared_type":"object","required":"N","read_at":"Modules/Public/10-Commands.ps1:1293","description":"Test-RangerPermissions. Optional in-memory config hashtable. Merged over defaults."}
                 OutputFormat: {"name":"OutputFormat","type":"string","declared_type":"string","default":"console","enum":["console","json","markdown"],"required":"N","read_at":"Modules/Public/10-Commands.ps1:1294","description":"Test-RangerPermissions. console (default)  -  colour-coded summary printed to host, object returned. json  -  JSON string returned; nothing printed. markdown  -  GFM markdown string returned; nothing printed."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"Modules/Public/10-Commands.ps1:1314","description":"Optional infrastructure.yml (schema 5): the audit checks the scope it resolves (subscription, resource group, Key Vault references)."}
             Modules_Public_10_Commands_ps1_Invoke_RangerWizard:
               type: object
               area: "Modules/Public/10-Commands.ps1 (Invoke-RangerWizard)"
@@ -26259,6 +26636,7 @@ tools:
                 ztpEvents_path: {"name":"ztpEvents.path","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ZtpEvents.ps1 Invoke-AzlSonarZtpEventLoop (all)","description":"ZTP event file (ztp-events.jsonl). Master file: provisioning.simplified.evidence_path + ztp-events.jsonl (simplified route only)."}
                 osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"<events folder>/os-configuration-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory (all)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1, which writes it to the same events folder by default."}
                 armEventsPath: {"name":"armEventsPath","type":"string","declared_type":"string","default":"<events folder>/arm-deployment-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 Get-AzlSonarEventsDirectory (armmon)","description":"ARM Validate and Deploy event file from Invoke-AzureLocalArmDeployment.ps1, which writes it to the same events folder by default (-ReportDirectory moves it only when deployment.events_directory is not set)."}
+                updateEventsPath: {"name":"updateEventsPath","type":"string","declared_type":"string","default":"<events folder>/update-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory","description":"Solution update event file written by the toolkit's update scripts (Start-AzureLocalSolutionUpdate.ps1), in the same events folder by default."}
                 verificationEventsPath: {"name":"verificationEventsPath","type":"string","declared_type":"string","default":"<gate report directory>/precluster-verification-events.jsonl with the master file (deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder: the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file; the toolkit rule Resolve-AzlPclReportDirectory), else none","enum":["non-empty text; relative to the config file; a folder is accepted (the file name is added)"],"required":"no","read_at":"Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)","description":"Event file of the pre-cluster verification gate (precluster-verification-events.jsonl, written next to report.json and summary.md in the gate report directory)."}
                 discoveryPath: {"name":"discoveryPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; a folder or one file; relative to the config file"],"required":"no","read_at":"Config.ps1; Discovery.ps1","description":"Folder written by the toolkit Invoke-HardwareDiscovery.ps1 -OutputPath (<ServiceTag>.json and discovery-summary.json). Master file: evidence_path + discovery."}
                 monitor: {"name":"monitor","type":"string","declared_type":"string","default":"Auto","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (case and dashes ignored)"],"required":"no","read_at":"Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan","description":"Stage to watch alone; -Monitor overrides. Documented in sonar-events docs/config.md and run.md only."}
@@ -27195,8 +27573,8 @@ tools:
               type: object
               area: "ztp-cluster-inputs.yaml"
               properties:
-                arc_machine_names: {"name":"arc_machine_names","type":"object","declared_type":"object","enum":["node host name to Arc machine name"],"required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:55","description":"Cluster inputs (ztp-cluster-inputs.yaml/.json): the block for the cluster deployment environment file."}
-                release_azure_local_version: {"name":"release.azure_local_version","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:56","description":"Cluster inputs: solution build installed (from solution.vsrVersion)."}
+                nodes_arc_machine_name: {"name":"nodes[].arc_machine_name","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:55","source_key":"nodes[].arc_machine_name","description":"The Arc machine name Azure has for each node (the handoff records it; on the live runs <device-id>-1), written to nodes[].arc_machine_name of infrastructure.yml for the cluster deployment."}
+                deployment_solution_version: {"name":"deployment.solution_version","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:56","source_key":"deployment.solution_version","description":"The solution build the maintenance image installed (solution.vsrVersion of the handoff), written to deployment.solution_version of infrastructure.yml. Not written when the handoff says latest."}
             ztp_handoff_json_schema_2:
               type: object
               area: "ztp-handoff.json (schema 2)"
@@ -27246,9 +27624,10 @@ tools:
               area: "simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1"
               properties:
                 HandoffPath: {"name":"HandoffPath","type":"string","declared_type":"string","required":"Y","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:29","description":"ztp-handoff.json from New-ZtpHandoff.ps1."}
-                Format: {"name":"Format","type":"string","declared_type":"string","default":"'Yaml'","enum":["Yaml","Json"],"required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:30","description":"Yaml (default) or Json."}
-                Only: {"name":"Only","type":"string","declared_type":"string[]","enum":["arc_machine_names","release"],"required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:31","description":"Emit only these keys (default: all that the handoff can fill)."}
+                Format: {"name":"Format","type":"string","declared_type":"string","default":"'Yaml'","enum":["Yaml","Json"],"required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:30","description":"Yaml (default) or Json: the printed patch."}
+                Only: {"name":"Only","type":"string","declared_type":"string[]","enum":["nodes","deployment"],"required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:31","description":"Emit and apply only these keys: nodes (nodes[].arc_machine_name) or deployment (deployment.solution_version). Default: both."}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:32","description":"Also write the text here."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/Convert-ZtpHandoffToClusterInputs.ps1:33","description":"The infrastructure.yml to change: nodes[].arc_machine_name and deployment.solution_version are written into it (comments, order and quoting stay, and a backup is written first). Without it nothing but the printed patch is produced."}
             simplified_provisioning_Get_ZtpBmcJob_ps1:
               type: object
               area: "simplified-provisioning/Get-ZtpBmcJob.ps1"
