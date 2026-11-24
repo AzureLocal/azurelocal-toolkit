@@ -16,8 +16,9 @@ BeforeAll {
 
     # Stubs with the Az signatures the script uses, so the mocks work whether or not Az.Resources is installed.
     function Get-AzContext { [CmdletBinding()] param() }
-    function Get-AzManagementGroup { [CmdletBinding()] param([string]$GroupName) }
-    function Get-AzManagementGroupSubscription { [CmdletBinding()] param([string]$GroupName, [string]$SubscriptionId) }
+    # Both Get cmdlets declare SupportsShouldProcess in Az.Resources (10.2), so they take -WhatIf like the real ones.
+    function Get-AzManagementGroup { [CmdletBinding(SupportsShouldProcess)] param([string]$GroupName) }
+    function Get-AzManagementGroupSubscription { [CmdletBinding(SupportsShouldProcess)] param([string]$GroupName, [string]$SubscriptionId) }
     function New-AzManagementGroupSubscription {
         [CmdletBinding(SupportsShouldProcess)]
         param([string]$GroupName, [guid]$SubscriptionId)
@@ -93,6 +94,15 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $r.ExitCode | Should -Be 0
             $r.Result.Moved | Should -Be 1
         }
+
+        It 'treats the "is not under the group" answer of Az.Resources 10 as "not under that group yet" and moves (tplabs 2026-11-23)' {
+            Mock Get-AzManagementGroupSubscription { throw "'/subscriptions/$SubscriptionId' is not under the group '$GroupName." }
+            $r = Invoke-Move (New-InfraFile @(, (New-Sub 'sub-a' $global:AzlMoveTestSubA 'mg-platform')))
+            $r.ExitCode | Should -Be 0
+            $r.Result.Moved | Should -Be 1
+            $r.Result.Failed | Should -Be 0
+            Should -Invoke New-AzManagementGroupSubscription -Times 1 -Exactly -ParameterFilter { "$SubscriptionId" -eq $global:AzlMoveTestSubA }
+        }
     }
 
     Context 'the subscription is already under its group (idempotent)' {
@@ -135,6 +145,20 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $r.Result.Moved | Should -Be 0
             Should -Invoke New-AzManagementGroupSubscription -Times 0 -Exactly
             $r.Text | Should -Match 'would be moved'
+        }
+
+        It 'reports a subscription already under its group as in place, not as a planned move (tplabs 2026-11-23)' {
+            # Like Az.Resources 10.2: under -WhatIf the Get cmdlet asks ShouldProcess and returns nothing, unless it is told -WhatIf:$false.
+            Mock Get-AzManagementGroupSubscription {
+                if ($WhatIfPreference -and -not ($PesterBoundParameters.ContainsKey('WhatIf') -and -not $PesterBoundParameters['WhatIf'])) { return }
+                [pscustomobject]@{ Name = $SubscriptionId; Parent = "/providers/Microsoft.Management/managementGroups/$GroupName" }
+            }
+            $file = New-InfraFile @((New-Sub 'sub-a' $global:AzlMoveTestSubA 'mg-platform'), (New-Sub 'sub-b' $global:AzlMoveTestSubB 'mg-platform'))
+            $r = Invoke-Move $file -DryRun
+            $r.ExitCode | Should -Be 0
+            $r.Result.AlreadyInPlace | Should -Be 2
+            $r.Result.Planned | Should -Be 0
+            $r.Text | Should -Not -Match 'would be moved'
         }
 
         It 'still writes the progress lines to -LogPath' {
@@ -260,6 +284,11 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $script:Text | Should -Match "\`$ErrorActionPreference = 'Stop'"
             $script:Text | Should -Match 'SupportsShouldProcess'
             $script:Text | Should -Not -Match 'Read-Host|Get-Credential|\$Host\.UI\.Prompt'
+        }
+
+        It 'reads where a subscription is with -WhatIf:$false -Confirm:$false, so neither a dry run nor a declined prompt hides it (tplabs 2026-11-23)' {
+            $script:Text | Should -Match 'Get-AzManagementGroupSubscription [^\r\n]*-WhatIf:\$false -Confirm:\$false'
+            $script:Text | Should -Match 'Get-AzManagementGroup -GroupName [^\r\n]*-WhatIf:\$false -Confirm:\$false'
         }
 
         It 'reads its values through the toolkit loader, never variables.yml, and holds no GUID or address' {

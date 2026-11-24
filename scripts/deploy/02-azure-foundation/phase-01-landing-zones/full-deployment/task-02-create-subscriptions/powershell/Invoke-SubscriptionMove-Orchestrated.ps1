@@ -63,6 +63,9 @@ Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $ZeroGuid = [guid]::Empty.ToString()   # the all-zero placeholder of the templates
 $NotFound = 'NotFound|could not be found|does not exist|\b404\b'
+# Get-AzManagementGroupSubscription answers a subscription that is under another group with a CloudException whose whole message is
+# "'/subscriptions/<id>' is not under the group '<group>." (no NotFound or 404 in the text; Az.Resources 10.2). That means "move it".
+$NotUnderGroup = "$NotFound|is not under the group"
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -121,7 +124,7 @@ Write-Line "Moving subscriptions under their management groups ($(@($plan | Wher
 # a target group is looked up once
 $groupExists = @{}
 foreach ($group in ($plan | Where-Object { -not $_.Skip } | ForEach-Object { $_.Group } | Select-Object -Unique)) {
-    try { $groupExists[$group] = [bool](Get-AzManagementGroup -GroupName $group -ErrorAction Stop) }
+    try { $groupExists[$group] = [bool](Get-AzManagementGroup -GroupName $group -WhatIf:$false -Confirm:$false -ErrorAction Stop) }
     catch {
         if ($_.Exception.Message -notmatch $NotFound) { Exit-Failed "Management group '$group' could not be read: $($_.Exception.Message)" }
         $groupExists[$group] = $false
@@ -145,8 +148,11 @@ $results = foreach ($item in $plan) {
             continue
         }
         $current = $null
-        try { $current = Get-AzManagementGroupSubscription -GroupName $item.Group -SubscriptionId $item.Id -ErrorAction Stop }
-        catch { if ($_.Exception.Message -notmatch $NotFound) { throw } }
+        # -WhatIf:$false -Confirm:$false: this Get cmdlet declares SupportsShouldProcess and asks ShouldProcess (Az.Resources 10.2). Under
+        # -WhatIf, or a declined -Confirm prompt, it returns nothing, so a subscription already in place would be planned or sent for a move.
+        # It only reads.
+        try { $current = Get-AzManagementGroupSubscription -GroupName $item.Group -SubscriptionId $item.Id -WhatIf:$false -Confirm:$false -ErrorAction Stop }
+        catch { if ($_.Exception.Message -notmatch $NotUnderGroup) { throw } }
 
         if ($current) {
             $row.Action = 'AlreadyInPlace'
