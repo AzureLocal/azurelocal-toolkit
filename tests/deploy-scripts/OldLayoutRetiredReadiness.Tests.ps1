@@ -64,16 +64,15 @@ Describe 'The scripts a schema 5 script replaces are gone' {
     It '<Path> is removed' -ForEach $script:RemovedOutside {
         Test-Path -LiteralPath (Join-Path $script:Repo $Path) | Should -BeFalse
     }
-    It 'the task folder of a removed script keeps a script (the real one, or its placeholder) and its catalogue entry' -ForEach @($script:Removed | Where-Object { $_.Folder -ne 'common' }) {
-        # A placeholder goes once a real script of the folder does the task (task 01 of the Active Directory phase: Set-ADConfiguration.ps1).
+    It 'the task folder of a removed script stays (the real script, or a .gitkeep under O10) with its catalogue entry' -ForEach @($script:Removed | Where-Object { $_.Folder -ne 'common' }) {
+        # A placeholder goes once a real script of the folder does the task, or when no page names it (O10); the folder stays while a page names the task.
         $taskDirectory = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $Folder.Replace('/', [IO.Path]::DirectorySeparatorChar))
-        @(Get-ChildItem -LiteralPath $taskDirectory -Filter '*.ps1').Count | Should -BeGreaterThan 0
+        @(Get-ChildItem -LiteralPath $taskDirectory -File).Count | Should -BeGreaterThan 0
         $task = $Folder -replace '/powershell$', ''
         $catalogue = Import-PowerShellDataFile -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'TaskCatalogue.psd1'))
         @($catalogue.Tasks | Where-Object { $_.Path -eq $task }).Count | Should -Be 1
     }
 }
-
 Describe 'No script of these folders uses the old layout' {
     It 'no script takes -ConfigPath or -ConfigFile, or an alias of them' {
         $found = foreach ($file in Get-ScopeScript) {
@@ -115,14 +114,9 @@ Describe 'No script of these folders uses the old layout' {
     }
 }
 
-Describe 'The placeholders of scripts/deploy 03, 05 and 06 take -InfrastructureFile' {
-    It 'finds the placeholders (42 of them when this was written; 27 after K2 batch 3 retired four whose task a real script does; 11 after D140 made seven real and retired eleven)' {
-        $count = 0
-        foreach ($area in '03-onprem-readiness', '05-operational-foundations', '06-testing-validation') {
-            $count += @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $area)) -Recurse -File -Filter '*.ps1' |
-                    Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'Invoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)\b' }).Count
-        }
-        $count | Should -BeGreaterThan 5
+Describe 'No placeholder is left in scripts/deploy 03, 05 and 06 (O10)' {
+    It 'finds no placeholder (42 when this was written; 27 after K2 batch 3; 11 after D140; none after O10 removed those no page names)' {
+        @($script:Placeholders | ForEach-Object Name) | Should -BeNullOrEmpty
     }
     It '<Name> takes a mandatory -InfrastructureFile and has no -ConfigPath, -Credential or -TargetNode' -ForEach $script:Placeholders {
         $text = Get-Content -LiteralPath $Path -Raw
@@ -130,7 +124,6 @@ Describe 'The placeholders of scripts/deploy 03, 05 and 06 take -InfrastructureF
         $text | Should -Not -Match 'ConfigPath|\$Credential|\$TargetNode'
     }
 }
-
 Describe 'DeploymentScaffold.psm1 and the generator' {
     BeforeAll {
         $script:Scaffold = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')

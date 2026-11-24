@@ -19,6 +19,17 @@ BeforeDiscovery {
         @{ Task = '02-azure-foundation/phase-04-azure-management-infrastructure/task-13-configure-utility-server'; Name = 'Invoke-JumpServer-Orchestrated.ps1'; FolderGone = $true }
         @{ Task = '02-azure-foundation/phase-04-azure-management-infrastructure/task-14-configure-ndm-server'; Name = 'Invoke-NdmServer-Orchestrated.ps1'; FolderGone = $true }
         @{ Task = '02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse'; Name = 'Invoke-Lighthouse-Orchestrated.ps1'; FolderGone = $true }
+        @{ Task = '03-onprem-readiness/phase-01-active-directory/task-02-security-groups'; Name = 'Invoke-ADSecurityGroups-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records'; Name = 'Invoke-DnsForwarding-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-01-active-directory/task-05-group-assignments'; Name = 'Invoke-ADGroupMemberships-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection'; Name = 'Invoke-HardwareInspection-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification'; Name = 'Invoke-InfrastructurePrep-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification'; Name = 'Invoke-OpengearVerification-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-02-enterprise-readiness/task-04-validation-signoff'; Name = 'Invoke-ValidationSignoff-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server'; Name = 'Invoke-OpengearEndpoint-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration'; Name = 'Invoke-PowerSwitchEndpoint-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-03-firewall-endpoint-verification'; Name = 'Invoke-FirewallEndpoint-Orchestrated.ps1'; FolderGone = $false }
+        @{ Task = '03-onprem-readiness/phase-03-network-infrastructure/task-04-network-validation'; Name = 'Invoke-NetworkReadiness-Orchestrated.ps1'; FolderGone = $false }
     ) | ForEach-Object {
         $task = [IO.Path]::Combine($deploy, $_.Task.Replace('/', [IO.Path]::DirectorySeparatorChar))
         $_ + @{ TaskPath = $task; FilePath = [IO.Path]::Combine($task, 'powershell', $_.Name) }
