@@ -180,6 +180,8 @@ Describe 'New-VmImage.azcli.ps1' {
         Set-AzHandler 'stack-hci-vm storagepath show' { '{"name":"sp-workloads-01","id":"/subscriptions/x/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/storageContainers/sp-workloads-01"}' }
         Set-AzHandler 'stack-hci-vm image create' { $global:AzlImageState.Created = $true }
         Set-AzHandler 'tag update' { '' }
+        # the Edge Marketplace offer of the instance: the newest version is not listed first
+        Set-AzHandler 'rest' { '{"name":"microsoftwindowsserver:windowsserver","properties":{"marketplaceSkus":[{"marketplaceSkuId":"2025-datacenter-azure-edition","marketplaceSkuVersions":[{"name":"26100.32995.260801"},{"name":"26100.33438.260905"}]}]}}' }
     }
     AfterAll { Remove-Variable -Name AzlImageState -Scope Global -ErrorAction SilentlyContinue }
 
@@ -191,7 +193,11 @@ Describe 'New-VmImage.azcli.ps1' {
         $create.Options['--publisher'] | Should -Be 'microsoftwindowsserver'
         $create.Options['--offer'] | Should -Be 'windowsserver'
         $create.Options['--sku'] | Should -Be '2025-datacenter-azure-edition'
-        $create.Options['--version'] | Should -Be 'latest'
+        # latest is resolved from the Edge Marketplace of the instance: Azure would take the newest Azure Marketplace version, which the instance may not offer
+        $create.Options['--version'] | Should -Be '26100.33438.260905'
+        $rest = (Get-AzCall 'rest')[0]
+        $rest.Options['--url'] | Should -Be "/subscriptions/$($global:AzlTestSubscription)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-cl-01/providers/Microsoft.EdgeMarketplace/offers/microsoftwindowsserver:windowsserver"
+        $rest.Options['--method'] | Should -Be 'get'
         $create.Options['--os-type'] | Should -Be 'Windows'
         $create.Options['--custom-location'] | Should -Be $script:CustomLocationId
         $create.Options['--storage-path-id'] | Should -Match 'storageContainers/sp-workloads-01$'
@@ -203,6 +209,13 @@ Describe 'New-VmImage.azcli.ps1' {
         $tag.Options['--tags'] | Should -Not -BeNullOrEmpty
         @($r.Rows.Action) | Should -Be @('Created')
         $r.Rows[0].Version | Should -Be '26100.1.1'
+    }
+
+    It 'fails the image and creates nothing when the Edge Marketplace of the instance does not offer its SKU' {
+        $r = Invoke-AzTool $script:VmImage (New-AzTestInfraFile { param($d) $d.storage.vm_images[0].sku = '2019-datacenter-core-g2' })
+        $r.ExitCode | Should -Be 1
+        $r.Rows[0].Detail | Should -Match 'has no SKU'
+        (Get-AzCall 'stack-hci-vm image create').Count | Should -Be 0
     }
 
     It 'changes nothing under -WhatIf' {

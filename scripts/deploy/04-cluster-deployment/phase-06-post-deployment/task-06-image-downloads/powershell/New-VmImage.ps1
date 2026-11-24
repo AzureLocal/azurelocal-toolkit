@@ -34,7 +34,7 @@
     the tenant in azure.tenant_id first. The Az context is put back when the script ends.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags
+        azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, cluster.name (for a latest version)
         storage.paths[]: name
         storage.vm_images[]: name, os_type, publisher, offer, sku, version, storage_path
 
@@ -80,6 +80,8 @@ $VersionPattern = '^(latest|[0-9]+(\.[0-9]+){1,3})$'
 # Microsoft Learn, Create Azure Local VM image using Azure Marketplace images: if the version is left empty, it is the latest.
 $DefaultVersion = 'latest'
 $Provider = 'Microsoft.EdgeMarketplace'
+# The Microsoft.EdgeMarketplace API version the offers of the instance are read with (Learn: Edge Marketplace REST API, Offers - Get).
+$EdgeMarketplaceApiVersion = '2023-08-01'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -124,6 +126,8 @@ if (-not $group) { Exit-InputProblem 'azure.resource_group is missing. The image
 if (-not $location) { Exit-InputProblem 'azure.location is missing.' }
 if (-not $customLocation) { Exit-InputProblem 'azure.custom_location is missing. It is the custom location of the Azure Local instance.' }
 $customLocationId = "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.ExtendedLocation/customLocations/$customLocation"
+# cluster.name: the instance whose Edge Marketplace gives the newest version of an image the file asks for as latest.
+$clusterName = Get-Text 'cluster.name'
 
 $plans = [System.Collections.Generic.List[object]]::new()
 $seen = @{}
@@ -157,6 +161,10 @@ foreach ($entry in $imageList) {
 # ---- preconditions (read only)
 $needed = 'Get-AzContext', 'Set-AzContext', 'Get-AzStackHCIVMImage', 'New-AzStackHCIVMImage', 'Get-AzResourceProvider'
 if (@($plans | Where-Object StoragePath).Count -gt 0) { $needed += 'Get-AzStackHCIVMStoragePath' }
+if (@($plans | Where-Object Version -EQ 'latest').Count -gt 0) {
+    if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. An image of storage.vm_images asks for the latest version, which is read from the Edge Marketplace of the instance.' }
+    $needed += 'Invoke-AzRestMethod'
+}
 foreach ($cmd in $needed) {
     if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) { Exit-Failed "$cmd was not found. Install the Az.Accounts, Az.Resources and Az.StackHCIVM modules: Install-Module Az.Accounts, Az.Resources, Az.StackHCIVM -Scope CurrentUser." }
 }
@@ -182,6 +190,26 @@ function Get-ImageState($Image) {
 function Get-ImageError($Image) {
     $parts = @('StatusErrorCode', 'StatusErrorMessage') | ForEach-Object { [string](Get-Property $Image $_) } | Where-Object { $_ }
     if ($parts) { $parts -join ': ' } else { 'Azure gave no error text.' }
+}
+
+# The newest version of a Marketplace image that the Edge Marketplace of the instance offers. 'latest' is not left to Azure: Azure takes the newest
+# version of the Azure Marketplace, which can be newer than the Edge Marketplace has, and the download then fails with
+# GenerateTokenFromEdgeMarketplaceServiceFailed (NotFound) (seen on a live instance: 20348.5873.261112 asked, 20348.5870.261110 offered).
+# Read with Invoke-AzRestMethod from <instance>/providers/Microsoft.EdgeMarketplace/offers/<publisher>:<offer>.
+function Resolve-EdgeMarketplaceVersion($Plan) {
+    $offerId = "$($Plan.Publisher):$($Plan.Offer)"
+    $path = "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.AzureStackHCI/clusters/$clusterName/providers/Microsoft.EdgeMarketplace/offers/${offerId}?api-version=$EdgeMarketplaceApiVersion"
+    $response = Invoke-AzRestMethod -Path $path -Method GET -ErrorAction Stop
+    if ([int]$response.StatusCode -eq 404) { throw "The Edge Marketplace of the instance '$clusterName' has no offer '$offerId'. Check publisher and offer (storage.vm_images[]) against the offers the instance lists." }
+    if ([int]$response.StatusCode -ge 300) { throw "The Edge Marketplace offer '$offerId' could not be read (HTTP $($response.StatusCode)): $($response.Content)" }
+    $offerData = $response.Content | ConvertFrom-Json -Depth 20
+    $skus = @($(if ($offerData.PSObject.Properties['properties'] -and $offerData.properties.PSObject.Properties['marketplaceSkus']) { $offerData.properties.marketplaceSkus }) | Where-Object { $null -ne $_ })
+    $sku = @($skus | Where-Object { [string]$_.marketplaceSkuId -eq $Plan.Sku })
+    if ($sku.Count -eq 0) { throw "The Edge Marketplace offer '$offerId' of the instance has no SKU '$($Plan.Sku)'. It offers: $(@($skus | ForEach-Object { [string]$_.marketplaceSkuId }) -join ', ')." }
+    $names = @($(if ($sku[0].PSObject.Properties['marketplaceSkuVersions']) { $sku[0].marketplaceSkuVersions }) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_.name } | Where-Object { $_ })
+    if ($names.Count -eq 0) { throw "The Edge Marketplace offers no version of '$offerId' SKU '$($Plan.Sku)'." }
+    $ordered = foreach ($n in $names) { $v = $null; $ok = [version]::TryParse($n, [ref]$v); [pscustomobject]@{ Name = $n; Version = $(if ($ok) { $v } else { [version]'0.0' }) } }
+    @($ordered | Sort-Object -Property Version, Name -Descending)[0].Name
 }
 
 $fatal = ''
@@ -229,11 +257,12 @@ try {
                     if (-not $path) { throw "The storage path '$($plan.StoragePath)' does not exist in '$group'. Run New-StoragePath.ps1 (task 05) first." }
                 }
 
-                $summary = "$($plan.OsType) $($plan.Publisher):$($plan.Offer):$($plan.Sku), version $($plan.Version)$(if ($plan.StoragePath) { ", storage path $($plan.StoragePath)" })"
+                $version = if ($plan.Version -eq 'latest') { Resolve-EdgeMarketplaceVersion $plan } else { $plan.Version }
+                $summary = "$($plan.OsType) $($plan.Publisher):$($plan.Offer):$($plan.Sku), version $version$(if ($plan.Version -eq 'latest') { ' (latest of the Edge Marketplace of the instance)' })$(if ($plan.StoragePath) { ", storage path $($plan.StoragePath)" })"
                 if ($PSCmdlet.ShouldProcess("VM image '$($plan.Name)' in '$group'", "Download ($summary)")) {
                     $arguments = @{
                         Name = $plan.Name; ResourceGroupName = $group; SubscriptionId = $subscriptionId; Location = $location; CustomLocationId = $customLocationId
-                        OSType = $plan.OsType; Publisher = $plan.Publisher; Offer = $plan.Offer; Sku = $plan.Sku; Version = $plan.Version; ErrorAction = 'Stop'
+                        OSType = $plan.OsType; Publisher = $plan.Publisher; Offer = $plan.Offer; Sku = $plan.Sku; Version = $version; ErrorAction = 'Stop'
                     }
                     if ($plan.StoragePath) { $arguments.StoragePathName = $plan.StoragePath }
                     if ($tags.Count) { $arguments.Tag = $tags }

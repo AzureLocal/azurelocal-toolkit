@@ -22,6 +22,9 @@ BeforeAll {
     function New-AzStackHCIVMImage { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId, [string]$Location, [string]$CustomLocationId, [string]$OSType, [string]$Publisher, [string]$Offer, [string]$Sku, [string]$Version, [string]$StoragePathName, [hashtable]$Tag) }
     function Get-AzStackHCIVMStoragePath { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$SubscriptionId) }
     function Remove-AzStackHCIVMImage { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName) }
+    function Invoke-AzRestMethod { [CmdletBinding()] param([string]$Path, [string]$Method) }
+    # The Edge Marketplace offer of the instance as Azure returns it: the newest version first is not assumed
+    $global:AzlImgEdgeOffer = '{"name":"microsoftwindowsserver:windowsserver","properties":{"marketplaceSkus":[{"marketplaceSkuId":"2025-datacenter-azure-edition","marketplaceSkuVersions":[{"name":"26100.32995.260801"},{"name":"26100.33438.260905"}]},{"marketplaceSkuId":"2022-datacenter-azure-edition-hotpatch","marketplaceSkuVersions":[{"name":"20348.5870.261110"}]}]}}'
 
     $global:AzlImgTenant = [guid]::NewGuid().ToString()
     $global:AzlImgSub = [guid]::NewGuid().ToString()
@@ -33,10 +36,11 @@ BeforeAll {
         $i
     }
     function New-InfraFile {
-        param([object[]]$Images = @((New-Image)), [object[]]$Paths = @([ordered]@{ name = 'sp-workloads-01'; path = 'C:\ClusterStorage\vol-workloads-01\vms' }), [hashtable]$Azure = @{}, [object]$Tags = $null)
+        param([object[]]$Images = @((New-Image)), [object[]]$Paths = @([ordered]@{ name = 'sp-workloads-01'; path = 'C:\ClusterStorage\vol-workloads-01\vms' }), [hashtable]$Azure = @{}, [object]$Tags = $null, [switch]$NoCluster)
         $az = [ordered]@{ tenant_id = $global:AzlImgTenant; subscription_id = $global:AzlImgSub; resource_group = 'rg-azl-01'; location = 'eastus'; custom_location = 'cl-azl-01' }
         foreach ($k in $Azure.Keys) { if ($null -eq $Azure[$k]) { $az.Remove($k) } else { $az[$k] = $Azure[$k] } }
         $doc = [ordered]@{ azure = $az; storage = [ordered]@{} }
+        if (-not $NoCluster) { $doc.cluster = [ordered]@{ name = 'azl-01' } }
         if ($Images) { $doc.storage.vm_images = @($Images) }
         if ($Paths) { $doc.storage.paths = @($Paths) }
         if ($Tags) { $doc.tags = $Tags }
@@ -63,7 +67,7 @@ BeforeAll {
 }
 
 Describe 'New-VmImage.ps1' {
-    AfterAll { Remove-Variable -Name AzlImgTenant, AzlImgSub, AzlImgHome, AzlImgExisting, AzlImgCreated, AzlImgNames -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-Variable -Name AzlImgTenant, AzlImgSub, AzlImgHome, AzlImgExisting, AzlImgCreated, AzlImgNames, AzlImgEdgeOffer -Scope Global -ErrorAction SilentlyContinue }
 
     BeforeEach {
         $global:AzlImgExisting = $null
@@ -80,6 +84,7 @@ Describe 'New-VmImage.ps1' {
         Mock New-AzStackHCIVMImage { $global:AzlImgNames += $Name; [pscustomobject]@{ Name = $Name } }
         Mock Get-AzStackHCIVMStoragePath { [pscustomobject]@{ Name = $Name } }
         Mock Remove-AzStackHCIVMImage { }
+        Mock Invoke-AzRestMethod { [pscustomobject]@{ StatusCode = 200; Content = $global:AzlImgEdgeOffer } }
     }
 
     Context 'downloading images' {
@@ -94,12 +99,28 @@ Describe 'New-VmImage.ps1' {
             }
         }
 
-        It 'sends version latest when the file gives none, and reports the version Azure resolved' {
+        It 'resolves latest to the newest version the Edge Marketplace of the instance offers (Azure would take a newer Azure Marketplace one), and reports the version' {
             $r = Invoke-Image (New-InfraFile)
-            Should -Invoke New-AzStackHCIVMImage -Times 1 -Exactly -ParameterFilter { $Version -eq 'latest' -and -not $StoragePathName }
+            Should -Invoke New-AzStackHCIVMImage -Times 1 -Exactly -ParameterFilter { $Version -eq '26100.33438.260905' -and -not $StoragePathName }
+            Should -Invoke Invoke-AzRestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq 'GET' -and $Path -eq "/subscriptions/$($global:AzlImgSub)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-01/providers/Microsoft.EdgeMarketplace/offers/microsoftwindowsserver:windowsserver?api-version=2023-08-01" }
             $r.Rows[0].Version | Should -Be '26100.4652.250808'
         }
 
+        It 'fails the image, and creates nothing, when the Edge Marketplace of the instance does not offer its SKU' {
+            $r = Invoke-Image (New-InfraFile -Images (New-Image @{ sku = '2019-datacenter-core-g2' }))
+            $r.ExitCode | Should -Be 1
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match 'has no SKU ''2019-datacenter-core-g2'''
+            Should -Invoke New-AzStackHCIVMImage -Times 0
+        }
+        It 'ends with exit code 2 when cluster.name is missing and an image asks for latest' {
+            (Invoke-Image (New-InfraFile -NoCluster)).ExitCode | Should -Be 2
+            Should -Invoke New-AzStackHCIVMImage -Times 0
+        }
+        It 'does not read the Edge Marketplace for a pinned version' {
+            $null = Invoke-Image (New-InfraFile -Images (New-Image @{ version = '26100.4652.250808' }))
+            Should -Invoke Invoke-AzRestMethod -Times 0
+        }
         It 'sends the pinned version, and the storage path when the entry names one' {
             $null = Invoke-Image (New-InfraFile -Images (New-Image @{ version = '26100.4652.250808'; storage_path = 'sp-workloads-01' }))
             Should -Invoke New-AzStackHCIVMImage -Times 1 -Exactly -ParameterFilter { $Version -eq '26100.4652.250808' -and $StoragePathName -eq 'sp-workloads-01' }

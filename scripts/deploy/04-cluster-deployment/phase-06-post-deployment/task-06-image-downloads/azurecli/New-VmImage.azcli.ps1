@@ -35,7 +35,7 @@
     in: run az login --tenant <azure.tenant_id> first. It does not change the Azure CLI default subscription: every call carries --subscription.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags
+        azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, cluster.name (for a latest version)
         storage.paths[]: name
         storage.vm_images[]: name, os_type, publisher, offer, sku, version, storage_path
 
@@ -87,6 +87,8 @@ $MarketplaceIdentifier = '^[A-Za-z0-9][A-Za-z0-9._-]*$'
 $VersionPattern = '^(latest|[0-9]+(\.[0-9]+){1,3})$'
 # Microsoft Learn, Create Azure Local VM image using Azure Marketplace images: if the version is left empty, it is the latest.
 $DefaultVersion = 'latest'
+# The Microsoft.EdgeMarketplace API version the offers of the instance are read with (Learn: Edge Marketplace REST API, Offers - Get).
+$EdgeMarketplaceApiVersion = '2023-08-01'
 $Provider = 'Microsoft.EdgeMarketplace'
 
 function Write-Line([string]$Text) {
@@ -157,6 +159,8 @@ if (-not $group) { Exit-InputProblem 'azure.resource_group is missing. The image
 if (-not $location) { Exit-InputProblem 'azure.location is missing.' }
 if (-not $customLocation) { Exit-InputProblem 'azure.custom_location is missing. It is the custom location of the Azure Local instance.' }
 $customLocationId = "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.ExtendedLocation/customLocations/$customLocation"
+# cluster.name: the instance whose Edge Marketplace gives the newest version of an image the file asks for as latest.
+$clusterName = Get-Text 'cluster.name'
 
 $plans = [System.Collections.Generic.List[object]]::new()
 $seen = @{}
@@ -230,6 +234,31 @@ function Read-Image([string]$Name) {
     throw "The lookup failed: $($show.Detail)"
 }
 
+# The newest version of a Marketplace image that the Edge Marketplace of the instance offers. 'latest' is not left to Azure: Azure takes the newest
+# version of the Azure Marketplace, which can be newer than the Edge Marketplace has, and the download then fails with
+# GenerateTokenFromEdgeMarketplaceServiceFailed (NotFound) (seen on a live instance: 20348.5873.261112 asked, 20348.5870.261110 offered).
+# Read with az rest from <instance>/providers/Microsoft.EdgeMarketplace/offers/<publisher>:<offer>.
+function Resolve-EdgeMarketplaceVersion($Plan) {
+    $offerId = "$($Plan.Publisher):$($Plan.Offer)"
+    $url = "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.AzureStackHCI/clusters/$clusterName/providers/Microsoft.EdgeMarketplace/offers/$offerId"
+    $read = Invoke-AzCli @('rest', '--method', 'get', '--url', $url, '--url-parameters', "api-version=$EdgeMarketplaceApiVersion", '--output', 'json', '--only-show-errors')
+    if ($read.ExitCode -ne 0) {
+        if ($read.Detail -match $NotFound) { throw "The Edge Marketplace of the instance '$clusterName' has no offer '$offerId'. Check publisher and offer (storage.vm_images[]) against the offers the instance lists." }
+        throw "The Edge Marketplace offer '$offerId' could not be read: $($read.Detail)"
+    }
+    $offerData = ConvertFrom-AzJson $read.Output
+    $sku = @(@(Get-Prop $offerData @('properties', 'marketplaceSkus')) | Where-Object { $null -ne $_ -and [string](Get-Prop $_ @('marketplaceSkuId')) -eq $Plan.Sku })
+    if ($sku.Count -eq 0) {
+        $known = @(@(Get-Prop $offerData @('properties', 'marketplaceSkus')) | Where-Object { $null -ne $_ } | ForEach-Object { [string](Get-Prop $_ @('marketplaceSkuId')) }) -join ', '
+        throw "The Edge Marketplace offer '$offerId' of the instance has no SKU '$($Plan.Sku)'. It offers: $known."
+    }
+    $names = @(@(Get-Prop $sku[0] @('marketplaceSkuVersions')) | Where-Object { $null -ne $_ } | ForEach-Object { [string](Get-Prop $_ @('name')) } | Where-Object { $_ })
+    if ($names.Count -eq 0) { throw "The Edge Marketplace offers no version of '$offerId' SKU '$($Plan.Sku)'." }
+    $ordered = foreach ($n in $names) { $v = $null; $ok = [version]::TryParse($n, [ref]$v); [pscustomobject]@{ Name = $n; Version = $(if ($ok) { $v } else { [version]'0.0' }) } }
+    @($ordered | Sort-Object -Property Version, Name -Descending)[0].Name
+}
+
+if (-not $clusterName -and @($plans | Where-Object Version -EQ 'latest').Count -gt 0) { Exit-InputProblem 'cluster.name is missing. An image of storage.vm_images asks for the latest version, which is read from the Edge Marketplace of the instance.' }
 Write-Line "VM images in '$group' ($location), custom location '$customLocation'"
 foreach ($plan in $plans) {
     try {
@@ -268,10 +297,11 @@ foreach ($plan in $plans) {
             if (-not $storagePathId) { throw "Azure gave no resource ID for the storage path '$($plan.StoragePath)'." }
         }
 
-        $summary = "$($plan.OsType) $($plan.Publisher):$($plan.Offer):$($plan.Sku), version $($plan.Version)$(if ($plan.StoragePath) { ", storage path $($plan.StoragePath)" })"
+        $version = if ($plan.Version -eq 'latest') { Resolve-EdgeMarketplaceVersion $plan } else { $plan.Version }
+        $summary = "$($plan.OsType) $($plan.Publisher):$($plan.Offer):$($plan.Sku), version $version$(if ($plan.Version -eq 'latest') { ' (latest of the Edge Marketplace of the instance)' })$(if ($plan.StoragePath) { ", storage path $($plan.StoragePath)" })"
         if ($PSCmdlet.ShouldProcess("VM image '$($plan.Name)' in '$group'", "Download ($summary)")) {
             $arguments = @('stack-hci-vm', 'image', 'create', '--subscription', $subscriptionId, '--resource-group', $group, '--name', $plan.Name, '--custom-location', $customLocationId, '--location', $location,
-                '--os-type', $plan.OsType, '--publisher', $plan.Publisher, '--offer', $plan.Offer, '--sku', $plan.Sku, '--version', $plan.Version)
+                '--os-type', $plan.OsType, '--publisher', $plan.Publisher, '--offer', $plan.Offer, '--sku', $plan.Sku, '--version', $version)
             if ($storagePathId) { $arguments += @('--storage-path-id', $storagePathId) }
             # No --tags on the create: the extension stack-hci-vm 1.15.1 hands the tag list unconverted to the marketplace image model and the
             # command ends with "SerializationError: Unable to build a model ... Data: ['k=v', ...]" before any request is sent (seen on a live
