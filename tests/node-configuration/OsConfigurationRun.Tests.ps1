@@ -529,8 +529,18 @@ Describe 'Mixed cluster and the ISO path' {
         $r = Invoke-Run -Infra $script:MixedInfra -Handoff $script:MixedHandoff
         $r.ExitCode | Should -Be 2
         $r.Message | Should -Match 'iic-n02'
-        $r.Message | Should -Match '25398'
+        $r.Message | Should -Match '26100'
         $global:AzlCalls.Count | Should -Be 0
+    }
+    It 'K6: the 23H2 build 25398 is refused and the 2611 build 26100.33822 passes' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript { [pscustomobject]@{ caption = 'Microsoft Azure Stack HCI'; build = 25398; host = 'X' } }
+        $r = Invoke-Run -Infra $script:MixedInfra -Handoff $script:MixedHandoff
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'build is 25398'
+        $r.Message | Should -Match 'needs OS build 26100'
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript { [pscustomobject]@{ caption = 'Microsoft Azure Stack HCI'; build = 26100; host = 'X' } }
+        $ok = Invoke-Run -Infra $script:MixedInfra -Handoff $script:MixedHandoff
+        $ok.Message | Should -Not -Match 'OS build is'
     }
     It 'a refused credential is reported as a credential problem' {
         Mock -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript { throw 'Access is denied.' }

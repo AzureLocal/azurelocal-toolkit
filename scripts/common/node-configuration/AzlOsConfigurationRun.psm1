@@ -68,9 +68,9 @@ $script:IsoSteps = $script:AllSteps
 $script:WrapperVersion = '1.0.0'
 # The result format of the node payloads (the v of their answer); part of every event.
 $script:PayloadVersion = '1'
-# Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node. Fixed by Microsoft: Learn, Azure Local release information
-# (OS version 25398.xxxx is the first Azure Local build; the later 26100.xxxx is higher).
-$script:MinimumBuild = 25398
+# Azure Local 2611 runs on OS build 26100 (OS 26100.33822 for 12.2611.1004.9); the 23H2 build 25398 is no longer a valid node OS. Anything
+# older cannot be an Azure Local node. Learn, Azure Local release information.
+$script:MinimumBuild = 26100
 
 # The Arc registration of an ISO-installed machine (Invoke-AzlArcRegistration). How many tries and how long the run waits for the Arc machine to be
 # Connected are run settings (arcRegistrationTries, arcRegistrationWaitMinutes; registered with the other run settings in
@@ -1313,7 +1313,7 @@ function Test-AzlIsoPrecondition {
     $caption = [string](Get-AzlProp $seen 'caption' '')
     $build = [int](Get-AzlProp $seen 'build' 0)
     if ($caption -notmatch 'Azure Stack HCI|Azure Local|Windows Server') { $problems.Add("${name}: the OS is '$caption'. Azure Local needs the Azure Stack HCI OS (or Windows Server for the early steps).") }
-    elseif ($build -lt $script:MinimumBuild) { $problems.Add("${name}: the OS build is $build ($caption). Azure Local needs build $script:MinimumBuild or later (Azure Stack HCI OS 23H2).") }
+    elseif ($build -lt $script:MinimumBuild) { $problems.Add("${name}: the OS build is $build ($caption). Azure Local 2611 needs OS build $script:MinimumBuild or later (for example 26100.33822).") }
     return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $seen }
 }
 
