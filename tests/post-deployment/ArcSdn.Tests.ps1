@@ -26,7 +26,7 @@ BeforeAll {
             [object[]]$Intents = @((New-Intent 'mgmt_compute' @('management', 'compute')), (New-Intent 'storage' @('storage'))),
             [int]$Nodes = 2, [string]$Connectivity = 'switched', [string]$Architecture = 's2d', [string]$Identity = 'active_directory',
             [string]$Domain = 'improbability.cloud', [string]$PoolStart = '192.0.2.20', [string]$PoolEnd = '192.0.2.29',
-            [object]$AdminPassword = $null, [switch]$NoSdn
+            [object]$AdminPassword = $null, [switch]$NoSdn, [switch]$LcmUser
         )
         if ($null -eq $AdminPassword) { $AdminPassword = "env://$($script:PasswordVariable)" }
         $doc = [ordered]@{
@@ -37,7 +37,8 @@ BeforeAll {
         }
         if ($Intents) { $doc.networking.intents = @($Intents) }
         if ($AdminPassword) { $doc.identity.local_admin.password = $AdminPassword }
-        if ($Domain -and $Identity -eq 'active_directory') { $doc.identity.active_directory = [ordered]@{ domain_fqdn = $Domain } }
+        if ($Domain -and $Identity -eq 'active_directory') { $doc.identity.active_directory = [ordered]@{ domain_fqdn = $Domain; netbios_name = 'IMPROB' } }
+        if ($LcmUser) { $doc.identity.active_directory.lcm_user = [ordered]@{ username = 'lcm-iic01'; password = "env://$($script:PasswordVariable)" } }
         if ($Domain -and $Identity -eq 'local_identity') { $doc.identity.local_identity = [ordered]@{ dns_zone = $Domain } }
         if (-not $NoSdn) {
             $sdn = [ordered]@{ enabled = $Enabled }
@@ -56,6 +57,7 @@ BeforeAll {
         $global:AzlSdnState = @{ Computer = 'iic-n01'; OsBuild = 26100; HasEce = $true; NcGroups = @(); DnsAddresses = @() }
         $global:AzlSdnEnabledGroups = @('Network Controller')
         $global:AzlSdnFail = ''
+        $global:AzlSdnPlanOutput = $null
     }
     # Runs the script and returns its exit code, its rows and every message as text.
     function Invoke-Sdn([string]$File, [switch]$DryRun, [hashtable]$Extra = @{}) {
@@ -73,7 +75,7 @@ BeforeAll {
 
 Describe 'Enable-ArcSdn.ps1' {
     AfterAll {
-        Remove-Variable -Name AzlSdnCalls, AzlSdnState, AzlSdnEnabledGroups, AzlSdnFail -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzlSdnCalls, AzlSdnState, AzlSdnEnabledGroups, AzlSdnFail, AzlSdnPlanOutput -Scope Global -ErrorAction SilentlyContinue
         [Environment]::SetEnvironmentVariable($script:PasswordVariable, $null)
     }
 
@@ -89,6 +91,7 @@ Describe 'Enable-ArcSdn.ps1' {
                     if (@($global:AzlSdnCalls | Where-Object Step -EQ 'Enable').Count -gt 0) { $state.NcGroups = @($global:AzlSdnEnabledGroups) }
                     $state
                 }
+                'Enable' { if ($null -ne $global:AzlSdnPlanOutput) { @{ Output = [string]$global:AzlSdnPlanOutput } } }
             }
         }
     }
@@ -126,6 +129,47 @@ Describe 'Enable-ArcSdn.ps1' {
             $call.Computer | Should -Be '192.0.2.11'
             $call.Credential.UserName | Should -Be '.\azl-admin'
             $call.Credential.GetNetworkCredential().Password | Should -Be ([Environment]::GetEnvironmentVariable($script:PasswordVariable))
+        }
+
+        It 'connects as the deployment (LCM) user of an Active Directory file, as Learn runs the command, and not as the local administrator' {
+            $null = Invoke-Sdn (New-InfraFile -LcmUser)
+            $call = (Get-Call 'Enable')[0]
+            $call.Credential.UserName | Should -Be 'IMPROB\lcm-iic01'
+            $call.Credential.GetNetworkCredential().Password | Should -Be ([Environment]::GetEnvironmentVariable($script:PasswordVariable))
+        }
+
+        It 'connects as the local administrator of a local identity file' {
+            $null = Invoke-Sdn (New-InfraFile -Identity local_identity)
+            (Get-Call 'Enable')[0].Credential.UserName | Should -Be '.\azl-admin'
+        }
+
+        It 'keeps the whole output of Add-EceFeature in -LogPath and reports each action plan that completed' {
+            $global:AzlSdnPlanOutput = "InstanceID     : a`nActionTypeName : CleanNCSecret`nStatus         : Completed`n`nInstanceID     : b`nActionTypeName : EnableMOCSDN`nStatus         : Completed`n"
+            $log = Join-Path $TestDrive 'enable.log'
+            $r = Invoke-Sdn (New-InfraFile) -Extra @{ LogPath = $log }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Enabled'
+            $r.Rows[0].Detail | Should -Match '2 action plan\(s\) completed'
+            $r.Text | Should -Match 'Action plan EnableMOCSDN: Completed'
+            (Get-Content -LiteralPath $log -Raw) | Should -Match 'ActionTypeName : CleanNCSecret'
+        }
+
+        It 'warns, and does not fail, when no action plan status can be read from the output, and does not fail on a plan that was skipped' {
+            $global:AzlSdnPlanOutput = "some other text`n"
+            $r = Invoke-Sdn (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'could not be read from the output'
+            $global:AzlSdnPlanOutput = "ActionTypeName : GenerateCertificates`nStatus         : Skipped`n"
+            (Invoke-Sdn (New-InfraFile)).ExitCode | Should -Be 0
+        }
+
+        It 'fails (1) when an action plan of Add-EceFeature did not complete, and says to run it again' {
+            $global:AzlSdnPlanOutput = "ActionTypeName : EnableMOCSDN`nStatus         : Failed`n"
+            $r = Invoke-Sdn (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match 'EnableMOCSDN Failed'
+            $r.Rows[0].Detail | Should -Match 'run the script again'
         }
 
         It 'uses -ComputerName and -Credential when they are given' {
@@ -439,7 +483,7 @@ Describe 'Enable-ArcSdn.ps1' {
         It 'reads its values through the toolkit loader and the secret module, and holds no address, name or secret' {
             $script:Text | Should -Match 'Import-AzlInfrastructure'
             $script:Text | Should -Match 'AzlSecret\.psm1'
-            $script:Text | Should -Match 'Get-AzlSecretValue'
+            $script:Text | Should -Match 'Resolve-AzlSdnLogin'
             $script:Text | Should -Not -Match 'variables\.yml|networking\.azure\.sdn|sdn_enabled|sdn_prefix'
             $script:Text | Should -Not -Match '\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
             $script:Text | Should -Not -Match 'ConvertTo-SecureString|-AsPlainText'

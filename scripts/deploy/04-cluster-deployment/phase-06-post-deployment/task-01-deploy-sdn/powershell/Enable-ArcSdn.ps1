@@ -50,9 +50,12 @@
 
     With sdn.enabled false or missing the script does nothing and exits 0.
 
-    The script does not sign in anywhere and asks nothing. Without -Credential it connects as the local administrator of identity.local_admin (the
-    password is a secret reference, read through scripts/common/secrets/AzlSecret.psm1; sign in first with Connect-AzAccount when it is a
-    Key Vault reference), or as the account that runs it when the file has no password.
+    The script does not sign in anywhere and asks nothing. Without -Credential it connects as the deployment (LCM) user
+    of identity.active_directory.lcm_user with Active Directory identity (Learn runs Add-EceFeature as the deployment user), as the local
+    administrator of identity.local_admin with local identity or when the file has no deployment user, or as the account that runs it when the
+    file has no password. The password is a secret reference, read through scripts/common/secrets/AzlSecret.psm1; sign in first with
+    Connect-AzAccount when it is a Key Vault reference. The output of Add-EceFeature goes to -LogPath; an action plan whose status is not
+    Completed fails the run.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         sdn.enabled, sdn.prefix, sdn.dns_records, sdn.acknowledge_maintenance_window, sdn.acknowledge_dns_record
@@ -60,6 +63,7 @@
         networking.intents[].name, traffic                      the layout Learn supports
         scenario.identity, identity.active_directory.domain_fqdn, identity.local_identity.dns_zone   the domain of the REST URL
         scenario.storage_architecture, scenario.storage_connectivity, nodes[].name, nodes[].management.ip_address
+        identity.active_directory.netbios_name, identity.active_directory.lcm_user (username, password)
         identity.local_admin.username, identity.local_admin.password
 
     Exit codes: 0 SDN is enabled now, was already, was planned under -WhatIf, or sdn.enabled is not true; 1 the machine could not be reached, a
@@ -72,7 +76,7 @@
     Optional. The machine to connect to instead of the first machine of nodes[] (its management address, else its name).
 
 .PARAMETER Credential
-    Optional. The account for the remoting session. Without it the script uses identity.local_admin of the file, or the account that runs it.
+    Optional. The account for the remoting session. Without it the script uses the deployment user of the file (Active Directory identity), else identity.local_admin, else the account that runs it.
 
 .PARAMETER LogPath
     Optional. Also append the progress lines to this file. Keep it out of the repository.
@@ -152,6 +156,7 @@ $Remote = @{
             OsBuild      = [int][Environment]::OSVersion.Version.Build
             HasEce       = [bool](Get-Command -Name Add-EceFeature -ErrorAction SilentlyContinue)
             NcGroups     = $groups
+            AllGroups    = @(Get-ClusterGroup -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.Name })
             DnsAddresses = $addresses
         }
     }
@@ -159,7 +164,12 @@ $Remote = @{
         param($Step, $Prefix, $AcknowledgeDns, $FeatureName)
         $parameters = @{ Name = $FeatureName; SDNPrefix = $Prefix; AcknowledgeMaintenanceWindow = $true }
         if ($AcknowledgeDns) { $parameters.AcknowledgeDNSRecordCreation = $true }
-        $null = Add-EceFeature @parameters
+        # Everything the action plan writes (the table of its steps, the verbose lines, the outcome of each action) comes back as text: it is the
+        # evidence of the run and the caller reads the status of each action plan from it. A failed plan throws, and the error goes to the caller.
+        # A remote block does not inherit the caller's preference: Stop makes a non-terminating error of the command end the plan with an error.
+        $ErrorActionPreference = 'Stop'
+        $text = (Add-EceFeature @parameters *>&1 | Out-String -Width 4096)
+        @{ Output = [string]$text }
     }
 }
 function Invoke-Machine([string]$Step, [object[]]$Arguments = @()) {
@@ -228,20 +238,12 @@ if ($answersMissing -and $WhatIfPreference) { foreach ($m in $answersMissing) { 
 # ---- where to connect, and as whom
 $target = if ($ComputerName) { $ComputerName.Trim() } elseif ($nodeInfo.Count -gt 0) { $(if ($nodeInfo[0].ManagementIp) { $nodeInfo[0].ManagementIp } else { $nodeInfo[0].Name }) } else { '' }
 if (-not $target) { Exit-InputProblem 'nodes[] is empty. The script connects to a machine of the instance (or give -ComputerName).' }
-$remoteCredential = $Credential
-if (-not $remoteCredential) {
-    $adminUser = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.username')).Trim()
-    $adminReference = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.password')).Trim()
-    if ($adminUser -and $adminReference) {
-        try { $secret = Get-AzlSecretValue -Reference $adminReference -Infrastructure $infra }
-        catch {
-            $code = if ($_.Exception.Data.Contains('AzlExit')) { [int]$_.Exception.Data['AzlExit'] } else { 1 }
-            if ($code -eq 2) { Exit-InputProblem "The password of identity.local_admin could not be read: $($_.Exception.Message)" }
-            Exit-Failed "The password of identity.local_admin could not be read: $($_.Exception.Message)"
-        }
-        $remoteCredential = [pscredential]::new(".\$adminUser", $secret)
-    }
-}
+# Learn runs Add-EceFeature as the deployment user, so with Active Directory identity the deployment (LCM) user of the file is the login; the local
+# administrator is used when the file has no deployment user, and with local identity.
+$login = Resolve-AzlSdnLogin -Infrastructure $infra -Credential $Credential -FallbackToLocalAdministrator
+if ($login.ProblemKind -eq 'Secret') { if ($login.ProblemExit -eq 2) { Exit-InputProblem $login.Problem } else { Exit-Failed $login.Problem } }
+$remoteCredential = $login.Credential
+Write-Line "Login: $(if ($remoteCredential) { "$($remoteCredential.UserName) ($($login.What))" } else { 'the account that runs the script (the file names no account with a secret reference)' })"
 
 # ---- the machine as it is (read only)
 Write-Line "Machine '$target': reading the OS build, the Network Controller cluster group and the DNS name"
@@ -278,11 +280,20 @@ if ($answersMissing -and -not $WhatIfPreference) {
 if ($PSCmdlet.ShouldProcess("the instance of '$target'", "Enable SDN enabled by Azure Arc (Add-EceFeature -Name NC -SDNPrefix $prefix); this cannot be undone")) {
     try {
         Write-Line 'Running the action plan. This takes up to 20 minutes.'
-        Invoke-Machine 'Enable' @($prefix, ($dnsMode -eq 'static' -and $ackDns), $FeatureName)
+        $plan = Invoke-Machine 'Enable' @($prefix, ($dnsMode -eq 'static' -and $ackDns), $FeatureName)
+        # The output of Add-EceFeature is the evidence: the whole text goes to the log, and the status of each action plan to the screen.
+        $planText = if ($plan -is [System.Collections.IDictionary] -and $plan.Contains('Output')) { [string]$plan['Output'] } else { '' }
+        if ($logFile -and $planText) { Add-Content -LiteralPath $logFile -Value $planText -WhatIf:$false }
+        $planStatus = @([regex]::Matches($planText, '(?m)^\s*ActionTypeName\s*:\s*(?<name>\S+)\s*\r?\n\s*Status\s*:\s*(?<status>\S+)') | ForEach-Object { [pscustomobject]@{ Name = $_.Groups['name'].Value; Status = $_.Groups['status'].Value } })
+        foreach ($p in $planStatus) { Write-Line "Action plan $($p.Name): $($p.Status)" }
+        # Only a status that says the plan went wrong fails the run; the plan has already been applied, and a second run reports AlreadyEnabled.
+        $planBad = @($planStatus | Where-Object { $_.Status -match '^(Fail|Error|Cancel|Abort|Stop|Time)' })
+        if ($planBad) { throw "an action plan did not complete: $(($planBad | ForEach-Object { "$($_.Name) $($_.Status)" }) -join ', ')" }
+        if (-not $planStatus) { Write-Caution 'The status of the action plans could not be read from the output of Add-EceFeature. Read the log and run Test-ArcSdn.ps1 before you go on.' }
         $after = Invoke-Machine 'ReadState' @('')
-        if (@($after.NcGroups).Count -gt 0) { Add-Row 'Enabled' "cluster group '$(@($after.NcGroups)[0])' exists" }
+        if (@($after.NcGroups).Count -gt 0) { Add-Row 'Enabled' "cluster group '$(@($after.NcGroups)[0])' exists$(if ($planStatus) { "; $(@($planStatus).Count) action plan(s) completed" })" }
         else {
-            Add-Row 'Enabled' 'Add-EceFeature finished without an error; the Network Controller cluster group was not found by name, so check it with Get-ClusterGroup on the machine'
+            Add-Row 'Enabled' "Add-EceFeature finished without an error; the Network Controller cluster group was not found by name, so check it with Get-ClusterGroup on the machine (groups: $((@(Get-Field $after 'AllGroups' @()) -join ', ')))"
             Write-Caution 'The Network Controller cluster group was not found by name after the action plan. Check the output of Add-EceFeature and Get-ClusterGroup before you create logical networks.'
         }
     }
