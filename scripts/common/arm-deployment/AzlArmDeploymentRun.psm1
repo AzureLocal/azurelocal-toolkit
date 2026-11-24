@@ -278,7 +278,13 @@ function Get-AzlArmRunSetting {
         foreach ($k in @($source.Keys)) { if (([string]$k -replace '_', '') -ieq 'skipPreClusterVerification') { Stop-AzlArmInput "skip_pre_cluster_verification is not a setting of $where. The only way past the pre-cluster verification is the explicit switch -SkipPreClusterVerification." } }
     }
     $block = Get-AzlProp $Infrastructure 'deployment'
-    if ($block -is [System.Collections.IDictionary]) { & $refuseBypass $block 'the master file'; & $apply $block }
+    if ($block -is [System.Collections.IDictionary]) {
+        & $refuseBypass $block 'the master file'
+        # deployment.events_directory is not a run setting: it is the events folder (Resolve-AzlEventsDirectory), shared with the OS configuration run and Sonar.
+        $runBlock = [ordered]@{}
+        foreach ($k in @($block.Keys)) { if ([string]$k -ne 'events_directory') { $runBlock[$k] = $block[$k] } }
+        & $apply $runBlock
+    }
     if ($SettingsFile) {
         if (-not (Test-Path -LiteralPath $SettingsFile -PathType Leaf)) { Stop-AzlArmInput "Settings file not found: $SettingsFile" }
         $fromConfig = Get-Content -LiteralPath $SettingsFile -Raw | ConvertFrom-Json -AsHashtable -Depth 10
@@ -2272,7 +2278,11 @@ function Invoke-AzlArmDeploymentRun {
         $deviceIdIssue = $run.KnownIssues | Where-Object { $_['id'] -eq 'arc-device-id-name' } | Select-Object -First 1
         $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Join-Path ([IO.Path]::GetTempPath()) "$($run.Settings.reportDirectoryPrefix)-$cluster" }
         $null = New-Item -ItemType Directory -Force -Path $reportDir
-        $run.EventPath = Join-Path $reportDir 'arm-deployment-events.jsonl'
+        # The event feed goes to the events folder Sonar reads by default (deployment.events_directory, else -ReportDirectory when
+        # given, else <ProgramData>\AzureLocalToolkit\<cluster.name>\events), so a plain run and a plain Sonar launch meet (D45).
+        $eventDir = Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile $InfrastructureFile -ReportDirectory $ReportDirectory
+        $null = New-Item -ItemType Directory -Force -Path $eventDir
+        $run.EventPath = Join-Path $eventDir 'arm-deployment-events.jsonl'
         $run.ReportPath = Join-Path $reportDir 'report.json'
         $nodes = @(ConvertTo-AzlArmArray $infra['nodes'])
         Send-AzlArmEvent -Run $run -State RunStarted -Evidence "ARM deployment run: mode $Mode, $($nodes.Count) node(s)." -Data @{ nodes = @($nodes | ForEach-Object { [string]$_['name'] }); runMode = $Mode }

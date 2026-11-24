@@ -1485,3 +1485,39 @@ Describe 'The Solution Builder Extension is optional (AZL-013, AZL-015, AZL-032)
         $infra.hardware.sbe.Contains('delivery') | Should -BeFalse
     }
 }
+
+Describe 'Schema 5.6.29: deployment.events_directory (Resolve-AzlEventsDirectory, D45)' {
+    It 'is the stable default <ProgramData>\AzureLocalToolkit\<cluster.name>\events when nothing is set' {
+        $infra = [ordered]@{ cluster = [ordered]@{ name = 'iic-clus01' } }
+        $root = if ($IsWindows -and $env:ProgramData) { $env:ProgramData } else { [IO.Path]::GetTempPath() }
+        Resolve-AzlEventsDirectory -Infrastructure $infra | Should -Be ([IO.Path]::Combine($root, 'AzureLocalToolkit', 'iic-clus01', 'events'))
+    }
+
+    It 'is the report directory when the caller was given one and the file sets no folder' {
+        $infra = [ordered]@{ cluster = [ordered]@{ name = 'iic-clus01' } }
+        Resolve-AzlEventsDirectory -Infrastructure $infra -ReportDirectory (Join-Path $TestDrive 'run-1') | Should -Be (Join-Path $TestDrive 'run-1')
+    }
+
+    It 'is the key when the file sets it, even when a report directory is given' {
+        $folder = Join-Path $TestDrive 'events-key'
+        $infra = [ordered]@{ cluster = [ordered]@{ name = 'iic-clus01' }; deployment = [ordered]@{ events_directory = $folder } }
+        Resolve-AzlEventsDirectory -Infrastructure $infra -ReportDirectory (Join-Path $TestDrive 'run-2') | Should -Be ([IO.Path]::GetFullPath($folder))
+    }
+
+    It 'expands environment variables and resolves a relative path against the folder of the infrastructure file' {
+        $env:AZL_TEST_EVENTS_ROOT = Join-Path $TestDrive 'envroot'
+        try {
+            $infra = [ordered]@{ deployment = [ordered]@{ events_directory = '%AZL_TEST_EVENTS_ROOT%/ev' } }
+            if ($IsWindows) { Resolve-AzlEventsDirectory -Infrastructure $infra | Should -Be ([IO.Path]::GetFullPath((Join-Path $env:AZL_TEST_EVENTS_ROOT 'ev'))) }
+            $relative = [ordered]@{ deployment = [ordered]@{ events_directory = 'events' } }
+            $file = Join-Path (Join-Path $TestDrive 'cfg') 'infrastructure.yml'
+            Resolve-AzlEventsDirectory -Infrastructure $relative -InfrastructureFile $file | Should -Be ([IO.Path]::GetFullPath((Join-Path (Join-Path $TestDrive 'cfg') 'events')))
+        }
+        finally { Remove-Item Env:\AZL_TEST_EVENTS_ROOT -ErrorAction SilentlyContinue }
+    }
+
+    It 'is accepted by the schema in the example file' {
+        $findings = Get-FindingFor { param($d) if (-not $d.Contains('deployment')) { $d['deployment'] = [ordered]@{} }; $d['deployment']['events_directory'] = 'D:\Data\azl-events\iic-clus01' }
+        @($findings | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+    }
+}

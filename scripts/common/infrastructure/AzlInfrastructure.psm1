@@ -34,6 +34,8 @@
     Get-AzlInfrastructureScope  _metadata.scope (5.3): full (default) or ztp, a file for azurelocal-ztp on its own.
     Get-AzlSiteIpRange        The site's management address range for simplified provisioning: site_ip_range, else the
                               lowest to the highest static management address.
+    Resolve-AzlEventsDirectory  The folder of the event feeds the runs write and azurelocal-sonar reads (deployment.events_directory,
+                              default <ProgramData>\AzureLocalToolkit\<cluster.name>\events).
 
     Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/variables/schema (generated from the master registry).
 #>
@@ -398,6 +400,43 @@ function Get-AzlArcMachineName {
         if ($Node.Contains($key) -and $Node[$key] -is [string] -and $Node[$key]) { return $Node[$key] }
     }
     return $null
+}
+
+function Resolve-AzlEventsDirectory {
+    <#
+    .SYNOPSIS
+        The one folder where the toolkit's runs write their event feeds and where azurelocal-sonar reads them (D45).
+    .DESCRIPTION
+        deployment.events_directory when the file sets it (environment variables such as %ProgramData% are expanded; a
+        relative path is relative to the folder of -InfrastructureFile, else to the current folder). Without it, -ReportDirectory
+        when the caller was given one (the events stay with that run's reports). Otherwise the stable default
+        <ProgramData>\AzureLocalToolkit\<cluster.name>\events (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/events),
+        which azurelocal-sonar reads by default too. Sonar resolves the same rule without the -ReportDirectory step.
+        Returns the folder; it is not created here.
+    .EXAMPLE
+        Join-Path (Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile ./infrastructure.yml) 'os-configuration-events.jsonl'
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
+        [string]$InfrastructureFile,
+        [string]$ReportDirectory
+    )
+    $configured = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'deployment.events_directory'
+    if ($configured -is [string] -and $configured.Trim()) {
+        $path = [Environment]::ExpandEnvironmentVariables($configured.Trim())
+        if (-not [IO.Path]::IsPathRooted($path)) {
+            $base = if ($InfrastructureFile) { Split-Path -Parent ([IO.Path]::GetFullPath($InfrastructureFile, (Get-Location).ProviderPath)) } else { (Get-Location).ProviderPath }
+            $path = Join-Path $base $path
+        }
+        return [IO.Path]::GetFullPath($path)
+    }
+    if ($ReportDirectory) { return $ReportDirectory }
+    $cluster = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'cluster.name'
+    $clusterName = if ($cluster -is [string] -and $cluster.Trim()) { $cluster.Trim() } else { 'cluster' }
+    $root = if ($IsWindows -and $env:ProgramData) { $env:ProgramData } else { [IO.Path]::GetTempPath() }
+    return [IO.Path]::Combine($root, 'AzureLocalToolkit', $clusterName, 'events')
 }
 
 function Get-AzlInfrastructureNode {
@@ -1892,4 +1931,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange, Resolve-AzlEventsDirectory

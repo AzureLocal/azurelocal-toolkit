@@ -44,7 +44,7 @@
     Limit the run to these steps. Default: the steps of each node's method.
 .PARAMETER EventLogPath
     The event feed: one JSON object per line (JSON Lines, UTF-8, UTC timestamps) that says what the run is doing, for a viewer such as
-    azurelocal-sonar to follow. Default: os-configuration-events.jsonl in the report directory. Lines are appended, so a path shared with an
+    azurelocal-sonar to follow. Default: os-configuration-events.jsonl in the events folder: deployment.events_directory, else -ReportDirectory when given, else <ProgramData>\AzureLocalToolkit\<cluster.name>\events, the folder azurelocal-sonar reads by default. Lines are appended, so a path shared with an
     earlier run keeps its history. Run events (node '*'): RunStarted, PlanCompleted, WipeListPublished, RunCompleted. Node events:
     NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged, NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying,
     StepApplied, StepFailed, StepSkipped, StepVerified. Each line has timestamp, node, stage ('OsConfiguration'), step, state, evidence, level

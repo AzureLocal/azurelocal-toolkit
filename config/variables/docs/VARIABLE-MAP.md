@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.63. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.64. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 756 | 507 | 85 | 5 | 157 | 2 |
+| Keys of infrastructure.yml | 757 | 508 | 85 | 5 | 157 | 2 |
 | Owned by a tool (`tools.*`) | 4789 | 4581 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6918 | 5090 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6919 | 5091 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 348 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 349 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -64,7 +64,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `key_vaults` |  |  | 1 |  | 3 | 3 |  | 3 |
 | `secrets` |  |  |  |  |  |  |  | 5 |
 | `cluster` | 9 |  |  | 1 | 1 | 11 | 1 | 4 |
-| `deployment` |  |  |  | 1 |  |  |  | 2 |
+| `deployment` |  |  |  | 1 |  |  |  | 3 |
 | `nodes` | 10 | 18 | 27 | 15 | 5 | 6 | 6 | 18 |
 | `hardware` | 20 | 15 | 6 | 4 | 4 | 7 |  | 14 |
 | `storage` | 4 |  |  | 9 | 3 | 15 |  | 30 |
@@ -97,7 +97,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1093 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 91 | 0 | 891 |
-| infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
+| infrastructure-helpers | Outside the flow | 41 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 232 | 0 | 0 |
 
@@ -261,10 +261,10 @@ Where in the code (file, function, keys read by name; 8 places):
 
 ### infrastructure-helpers
 
-**Reads (39):**
-`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `scenario.outbound_path`, `azure.subscription_id`, `azure.resource_group`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.witness.path`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `landing_zone.storage_accounts[].name`, `landing_zone.storage_accounts[].resource_group`, `landing_zone.storage_accounts[].sku`, `_metadata.scope`
+**Reads (41):**
+`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `scenario.outbound_path`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.witness.path`, `deployment.events_directory`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `landing_zone.storage_accounts[].name`, `landing_zone.storage_accounts[].resource_group`, `landing_zone.storage_accounts[].sku`, `_metadata.scope`
 
-Where in the code (file, function, keys read by name; 15 places, the first 12):
+Where in the code (file, function, keys read by name; 16 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -278,8 +278,8 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlInfrastructureNode` | 3 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlManagementMode` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlSiteIpRange` | 2 |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Resolve-AzlEventsDirectory` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Test-AzlProvisioningDhcpPort` | 2 |
-| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlInfrastructureScope` | 1 |
 
 ### validator
 
@@ -428,8 +428,8 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
+| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 |
-| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName |
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin |
 | `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
@@ -698,7 +698,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `deployment.verification_min_data_disk_gb` | deployment | operator by hand; default | read as part by arm-deployment |
 | `deployment.verification_min_link_gbps` | deployment | operator by hand; default | read as part by arm-deployment |
 | `deployment.verification_max_clock_skew_seconds` | deployment | operator by hand; default | read as part by arm-deployment |
-| `deployment.pre_cluster_verification_report_directory` | deployment | operator by hand | read as part by arm-deployment |
+| `deployment.pre_cluster_verification_report_directory` | deployment; monitoring | operator by hand | read as part by arm-deployment |
 | `deployment.register_resource_providers` | deployment | operator by hand; default | read as part by arm-deployment |
 | `nodes[].bios_during_provisioning.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; ztp |
 | `nodes[].san.hbas[].ports[].fabric` | deployment | operator by hand | read as part by pre-cluster-verification |
@@ -1017,7 +1017,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName | read |
+| `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; Sonar clusterName | read |
 | `cluster.naming_prefix` | string, default `hci` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM namingPrefix | read |
 | `cluster.deployment_mode` | string, default `validate`, one of `validate`, `deploy` | operator; Trailwright; default | deployment | arm-deployment | ARM deploymentMode | read |
 | `cluster.witness.type` | string, required, one of `cloud`, `file_share`, `none` | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers; toolkit-legacy-scripts | ARM clusterWitnessStorageAccountName; witnessType | read |
@@ -1052,7 +1052,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `deployment.verification_min_data_disk_gb` | integer, default `500` | operator; default | deployment | (part: arm-deployment) |  | read-as-part |
 | `deployment.verification_min_link_gbps` | integer, default `10` | operator; default | deployment | (part: arm-deployment) |  | read-as-part |
 | `deployment.verification_max_clock_skew_seconds` | integer, default `300` | operator; default | deployment | (part: arm-deployment) |  | read-as-part |
-| `deployment.pre_cluster_verification_report_directory` | string | operator | deployment | (part: arm-deployment) |  | read-as-part |
+| `deployment.pre_cluster_verification_report_directory` | string | operator | deployment; monitoring | (part: arm-deployment) |  | read-as-part |
+| `deployment.events_directory` | string | operator | os_configuration; deployment; monitoring | infrastructure-helpers |  | read |
 | `deployment.register_resource_providers` | boolean, default `false` | operator; default | deployment | (part: arm-deployment) |  | read-as-part |
 
 ### devops

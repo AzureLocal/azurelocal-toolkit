@@ -318,7 +318,7 @@
       }
     },
     "deployment": {
-      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
+      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the runs write their event feeds (events_directory). Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -459,6 +459,11 @@
         "pre_cluster_verification_report_directory": {
           "description": "Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run looks for the latest result. Default: arm-report\\verification\\live in the environment data folder (the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file). (since 5.6)",
           "type": "string"
+        },
+        "events_directory": {
+          "description": "Schema 5.6.29. The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-events.jsonl of the ARM Validate and Deploy run) and where azurelocal-sonar reads them, so a plain run and a plain Sonar launch meet. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default when not set: <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/events); a run given -ReportDirectory then writes its feed into that report directory instead, so set this key when a pipeline or an operator passes -ReportDirectory and Sonar should still follow the run. -EventLogPath of the OS configuration run and osConfigEventsPath/armEventsPath of Sonar's own config still win. Lines are appended, so one folder keeps every run of the cluster; Sonar shows the latest. Keep it outside any git working tree.",
+          "type": "string",
+          "minLength": 1
         },
         "register_resource_providers": {
           "description": "Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment) that are not registered in the subscription, and waiting until they are Registered, when the precondition ResourceProviders runs in Mode Validate or Deploy. Default false: the run never changes Azure by itself and a mandatory provider that is not registered fails the precondition, with the Register-AzResourceProvider command for each. Needs Owner or Contributor on the subscription. Never done in Plan or with WhatIf. Set by the -RegisterResourceProviders switch. (since 5.6)",

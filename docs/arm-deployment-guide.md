@@ -237,7 +237,7 @@ deployment keeps the steps it finds, because they belong to that deployment.
 
 | File | For |
 | --- | --- |
-| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Sonar can follow it. |
+| `arm-deployment-events.jsonl` | One JSON line per event (`timestamp, node, stage, step, state, evidence, level, nextAction` plus data). Written to the events folder: `deployment.events_directory` in the master file, else `-ReportDirectory` when the run was given one, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events` (on Linux and macOS `<temp>/AzureLocalToolkit/<cluster.name>/events`), which is also where azurelocal-sonar looks by default. |
 | `report.json` | Result, state history, every precondition, validation and deployment sections, failing steps, known issue, approval |
 | `summary.md` | The same for a person; the job summary in a pipeline |
 | `<cluster>.parameters.json` | The ARM parameter file. Secrets are null in it. |

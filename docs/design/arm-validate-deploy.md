@@ -47,7 +47,7 @@ and Trailwright.
 | Known issues | `config/known-issues/arm-deployment.json` | Failing step or error text to cause, remediation and retry advice (data) |
 | Template catalog | `config/azure/arm-templates/template-parameters.json` (existing) | Each Microsoft quickstart template's parameters |
 | Azure adapter | inside the module (`New-AzlArmAzureAdapter`) | The only code that touches Azure. Every call is a scriptblock that tests replace |
-| Event feed | `<ReportDirectory>/arm-deployment-events.jsonl` | One JSON line per event; Sonar reads it |
+| Event feed | `<events folder>/arm-deployment-events.jsonl` (`deployment.events_directory`, else `-ReportDirectory` when given, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`) | One JSON line per event; Sonar reads the same folder by default |
 | Reports | `report.json`, `summary.md`, `<cluster>.<mode>.parameters.json`, `parameter-sources.md` | Result, state history, preconditions, failing step, known issue |
 | Pipelines | `pipelines/github-actions/arm-deployment.yml`, `pipelines/gitlab/stages/arm-deployment.yml`, `pipelines/azure-devops/arm-deployment.yml` | Preconditions and Validate, then an approval environment, then Deploy |
 

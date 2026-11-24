@@ -896,6 +896,15 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         function Read-RunEvent([string]$Path) { @(Get-Content -LiteralPath $Path -Encoding utf8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json }) }
         function Get-NodeState($Events, [string]$Node) { @($Events | Where-Object { $_.node -eq $Node } | ForEach-Object { $_.state }) }
     }
+    It 'goes to deployment.events_directory when the file sets it, not to the report directory (D45: the folder Sonar reads)' {
+        $events = Join-Path $TestDrive 'shared-events'
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; if (-not $d.Contains('deployment')) { $d['deployment'] = [ordered]@{} }; $d['deployment']['events_directory'] = $events }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
+        Test-Path -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | Should -BeFalse
+        $e = Read-RunEvent (Join-Path $events 'os-configuration-events.jsonl')
+        $e[0].state | Should -Be 'RunStarted'
+        $e[-1].state | Should -Be 'RunCompleted'
+    }
     It 'Plan, two ZTP nodes: RunStarted with the nodes array first, per node NodeStarted then MethodResolved, the plan, PlanCompleted, WipeListPublished, RunCompleted last' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }

@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.64 (2026-11-23):
+#     - One default events folder shared by the toolkit and azurelocal-sonar (D45; infrastructure schema 5.6.29; the new key is optional, so a file of any 5.6 version stays valid). New key deployment.events_directory (used by os_configuration, deployment and monitoring): the OS configuration run and the ARM run write os-configuration-events.jsonl and arm-deployment-events.jsonl there (Resolve-AzlEventsDirectory in AzlInfrastructure.psm1: the key, else -ReportDirectory when given, else <ProgramData>\AzureLocalToolkit\<cluster.name>\events), and Sonar reads the same folder by default. deployment.pre_cluster_verification_report_directory is now read by Sonar too (monitoring), so Sonar follows the gate's report directory with the toolkit's rule.
 #   v5.0.63 (2026-11-16):
 #     - Hygiene and two task folder renames (no infrastructure key added or removed; infrastructure schema stays 5.6.28). (1) Sample names: the schema 4 samples tags.Environment (example), tags.Project ("Example Project") and azure_platform.azure_tenants.aztenant_example_id, _domain and _primary_domain (example.onmicrosoft.com, example.com) replace a project name; nothing reads them at schema 5. (2) the SBE update import folder of scripts/deploy/04-cluster-deployment/phase-06-post-deployment is task-11-sbe-update-import, no longer task 10 (the docs have task 10 for external storage hybrid), and the phase 03 verification folder is phase-03-os-configuration/task-16-phase03-verification, no longer task 13 (the number the docs use); the parameter groups of Get-AzureLocalSbeImportPlan.ps1, Invoke-Phase03Verification-Orchestrated.ps1 and Test-Phase03Verification.ps1 follow the new paths.
 #   v5.0.62 (2026-11-15):
@@ -241,15 +243,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.63"
+  version: "5.0.64"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.28"
-  last_updated: "2026-11-16"
+  infrastructure_schema_version: "5.6.29"
+  last_updated: "2026-11-23"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-23"
+      version: "5.0.64"
+      change: "One default events folder shared by the toolkit and azurelocal-sonar (infrastructure schema 5.6.29; the new key is optional, so a file of any 5.6 version stays valid). New key deployment.events_directory (used_by os_configuration, deployment, monitoring): the OS configuration run and the ARM run write os-configuration-events.jsonl and arm-deployment-events.jsonl there (Resolve-AzlEventsDirectory in AzlInfrastructure.psm1: the key, else -ReportDirectory when given, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), and Sonar reads the same folder by default. The deployment section is used by os_configuration and monitoring too. deployment.pre_cluster_verification_report_directory adds monitoring: Sonar follows the gate's report directory with the toolkit's rule."
+      reason: "Owner finding D45 (2026-11-08): Sonar showed no OS configuration status because each run wrote its events to its own report directory while Sonar watched another default file. One stable folder, one key, the same default on both sides."
     - date: "2026-11-16"
       version: "5.0.63"
       change: "Hygiene and two task folder renames (no infrastructure key added or removed; infrastructure schema stays 5.6.28). (1) Sample names: the schema 4 samples tags.Environment (example), tags.Project (\"Example Project\") and azure_platform.azure_tenants.aztenant_example_id, _domain and _primary_domain (example.onmicrosoft.com, example.com) replace a project name; nothing reads them at schema 5. (2) the SBE update import folder of scripts/deploy/04-cluster-deployment/phase-06-post-deployment is task-11-sbe-update-import, no longer task 10 (the docs have task 10 for external storage hybrid), and the phase 03 verification folder is phase-03-os-configuration/task-16-phase03-verification, no longer task 13 (the number the docs use); the parameter groups of Get-AzureLocalSbeImportPlan.ps1, Invoke-Phase03Verification-Orchestrated.ps1 and Test-Phase03Verification.ps1 follow the new paths."
@@ -15475,10 +15481,10 @@ cluster:
           schema_extra: {"examples":["Standard_LRS"]}
 
 deployment:
-  description: "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)"
+  description: "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the runs write their event feeds (events_directory). Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)"
   type: object
   required: false
-  used_by: [deployment]
+  used_by: [deployment, os_configuration, monitoring]
   additionalProperties: false
   properties:
     validate_timeout_minutes:
@@ -15617,7 +15623,15 @@ deployment:
       type: string
       required: false
       example: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
-      used_by: [deployment]
+      used_by: [deployment, monitoring]
+    events_directory:
+      description: "Schema 5.6.29. The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-events.jsonl of the ARM Validate and Deploy run) and where azurelocal-sonar reads them, so a plain run and a plain Sonar launch meet. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default when not set: <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/events); a run given -ReportDirectory then writes its feed into that report directory instead, so set this key when a pipeline or an operator passes -ReportDirectory and Sonar should still follow the run. -EventLogPath of the OS configuration run and osConfigEventsPath/armEventsPath of Sonar's own config still win. Lines are appended, so one folder keeps every run of the cluster; Sonar shows the latest. Keep it outside any git working tree."
+      type: string
+      since: "5.6.29"
+      required: false
+      minLength: 1
+      example: "D:\\Data\\azl-events\\iic-clus01"
+      used_by: [os_configuration, deployment, monitoring]
     register_resource_providers:
       description: "Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment) that are not registered in the subscription, and waiting until they are Registered, when the precondition ResourceProviders runs in Mode Validate or Deploy. Default false: the run never changes Azure by itself and a mandatory provider that is not registered fails the precondition, with the Register-AzResourceProvider command for each. Needs Owner or Contributor on the subscription. Never done in Plan or with WhatIf. Set by the -RegisterResourceProviders switch. (since 5.6)"
       type: boolean
@@ -25992,9 +26006,9 @@ tools:
                 nodes_arcMachineName: {"name":"nodes[].arcMachineName","type":"string","declared_type":"string","default":"resolved (node name; arcMachineNameSet=false)","enum":["resource name without / \\ ? #"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","source_key":"nodes[].arc_machine_name","description":"Arc machine to follow. Master file: nodes[].arc_machine_name."}
                 nodes_seed: {"name":"nodes[].seed","type":"boolean","declared_type":"bool","default":"first node (with a warning)","enum":["true; false (at most one true)"],"required":"no","read_at":"Config.ps1 (all)","description":"The node whose logs are tailed."}
                 ztpEvents_path: {"name":"ztpEvents.path","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ZtpEvents.ps1 Invoke-AzlSonarZtpEventLoop (all)","description":"ZTP event file (ztp-events.jsonl). Master file: provisioning.simplified.evidence_path + ztp-events.jsonl (simplified route only)."}
-                osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1 (all)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1. Master file: evidence_path + os-configuration-events.jsonl."}
-                armEventsPath: {"name":"armEventsPath","type":"string","declared_type":"string","default":"<temp>/azl-arm-<cluster.name>/arm-deployment-events.jsonl with the master file, else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 (armmon)","description":"ARM Validate and Deploy event file from Invoke-AzureLocalArmDeployment.ps1 (-ReportDirectory moves it)."}
-                verificationEventsPath: {"name":"verificationEventsPath","type":"string","declared_type":"string","default":"<environment data>/arm-report/verification/live/precluster-verification-events.jsonl with the master file (environment data = provisioning.simplified.evidence_path, else <temp>/azl-arm-<cluster.name>), else none","enum":["non-empty text; relative to the config file; a folder is accepted (the file name is added)"],"required":"no","read_at":"Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)","description":"Event file of the pre-cluster verification gate (precluster-verification-events.jsonl, written next to report.json and summary.md in the gate report directory)."}
+                osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"<events folder>/os-configuration-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory (all)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1, which writes it to the same events folder by default."}
+                armEventsPath: {"name":"armEventsPath","type":"string","declared_type":"string","default":"<events folder>/arm-deployment-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 Get-AzlSonarEventsDirectory (armmon)","description":"ARM Validate and Deploy event file from Invoke-AzureLocalArmDeployment.ps1, which writes it to the same events folder by default (-ReportDirectory moves it only when deployment.events_directory is not set)."}
+                verificationEventsPath: {"name":"verificationEventsPath","type":"string","declared_type":"string","default":"<gate report directory>/precluster-verification-events.jsonl with the master file (deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder: the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file; the toolkit rule Resolve-AzlPclReportDirectory), else none","enum":["non-empty text; relative to the config file; a folder is accepted (the file name is added)"],"required":"no","read_at":"Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)","description":"Event file of the pre-cluster verification gate (precluster-verification-events.jsonl, written next to report.json and summary.md in the gate report directory)."}
                 discoveryPath: {"name":"discoveryPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; a folder or one file; relative to the config file"],"required":"no","read_at":"Config.ps1; Discovery.ps1","description":"Folder written by the toolkit Invoke-HardwareDiscovery.ps1 -OutputPath (<ServiceTag>.json and discovery-summary.json). Master file: evidence_path + discovery."}
                 monitor: {"name":"monitor","type":"string","declared_type":"string","default":"Auto","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (case and dashes ignored)"],"required":"no","read_at":"Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan","description":"Stage to watch alone; -Monitor overrides. Documented in sonar-events docs/config.md and run.md only."}
                 track: {"name":"track","type":"string","declared_type":"string","default":"auto","enum":["auto; deployment; update; add-node; repair (events also accepts health and maps it to auto with a warning)"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","description":"Which operation is followed after the deployment."}

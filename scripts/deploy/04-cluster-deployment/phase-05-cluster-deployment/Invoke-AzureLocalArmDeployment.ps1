@@ -21,7 +21,8 @@
     Needs an Az context (this script does not sign in): Connect-AzAccount on a jump server, or the pipeline's OIDC or managed
     identity login step. Secrets are keyvault:// references read into memory and never written.
 
-    Output (in -ReportDirectory): arm-deployment-events.jsonl (the event feed Sonar can follow), report.json, summary.md,
+    Output: arm-deployment-events.jsonl (the event feed Sonar follows) in the events folder (deployment.events_directory, else
+    -ReportDirectory when given, else <ProgramData>\AzureLocalToolkit\<cluster.name>\events, where Sonar looks by default). In -ReportDirectory: report.json, summary.md,
     <cluster>.parameters.json (secrets are null in it) and parameter-sources.md (which infrastructure.yml key fed which ARM
     parameter).
 
@@ -38,7 +39,7 @@
 .PARAMETER Mode
     Plan (default), Validate, Deploy or ValidateAndDeploy.
 .PARAMETER ReportDirectory
-    Where the events, report and parameter files go. Default: a folder in the temp directory. Keep it out of the repository.
+    Where the report and parameter files go (and the event feed when deployment.events_directory is not set). Default: a folder in the temp directory. Keep it out of the repository.
 .PARAMETER Settings
     Run settings, winning over the master file's deployment block: validateTimeoutMinutes, deployTimeoutMinutes, pollSeconds,
     pollMaxSeconds, approvalMode, resume, skipPreconditions, acknowledgeKnownIssues, requireOsConfigurationReport, revalidate,

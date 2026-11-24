@@ -35,8 +35,9 @@
     Exit codes: 0 all nodes converged (Plan mode: no node failed and nothing is blocked); 1 a node failed, is blocked or did not
     converge; 2 bad input or nothing reachable.
 
-    Event feed: the run appends what it does, one JSON object per line, to <ReportDirectory>\os-configuration-events.jsonl
-    (-EventLogPath overrides). The contract is in AzlOsConfigurationEvents.psm1. Writing it never fails the run.
+    Event feed: the run appends what it does, one JSON object per line, to os-configuration-events.jsonl in the events folder
+    (Resolve-AzlEventsDirectory: deployment.events_directory, else -ReportDirectory when given, else the stable default
+    <ProgramData>\AzureLocalToolkit\<cluster.name>\events that azurelocal-sonar reads by default; -EventLogPath overrides). The contract is in AzlOsConfigurationEvents.psm1. Writing it never fails the run.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -2037,7 +2038,7 @@ function Invoke-AzlOsConfiguration {
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 6 })
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
             SchemaVersion = [string](Get-AzlProp $infra '_metadata.schema_version' '')
-            EventLogPath = $(if ($EventLogPath) { [IO.Path]::GetFullPath($EventLogPath, (Get-Location).ProviderPath) } else { Join-Path $reportDir 'os-configuration-events.jsonl' })
+            EventLogPath = $(if ($EventLogPath) { [IO.Path]::GetFullPath($EventLogPath, (Get-Location).ProviderPath) } else { Join-Path (Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile $InfrastructureFile -ReportDirectory $ReportDirectory) 'os-configuration-events.jsonl' })
             TransportRequested = $Transport; TransportSetting = $null; GuardSettings = @{}; EventContext = $null
             Remoting = $null; ApprovedBootstrap = $false; BootstrapWindow = @{}; Bootstraps = [System.Collections.Generic.List[object]]::new(); TrustedHosts = $null
             BootstrapArcWaitSeconds = $(if ($run.ContainsKey('bootstrapArcWaitSeconds')) { [int]$run.bootstrapArcWaitSeconds } else { 180 })

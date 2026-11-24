@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = proxy with every variable. Schema 5.6.28. Scenario: outbound_path=proxy.
+# Template for infrastructure.yml for scenario.outbound_path = proxy with every variable. Schema 5.6.29. Scenario: outbound_path=proxy.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -241,8 +241,8 @@ cluster:
     # default: "Standard_LRS"; used by: deployment, trailwright
     storage_account_type: "Standard_LRS"
 
-# How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers.
-# used by: deployment
+# How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the run...
+# used by: deployment, os_configuration, monitoring
 deployment:
   # How long the run waits for a Validate before it stops waiting (state ValidationTimedOut; Azure keeps working and the next run attaches to i...
   # default: 90; used by: deployment
@@ -299,8 +299,11 @@ deployment:
   # default: 300; used by: deployment
   verification_max_clock_skew_seconds: 300
   # Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run look...
-  # used by: deployment
+  # used by: deployment, monitoring
   pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
+  # (since 5.6.29) 
+  # used by: os_configuration, deployment, monitoring
+  events_directory: "D:\\Data\\azl-events\\iic-clus01"
   # Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment...
   # default: false; used by: deployment
   register_resource_providers: false

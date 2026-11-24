@@ -329,7 +329,7 @@
       }
     },
     "deployment": {
-      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
+      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the runs write their event feeds (events_directory). Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
       "type": "object",
       "additionalProperties": false,
       "properties": {

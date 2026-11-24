@@ -72,7 +72,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault, never printed) and the address to reach a node on when the installer's address is not in the file. On a node reached over Arc (only `-Transport ArcRunCommand`) the credential is used to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
 | `-SettingsFile`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, the guard engine timings `startDelaySeconds`, `checkSeconds`, `repairSeconds`, `vlanLinkDownSeconds` and `hostnameConfirmExtraMinutes`, `restartWaitMinutes`, `arcRegistrationTries`, `arcRegistrationWaitMinutes`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
-| `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the report directory. |
+| `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the events folder (`deployment.events_directory`, else `-ReportDirectory` when given, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events`). |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
 ### What the run does, in order
@@ -325,7 +325,7 @@ Each attempt of a call is one `NodeCallAttempt` event (payload, duration, addres
 
 ### The event feed: what the run tells a viewer
 
-While it runs, the OS configuration appends what it does to a file, one JSON object per line (JSON Lines, UTF-8 without a byte-order mark, UTC timestamps). A viewer such as azurelocal-sonar follows the file; you can read it with any text tool. The default is `os-configuration-events.jsonl` in `-ReportDirectory`; `-EventLogPath` puts it somewhere else. Lines are only appended, so a path shared by several runs keeps the history of all of them. Writing the feed never fails the run: if the file cannot be written, the run goes on without it.
+While it runs, the OS configuration appends what it does to a file, one JSON object per line (JSON Lines, UTF-8 without a byte-order mark, UTC timestamps). A viewer such as azurelocal-sonar follows the file; you can read it with any text tool. The default is `os-configuration-events.jsonl` in the events folder: `deployment.events_directory` in the master file, else `-ReportDirectory` when the run was given one, else `%ProgramData%\AzureLocalToolkit\<cluster.name>\events` (on Linux and macOS `<temp>/AzureLocalToolkit/<cluster.name>/events`), which is also where azurelocal-sonar looks by default, so a plain run and a plain Sonar launch meet. Set `deployment.events_directory` when a pipeline passes `-ReportDirectory` and Sonar should still follow the run; `-EventLogPath` puts the file anywhere else. Lines are only appended, so a path shared by several runs keeps the history of all of them. Writing the feed never fails the run: if the file cannot be written, the run goes on without it.
 
 Every line has the shape azurelocal-ztp's event file has, so one reader follows both:
 

@@ -580,6 +580,18 @@ Describe 'Events, report and exit codes' {
         @($lines | ConvertFrom-Json | Where-Object state -eq 'PreconditionChecked').Count | Should -BeGreaterThan 10
         ($lines | ConvertFrom-Json | Where-Object state -eq 'PreconditionChecked' | Select-Object -First 1).result | Should -BeIn 'Passed', 'Failed', 'Warning', 'Skipped'
     }
+    It 'the event file goes to deployment.events_directory when the file sets it, not to the report directory (D45: the folder Sonar reads)' {
+        $events = Join-Path $TestDrive 'arm-shared-events'
+        $infra = Get-TestInfra
+        if (-not $infra.Contains('deployment')) { $infra['deployment'] = [ordered]@{} }
+        $infra['deployment']['events_directory'] = $events
+        $dir = Join-Path $TestDrive 'arm-report-own'
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -Dir $dir
+        $r.EventPath | Should -Be (Join-Path ([IO.Path]::GetFullPath($events)) 'arm-deployment-events.jsonl')
+        Test-Path -LiteralPath $r.EventPath | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $dir 'arm-deployment-events.jsonl') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $dir 'report.json') | Should -BeTrue
+    }
     It 'the event file is UTF-8 without a BOM and the lines are appended on a second run' {
         $dir = Join-Path $TestDrive 'twice'
         $null = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Dir $dir
