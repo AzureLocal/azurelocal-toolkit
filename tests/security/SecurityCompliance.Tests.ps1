@@ -36,7 +36,7 @@ BeforeAll {
         $body = $ScriptBlock.ToString()
         # the connection probe and the cluster question of the remoting module run against the stubs
         if ($body -match 'Get-ClusterNode|^\s*\$true\s*$') { return (& $ScriptBlock) }
-        if ($body -match 'Get-BitLockerVolume') { return @([pscustomobject]@{ MountPoint = 'C:'; VolumeStatus = 'FullyEncrypted'; ProtectionStatus = 'On'; EncryptionPercentage = 100 }) }
+        if ($body -match 'Get-BitLockerVolume') { if ($global:AzlScVolumes) { return $global:AzlScVolumes }; return @([pscustomobject]@{ MountPoint = 'C:'; VolumeStatus = 'FullyEncrypted'; ProtectionStatus = 'On'; EncryptionPercentage = 100 }) }
         if ($body -match 'Get-MpComputerStatus') { return [pscustomobject]@{ RealTimeProtection = $true; AntivirusEnabled = $true; SignatureAge = $global:AzlScSignatureAge; LastScan = [datetime]::Now } }
         @{ EnabledPolicies = 5 }
     }
@@ -57,12 +57,26 @@ BeforeAll {
     }
 }
 
-AfterAll { Remove-Variable -Name AzlScOwners, AzlScSignatureAge -Scope Global -ErrorAction SilentlyContinue }
+AfterAll { Remove-Variable -Name AzlScOwners, AzlScSignatureAge, AzlScVolumes -Scope Global -ErrorAction SilentlyContinue }
 
 Describe 'Test-SecurityCompliance.ps1' {
     BeforeEach {
         $global:AzlScOwners = @()
         $global:AzlScSignatureAge = 1
+        $global:AzlScVolumes = $null
+    }
+
+    It 'names each BitLocker volume by its label and reports a volume the Azure Local BitLocker cmdlets do not cover as INFO, not WARN' {
+        $global:AzlScVolumes = @(
+            [pscustomobject]@{ MountPoint = 'C:'; Label = ''; FileSystem = 'NTFS'; VolumeType = 'OperatingSystem'; VolumeStatus = 'FullyEncrypted'; ProtectionStatus = 'On'; EncryptionPercentage = 100 }
+            [pscustomobject]@{ MountPoint = '\\?\Volume{1}\'; Label = 'UserStorage_1'; FileSystem = 'CSVFS'; VolumeType = 'Data'; VolumeStatus = 'FullyDecrypted'; ProtectionStatus = 'Off'; EncryptionPercentage = 0 }
+            [pscustomobject]@{ MountPoint = '\\?\Volume{2}\'; Label = 'ClusterPerformanceHistory'; FileSystem = 'ReFS'; VolumeType = 'Data'; VolumeStatus = 'FullyDecrypted'; ProtectionStatus = 'Off'; EncryptionPercentage = 0 }
+        )
+        $r = Invoke-Compliance (New-Infra)
+        $r.Text | Should -Match '\[WARN\].*UserStorage_1 \('
+        $r.Text | Should -Match '\[INFO\].*ClusterPerformanceHistory \(.*do not cover it'
+        $r.Text | Should -Match 'Encrypted volumes: 1 / 2 \(plus 1 not covered'
+        @($r.Report.Sections.Encryption | Where-Object Label -EQ 'ClusterPerformanceHistory').Status | Should -Be 'INFO'
     }
 
     It 'checks the free Defender for Cloud level and the benchmark when the file says nothing' {

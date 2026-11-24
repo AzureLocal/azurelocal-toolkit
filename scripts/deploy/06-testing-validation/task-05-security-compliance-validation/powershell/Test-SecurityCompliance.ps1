@@ -181,18 +181,43 @@ function Test-EncryptionStatus {
         try {
             $volumes = Invoke-AzlClusterCommand -Connection $connection -Node $node -ScriptBlock {
                 # the enums as text: over remoting an enum arrives as its number (ProtectionStatus On = 1), seen on a live instance
-                Get-BitLockerVolume | Select-Object MountPoint, @{ Name = 'VolumeStatus'; Expression = { [string]$_.VolumeStatus } }, @{ Name = 'ProtectionStatus'; Expression = { [string]$_.ProtectionStatus } }, EncryptionPercentage
+                # The label and file system name each volume in the report. Learn (Manage BitLocker encryption on Azure Local): the Azure Local
+                # BitLocker cmdlets take only -VolumeType BootVolume and ClusterSharedVolume, so a data volume that is no CSV (the
+                # ClusterPerformanceHistory volume, ReFS, mounted on one node) is not covered by them.
+                $byId = @{}
+                foreach ($v in @(Get-Volume -ErrorAction SilentlyContinue)) { if ($v.UniqueId) { $byId[[string]$v.UniqueId] = $v } }
+                Get-BitLockerVolume | ForEach-Object {
+                    $v = $byId[[string]$_.MountPoint]
+                    [pscustomobject]@{
+                        MountPoint           = [string]$_.MountPoint
+                        Label                = if ($v) { [string]$v.FileSystemLabel } else { '' }
+                        FileSystem           = if ($v) { [string]$v.FileSystem } else { '' }
+                        VolumeType           = [string]$_.VolumeType
+                        VolumeStatus         = [string]$_.VolumeStatus
+                        ProtectionStatus     = [string]$_.ProtectionStatus
+                        EncryptionPercentage = $_.EncryptionPercentage
+                    }
+                }
             }
 
             foreach ($vol in $volumes) {
                 $ok = $vol.ProtectionStatus -eq 'On'
-                Write-Log "  $node $($vol.MountPoint): Protection=$($vol.ProtectionStatus), Encrypted=$($vol.EncryptionPercentage)%" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
+                # Covered by the Azure Local cmdlets: the boot volume, or a cluster shared volume. Without the volume type (an older reply) every volume counts.
+                $type = [string]$(if ($vol.PSObject.Properties['VolumeType']) { $vol.VolumeType })
+                $fs = [string]$(if ($vol.PSObject.Properties['FileSystem']) { $vol.FileSystem })
+                $label = [string]$(if ($vol.PSObject.Properties['Label']) { $vol.Label })
+                $covered = (-not $type) -or ($type -eq 'OperatingSystem') -or ($fs -eq 'CSVFS')
+                $name = if ($label) { "$label ($($vol.MountPoint))" } else { [string]$vol.MountPoint }
+                $status = if ($ok) { "PASS" } elseif ($covered) { "WARN" } else { "INFO" }
+                $note = if ($status -eq 'INFO') { ' - not the boot volume and not a cluster shared volume: the Azure Local BitLocker cmdlets do not cover it' } else { '' }
+                Write-Log "  $node ${name}: Protection=$($vol.ProtectionStatus), Encrypted=$($vol.EncryptionPercentage)%$note" -Level $(switch ($status) { 'PASS' { 'SUCCESS' } 'WARN' { 'WARN' } default { 'INFO' } })
                 $results += [PSCustomObject]@{
                     Node       = $node
                     Volume     = $vol.MountPoint
-                    Protection = $vol.ProtectionStatus.ToString()
+                    Label      = $label
+                    Protection = [string]$vol.ProtectionStatus
                     Percent    = $vol.EncryptionPercentage
-                    Status     = if ($ok) { "PASS" } else { "WARN" }
+                    Status     = $status
                 }
             }
         }
@@ -356,7 +381,8 @@ Write-Host ""
 Write-Log "========================================" -Level "HEADER"
 Write-Log "Security & Compliance Summary" -Level "SUCCESS"
 Write-Log "  Defender for Cloud free level checks passed: $defenderPass / $($defenderResults.Count)" -Level "INFO"
-Write-Log "  Encrypted volumes: $encPass / $($encryptionResults.Count)" -Level "INFO"
+$encNotCovered = @($encryptionResults | Where-Object { $_.Status -eq "INFO" }).Count
+Write-Log "  Encrypted volumes: $encPass / $(@($encryptionResults).Count - $encNotCovered) (plus $encNotCovered not covered by the Azure Local BitLocker cmdlets)" -Level "INFO"
 
 $failedChecks = @($defenderResults | Where-Object { $_.Status -eq 'FAIL' }).Count + @($encryptionResults | Where-Object { $_.Status -eq 'FAIL' }).Count
 if ($failedChecks -gt 0) { exit 1 }
