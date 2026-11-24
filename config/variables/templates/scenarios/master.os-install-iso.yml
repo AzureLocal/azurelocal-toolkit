@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.31. Scenario: os_install=iso.
+# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.32. Scenario: os_install=iso.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1361,7 +1361,7 @@ security:
     # (since 5.6.28) 
     # default: true; used by: terraform
     alerts_to_admins: true
-  # What the cluster sends to Microsoft as telemetry.
+  # What the cluster sends to Microsoft as diagnostic data. streaming_data, episodic_data_upload and eu_location are deployment settings (the A...
   # used by: deployment
   telemetry:
     # true sends the streaming diagnostic data.
@@ -1373,6 +1373,9 @@ security:
     # true keeps the diagnostic data in the EU data boundary.
     # default: false; used by: deployment, trailwright
     eu_location: false
+    # (since 5.6.32) 
+    # one of: Off | Basic | Enhanced
+    diagnostic_level: "Enhanced"
 
 # SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later).
 sdn:
@@ -1459,6 +1462,19 @@ operations:
     windows_server_subscription: false
     # true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits.
     azure_verification_for_vms: false
+  # (since 5.6.32) 
+  security_logging:
+    # (since 5.6.32) true to collect the event logs. false or absent: Invoke-SecurityLogging-Orchestrated.ps1 does nothing and exits 0.
+    # default: false
+    enabled: true
+    # (since 5.6.32) 
+    data_collection_rule: "dcr-iic-azl-01-security"
+    # (since 5.6.32) 
+    # one of: success_and_failure | failure; default: "success_and_failure"
+    security_audit: "success_and_failure"
+    # (since 5.6.32) 
+    # default: ["critical", "error", "warning"]
+    event_levels: ["critical", "error", "warning"]
   # Azure Monitor for the instance.
   monitoring:
     # true when Azure Monitor is part of the design.

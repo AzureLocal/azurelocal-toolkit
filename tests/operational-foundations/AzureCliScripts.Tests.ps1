@@ -26,6 +26,8 @@ BeforeDiscovery {
         @{ Name = 'Invoke-AzurePolicyTier1-Orchestrated'; Path = (Get-CliPath "$of/phase-04-security-governance/task-02-apply-azure-policy-initiatives" 'Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1'); Changes = $true; Subscription = $false }
         @{ Name = 'Enable-AzureHybridBenefit'; Path = (Get-CliPath "$of/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit" 'Enable-AzureHybridBenefit.azcli.ps1'); Changes = $true; Subscription = $true }
         @{ Name = 'Enable-WindowsServerSubscription'; Path = (Get-CliPath "$of/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription" 'Enable-WindowsServerSubscription.azcli.ps1'); Changes = $true; Subscription = $true }
+        @{ Name = 'Invoke-TelemetryConfiguration-Orchestrated'; Path = (Get-CliPath "$of/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry" 'Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1'); Changes = $true; Subscription = $true }
+        @{ Name = 'Invoke-SecurityLogging-Orchestrated'; Path = (Get-CliPath "$of/phase-04-security-governance/task-04-enable-security-logging" 'Invoke-SecurityLogging-Orchestrated.azcli.ps1'); Changes = $true; Subscription = $true }
         @{ Name = 'Test-SecurityCompliance'; Path = (Get-CliPath '06-testing-validation/task-05-security-compliance-validation' 'Test-SecurityCompliance.azcli.ps1'); Changes = $false; Subscription = $true }
     )
 }
@@ -90,8 +92,9 @@ BeforeAll {
                 monitoring    = [ordered]@{ enabled = $true; log_analytics_workspace = 'law-example-01'; workspace_resource_group = 'rg-example-mon'; retention_days = 90; data_collection_endpoint = 'dce-example-01'; data_collection_rule = 'dcr-example-insights'; action_group = 'ag-example-01'; alert_email = 'alerts@improbability.cloud' }
                 notifications = [ordered]@{ emails = @('team@improbability.cloud') }
                 licensing     = [ordered]@{ azure_hybrid_benefit = $true; windows_server_subscription = $true }
+                security_logging = [ordered]@{ enabled = $true; data_collection_rule = 'dcr-example-security' }
             }
-            security   = [ordered]@{ defender_for_cloud = [ordered]@{ enabled = $true; apply_cloud_security_benchmark = $true; security_contact_email = 'security@improbability.cloud' } }
+            security   = [ordered]@{ defender_for_cloud = [ordered]@{ enabled = $true; apply_cloud_security_benchmark = $true; security_contact_email = 'security@improbability.cloud' }; telemetry = [ordered]@{ diagnostic_level = 'Enhanced' } }
             landing_zone = [ordered]@{ policy = [ordered]@{ required_tags = @('costcenter', 'owner'); management_group = 'mg-example' } }
         }
         foreach ($key in $Set.Keys) { Set-K6Path $doc $key $Set[$key] }
@@ -199,6 +202,18 @@ BeforeAll {
                 $h['stack-hci cluster show'] = { param($o, $a) $global:K6Shows++; if ($global:K6Shows -gt 1) { '{"name":"azl-example-01","desiredProperties":{"windowsServerSubscription":"Enabled"}}' } else { '{"name":"azl-example-01","desiredProperties":{"windowsServerSubscription":"Disabled"}}' } }
                 $h['stack-hci cluster update'] = $quiet
                 $global:K6Shows = 0
+            }            'Invoke-TelemetryConfiguration-Orchestrated' {
+                $h['stack-hci cluster show'] = { param($o, $a) $global:K6Shows++; if ($global:K6Shows -gt 1) { '{"name":"azl-example-01","desiredProperties":{"diagnosticLevel":"Enhanced"}}' } else { '{"name":"azl-example-01","desiredProperties":{"diagnosticLevel":"Basic"}}' } }
+                $h['stack-hci cluster update'] = $quiet
+                $global:K6Shows = 0
+            }
+            'Invoke-SecurityLogging-Orchestrated' {
+                $h['monitor log-analytics workspace show'] = { param($o, $a) "{`"id`":`"/subscriptions/$($global:K6Sub)/resourceGroups/rg-example-mon/providers/Microsoft.OperationalInsights/workspaces/law-example-01`",`"location`":`"westus2`"}" }
+                $h['stack-hci extension show'] = { param($o, $a) '{"name":"AzureMonitorWindowsAgent","provisioningState":"Succeeded"}' }
+                $h['monitor data-collection rule show'] = $none
+                $h['monitor data-collection rule create'] = { param($o, $a) $global:K6Rules = Get-Content -LiteralPath ([string]$o['--rule-file'][0]) -Raw | ConvertFrom-Json; '{"id":"/subscriptions/x/resourceGroups/rg-example-mon/providers/Microsoft.Insights/dataCollectionRules/dcr-example-security"}' }
+                $h['monitor data-collection rule association list-by-resource'] = { param($o, $a) '[]' }
+                $h['monitor data-collection rule association create'] = $quiet
             }
         }
     }
@@ -977,5 +992,55 @@ Describe 'Test-SecurityCompliance.azcli.ps1' {
 
     It 'ends with exit code 2 for a missing resource group' {
         (Invoke-K6 $script:S (New-K6Infra @{ 'azure.resource_group' = $null })).ExitCode | Should -Be 2
+    }
+}
+
+Describe 'Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1' {
+    BeforeAll { $script:TelePath = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '05-operational-foundations', 'phase-05-licensing-telemetry', 'task-03-configure-enhanced-telemetry', 'azurecli', 'Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1') }
+    BeforeEach { Reset-K6; Mock az { & $global:K6AzBody @($args) }; Set-K6Empty 'Invoke-TelemetryConfiguration-Orchestrated' }
+
+    It 'sends the level of the file as diagnostic-level of the desired properties' {
+        $r = Invoke-K6 $script:TelePath (New-K6Infra)
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        (Get-K6Option (Get-K6Call 'stack-hci cluster update')[0] '--desired-properties') | Should -Be @('diagnostic-level=Enhanced')
+    }
+    It 'changes nothing when the level is already the one of the file' {
+        $global:K6Handlers['stack-hci cluster show'] = { param($o, $a) '{"name":"azl-example-01","desiredProperties":{"diagnosticLevel":"Enhanced"}}' }
+        $r = Invoke-K6 $script:TelePath (New-K6Infra)
+        $r.Rows[0].Action | Should -Be 'AlreadySet'
+        Get-K6Change | Should -BeNullOrEmpty
+    }
+    It 'ends with exit code 2 for Full, and does nothing without the key' {
+        (Invoke-K6 $script:TelePath (New-K6Infra @{ 'security.telemetry.diagnostic_level' = 'Full' })).ExitCode | Should -Be 2
+        (Invoke-K6 $script:TelePath (New-K6Infra @{ 'security.telemetry.diagnostic_level' = $null })).ExitCode | Should -Be 0
+        $global:K6Calls.Count | Should -Be 0
+    }
+}
+
+Describe 'Invoke-SecurityLogging-Orchestrated.azcli.ps1' {
+    BeforeAll { $script:SlPath = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '05-operational-foundations', 'phase-04-security-governance', 'task-04-enable-security-logging', 'azurecli', 'Invoke-SecurityLogging-Orchestrated.azcli.ps1') }
+    BeforeEach { Reset-K6; Mock az { & $global:K6AzBody @($args) }; Set-K6Empty 'Invoke-SecurityLogging-Orchestrated'; $global:K6Rules = $null }
+
+    It 'creates the rule from a file with the queries of the file, and associates every node' {
+        $r = Invoke-K6 $script:SlPath (New-K6Infra)
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $q = @($global:K6Rules.properties.dataSources.windowsEventLogs[0].xPathQueries)
+        $q | Should -Contain 'Security!*[System[(band(Keywords,13510798882111488))]]'
+        $q | Should -Contain 'Application!*[System[(Level=1 or Level=2 or Level=3)]]'
+        $global:K6Rules.location | Should -Be 'westus2'
+        $created = @(Get-K6Call 'monitor data-collection rule association create' | ForEach-Object { [string]@($_.Options['--resource'])[0] })
+        $created.Count | Should -Be 2 -Because ($global:K6Calls.Command -join ', ')
+        @($created | ForEach-Object { ($_ -split '/')[-1] }) | Should -Be @('node-a', 'arc-node-b') -Because ($created -join ' | ')
+    }
+    It 'fails, and associates no node, when the existing rule collects other queries' {
+        $global:K6Handlers['monitor data-collection rule show'] = { param($o, $a) "{`"id`":`"r`",`"dataSources`":{`"windowsEventLogs`":[{`"xPathQueries`":[`"Security!*`"]}]},`"destinations`":{`"logAnalytics`":[{`"workspaceResourceId`":`"/subscriptions/$($global:K6Sub)/resourceGroups/rg-example-mon/providers/Microsoft.OperationalInsights/workspaces/law-example-01`"}]}}" }
+        $r = Invoke-K6 $script:SlPath (New-K6Infra)
+        $r.ExitCode | Should -Be 1
+        Get-K6Change | Should -BeNullOrEmpty
+    }
+    It 'does nothing when security logging is off, and ends with exit code 2 when monitoring is off' {
+        (Invoke-K6 $script:SlPath (New-K6Infra @{ 'operations.security_logging.enabled' = $false })).ExitCode | Should -Be 0
+        (Invoke-K6 $script:SlPath (New-K6Infra @{ 'operations.monitoring.enabled' = $false })).ExitCode | Should -Be 2
+        $global:K6Calls.Count | Should -Be 0
     }
 }

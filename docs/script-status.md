@@ -19,10 +19,10 @@ Task folders: 122.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 71 | 51 | 0 |
-| Azure CLI | 48 | 0 | 74 |
+| PowerShell | 75 | 47 | 0 |
+| Azure CLI | 50 | 0 | 72 |
 
-Azure CLI applies to 48 tasks, does not apply to 74, and is not decided for 0.
+Azure CLI applies to 50 tasks, does not apply to 72, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -141,8 +141,8 @@ Azure CLI applies to 48 tasks, does not apply to 74, and is not decided for 0.
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | not built | not applicable | no |
-| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | not built | built | yes |
+| `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | built | not applicable | no |
+| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | built | built | yes |
 | `phase-01-sdn-deployment/task-03-configure-network-security-groups` | not built | built | yes |
 | `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | built | yes |
 | `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | built | yes |
@@ -151,10 +151,10 @@ Azure CLI applies to 48 tasks, does not apply to 74, and is not decided for 0.
 | `phase-04-security-governance/task-01-enable-defender-for-cloud` | built | built | yes |
 | `phase-04-security-governance/task-02-apply-azure-policy-initiatives` | built | built | yes |
 | `phase-04-security-governance/task-03-configure-security-baselines` | built | not applicable | no |
-| `phase-04-security-governance/task-04-enable-security-logging` | not built | not applicable | no |
+| `phase-04-security-governance/task-04-enable-security-logging` | built | built | yes |
 | `phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit` | built | built | yes |
 | `phase-05-licensing-telemetry/task-02-activate-windows-server-subscription` | built | built | yes |
-| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | not built | not applicable | no |
+| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | built | built | yes |
 
 ## 06-testing-validation
 

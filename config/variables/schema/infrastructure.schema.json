@@ -3175,7 +3175,7 @@
           }
         },
         "telemetry": {
-          "description": "What the cluster sends to Microsoft as telemetry. Not read by the tools yet.",
+          "description": "What the cluster sends to Microsoft as diagnostic data. streaming_data, episodic_data_upload and eu_location are deployment settings (the ARM deployment reads them; Microsoft Learn documents no way to change them afterwards). diagnostic_level is the desired diagnostic level of the instance resource, which Invoke-TelemetryConfiguration-Orchestrated.ps1 (operational foundations, phase 05, task 03) sets after the deployment.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -3193,6 +3193,15 @@
               "description": "true keeps the diagnostic data in the EU data boundary.",
               "type": "boolean",
               "default": false
+            },
+            "diagnostic_level": {
+              "description": "Schema 5.6.32. The desired level of diagnostic data the Azure Local instance sends to Microsoft: Off, Basic or Enhanced (the desiredProperties.diagnosticLevel of the Microsoft.AzureStackHCI/clusters resource; Microsoft Learn, Update-AzStackHciCluster -DesiredPropertyDiagnosticLevel, and az stack-hci cluster update --desired-properties diagnostic-level). Invoke-TelemetryConfiguration-Orchestrated.ps1 (operational foundations, phase 05, task 03) sets it on the instance when it differs and then syncs the machines. Absent: the script does nothing. There is no Full level.",
+              "type": "string",
+              "enum": [
+                "Off",
+                "Basic",
+                "Enhanced"
+              ]
             }
           }
         }
@@ -3391,6 +3400,52 @@
             "azure_verification_for_vms": {
               "description": "true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits. Not read by the tools yet: a documented placeholder.",
               "type": "boolean"
+            }
+          }
+        },
+        "security_logging": {
+          "description": "Schema 5.6.32. Collection of the Windows Security, System and Application event logs of the machines into the Log Analytics workspace of operations.monitoring, with a data collection rule of the Azure Monitor Agent. Invoke-SecurityLogging-Orchestrated.ps1 (operational foundations, phase 04, task 04) creates the rule and associates it with the Arc machine of every node. Microsoft Learn (Collect Windows events with Azure Monitor Agent): the Security log of such a rule goes to the Event table with the other logs; the SecurityEvent table is filled only by a paid connector, which the toolkit does not set up.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Schema 5.6.32. true to collect the event logs. false or absent: Invoke-SecurityLogging-Orchestrated.ps1 does nothing and exits 0. It also needs operations.monitoring.enabled true and the workspace of operations.monitoring.log_analytics_workspace.",
+              "type": "boolean",
+              "default": false
+            },
+            "data_collection_rule": {
+              "description": "Schema 5.6.32. Name of the data collection rule the script creates in operations.monitoring.workspace_resource_group, in the region of the workspace. A rule of this name that exists is checked, never changed: the script reports a rule that collects other logs.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{1,62}[A-Za-z0-9_]$"
+            },
+            "security_audit": {
+              "description": "Schema 5.6.32. Which Security log events the rule collects, as the portal offers them (Microsoft Learn, Collect Windows events): success_and_failure (Audit success and Audit failure) or failure (Audit failure only).",
+              "type": "string",
+              "default": "success_and_failure",
+              "enum": [
+                "success_and_failure",
+                "failure"
+              ]
+            },
+            "event_levels": {
+              "description": "Schema 5.6.32. The levels of the System and Application logs the rule collects (Microsoft Learn, Collect Windows events: Critical, Error, Warning, Information, Verbose). Default critical, error and warning.",
+              "type": "array",
+              "default": [
+                "critical",
+                "error",
+                "warning"
+              ],
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "critical",
+                  "error",
+                  "warning",
+                  "information",
+                  "verbose"
+                ]
+              }
             }
           }
         },

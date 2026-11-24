@@ -1806,7 +1806,7 @@
           "default": true
         },
         "telemetry": {
-          "description": "What the cluster sends to Microsoft as telemetry. Not read by the tools yet.",
+          "description": "What the cluster sends to Microsoft as diagnostic data. streaming_data, episodic_data_upload and eu_location are deployment settings (the ARM deployment reads them; Microsoft Learn documents no way to change them afterwards). diagnostic_level is the desired diagnostic level of the instance resource, which Invoke-TelemetryConfiguration-Orchestrated.ps1 (operational foundations, phase 05, task 03) sets after the deployment.",
           "type": "object",
           "additionalProperties": false,
           "properties": {

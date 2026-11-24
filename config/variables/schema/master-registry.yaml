@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.69 (2026-11-24):
+#     - Day 2 path from the deployed instance (owner directives D140, D141; infrastructure schema 5.6.32; every new key is optional). New keys: security.telemetry.diagnostic_level (Off, Basic or Enhanced, the desired diagnostic level of the instance resource, set by Invoke-TelemetryConfiguration-Orchestrated.ps1 and its Azure CLI twin) and operations.security_logging (enabled, data_collection_rule, security_audit, event_levels: the data collection rule for the Windows Security, System and Application logs of the machines, created and associated by Invoke-SecurityLogging-Orchestrated.ps1 and its Azure CLI twin; the Security log goes to the Event table, Microsoft Learn). The description of security.telemetry no longer says it is not read. Placeholders implemented as the published guide pages name them: Invoke-ConfigureClusterQuorum-Orchestrated.ps1, Invoke-PostDeploymentVerification-Orchestrated.ps1, Invoke-SdnPrerequisites-Orchestrated.ps1, Invoke-SdnIntegration-Orchestrated.ps1, Invoke-SecurityLogging-Orchestrated.ps1, Invoke-WindowsServerSubscription-Orchestrated.ps1 and Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholders that no guide page names and that a real script of the same task replaces are removed: Invoke-NsgConfiguration-Orchestrated.ps1, Invoke-MonitoringSecurity-Orchestrated.ps1, Invoke-Alerting-Orchestrated.ps1, Invoke-DefenderForCloud-Orchestrated.ps1, Invoke-SecurityBaselines-Orchestrated.ps1, Invoke-AzureHybridBenefit-Orchestrated.ps1 and the five of 06-testing-validation; their generated parameter groups go with them.
 #   v5.0.68 (2026-11-24):
 #     - Phase 06 post-deployment scripts (owner directive D140; no infrastructure key added or removed; infrastructure schema stays 5.6.31). Invoke-ConfigureClusterQuorum-Orchestrated.ps1 (task 02) is a real script, no longer a placeholder: it checks or creates the cloud witness storage account and sets the quorum witness from cluster.witness (type, storage_account, path) and landing_zone.storage_accounts[]; new parameters ComputerName, Credential, AccessKeyName and UpdateAccessKey. New task folder task-10-enable-external-storage-hybrid with Invoke-ExternalStorageHybrid-Orchestrated.ps1, which runs the steps of the guide page through the scripts that do them (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio and SanVerify, Invoke-NodeMaintenanceReboot.ps1, New-SanVolume.ps1, New-StoragePath.ps1) and reads scenario.storage_architecture, scenario.topology and storage.san.type; parameters InfrastructureFile, Credential, RollingRestart, ValidateStorage and LogPath. Both parameter groups are generated.
 #   v5.0.67 (2026-11-23):
@@ -251,15 +253,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.68"
+  version: "5.0.69"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.31"
+  infrastructure_schema_version: "5.6.32"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.69"
+      change: "Day 2 path from the deployed instance (owner directives D140, D141; infrastructure schema 5.6.32; every new key is optional). New keys: security.telemetry.diagnostic_level (Off, Basic or Enhanced, the desired diagnostic level of the instance resource, set by Invoke-TelemetryConfiguration-Orchestrated.ps1 and its Azure CLI twin) and operations.security_logging (enabled, data_collection_rule, security_audit, event_levels: the data collection rule for the Windows Security, System and Application logs of the machines, created and associated by Invoke-SecurityLogging-Orchestrated.ps1 and its Azure CLI twin; the Security log goes to the Event table, Microsoft Learn). The description of security.telemetry no longer says it is not read. Placeholders implemented as the published guide pages name them: Invoke-ConfigureClusterQuorum-Orchestrated.ps1, Invoke-PostDeploymentVerification-Orchestrated.ps1, Invoke-SdnPrerequisites-Orchestrated.ps1, Invoke-SdnIntegration-Orchestrated.ps1, Invoke-SecurityLogging-Orchestrated.ps1, Invoke-WindowsServerSubscription-Orchestrated.ps1 and Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholders that no guide page names and that a real script of the same task replaces are removed: Invoke-NsgConfiguration-Orchestrated.ps1, Invoke-MonitoringSecurity-Orchestrated.ps1, Invoke-Alerting-Orchestrated.ps1, Invoke-DefenderForCloud-Orchestrated.ps1, Invoke-SecurityBaselines-Orchestrated.ps1, Invoke-AzureHybridBenefit-Orchestrated.ps1 and the five of 06-testing-validation; their generated parameter groups go with them."
+      reason: "Owner directives D140 (every Implementation guide step after the deployment has a real script that reads this registry, and the page names it) and D141 (the published guide pages are the specification: the toolkit matches the script names and behaviour they give)."
     - date: "2026-11-24"
       version: "5.0.68"
       change: "Phase 06 post-deployment scripts (owner directive D140; no infrastructure key added or removed; infrastructure schema stays 5.6.31). Invoke-ConfigureClusterQuorum-Orchestrated.ps1 (task 02) is a real script, no longer a placeholder: it checks or creates the cloud witness storage account and sets the quorum witness from cluster.witness (type, storage_account, path) and landing_zone.storage_accounts[]; new parameters ComputerName, Credential, AccessKeyName and UpdateAccessKey. New task folder task-10-enable-external-storage-hybrid with Invoke-ExternalStorageHybrid-Orchestrated.ps1, which runs the steps of the guide page through the scripts that do them (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio and SanVerify, Invoke-NodeMaintenanceReboot.ps1, New-SanVolume.ps1, New-StoragePath.ps1) and reads scenario.storage_architecture, scenario.topology and storage.san.type; parameters InfrastructureFile, Credential, RollingRestart, ValidateStorage and LogPath. Both parameter groups are generated."
@@ -12928,7 +12934,7 @@ security:
           used_by: [terraform]
     telemetry:
       used_by: [deployment]
-      description: "What the cluster sends to Microsoft as telemetry. Not read by the tools yet."
+      description: "What the cluster sends to Microsoft as diagnostic data. streaming_data, episodic_data_upload and eu_location are deployment settings (the ARM deployment reads them; Microsoft Learn documents no way to change them afterwards). diagnostic_level is the desired diagnostic level of the instance resource, which Invoke-TelemetryConfiguration-Orchestrated.ps1 (operational foundations, phase 05, task 03) sets after the deployment."
       type: object
       required: false
       additionalProperties: false
@@ -12954,6 +12960,13 @@ security:
           required: false
           default: false
           example: false
+        diagnostic_level:
+          description: "Schema 5.6.32. The desired level of diagnostic data the Azure Local instance sends to Microsoft: Off, Basic or Enhanced (the desiredProperties.diagnosticLevel of the Microsoft.AzureStackHCI/clusters resource; Microsoft Learn, Update-AzStackHciCluster -DesiredPropertyDiagnosticLevel, and az stack-hci cluster update --desired-properties diagnostic-level). Invoke-TelemetryConfiguration-Orchestrated.ps1 (operational foundations, phase 05, task 03) sets it on the instance when it differs and then syncs the machines. Absent: the script does nothing. There is no Full level."
+          type: string
+          since: "5.6.32"
+          required: false
+          enum: ["Off", "Basic", "Enhanced"]
+          example: "Enhanced"
 
 
 # =============================================================================
@@ -13889,6 +13902,45 @@ operations:
           description: "true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits. Not read by the tools yet: a documented placeholder."
           type: boolean
           required: false
+    security_logging:
+      description: "Schema 5.6.32. Collection of the Windows Security, System and Application event logs of the machines into the Log Analytics workspace of operations.monitoring, with a data collection rule of the Azure Monitor Agent. Invoke-SecurityLogging-Orchestrated.ps1 (operational foundations, phase 04, task 04) creates the rule and associates it with the Arc machine of every node. Microsoft Learn (Collect Windows events with Azure Monitor Agent): the Security log of such a rule goes to the Event table with the other logs; the SecurityEvent table is filled only by a paid connector, which the toolkit does not set up."
+      type: object
+      since: "5.6.32"
+      required: false
+      additionalProperties: false
+      properties:
+        enabled:
+          description: "Schema 5.6.32. true to collect the event logs. false or absent: Invoke-SecurityLogging-Orchestrated.ps1 does nothing and exits 0. It also needs operations.monitoring.enabled true and the workspace of operations.monitoring.log_analytics_workspace."
+          type: boolean
+          since: "5.6.32"
+          required: false
+          default: false
+          example: true
+        data_collection_rule:
+          description: "Schema 5.6.32. Name of the data collection rule the script creates in operations.monitoring.workspace_resource_group, in the region of the workspace. A rule of this name that exists is checked, never changed: the script reports a rule that collects other logs."
+          type: string
+          since: "5.6.32"
+          required: false
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{1,62}[A-Za-z0-9_]$"
+          example: "dcr-iic-azl-01-security"
+        security_audit:
+          description: "Schema 5.6.32. Which Security log events the rule collects, as the portal offers them (Microsoft Learn, Collect Windows events): success_and_failure (Audit success and Audit failure) or failure (Audit failure only)."
+          type: string
+          since: "5.6.32"
+          required: false
+          enum: ["success_and_failure", "failure"]
+          default: "success_and_failure"
+          example: "success_and_failure"
+        event_levels:
+          description: "Schema 5.6.32. The levels of the System and Application logs the rule collects (Microsoft Learn, Collect Windows events: Critical, Error, Warning, Information, Verbose). Default critical, error and warning."
+          type: array
+          since: "5.6.32"
+          required: false
+          minItems: 1
+          items:
+            {"type":"string","enum":["critical","error","warning","information","verbose"]}
+          default: ["critical", "error", "warning"]
+          example: ["critical", "error", "warning"]
 devops:
   description: "The CI/CD infrastructure of the environment: the platform and its project, the runner machines with their network and roles, the Azure sign-in, the environments and the secrets. Read by the toolkit's CI/CD infrastructure tasks (scripts/deploy/01-cicd-infra). (since 5.5)"
   used_by: [cicd_infra]
@@ -22479,10 +22531,12 @@ tools:
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_09_post_deployment_verification_powershell_Invoke_PostDeploymentVerification_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. The master infrastructure.yml (schema 5)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Optional. The account for the remoting to the nodes. Without it the account of the file is used (see above)."}
+                TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Optional. Limit the node checks to these nodes (node names or management addresses). Passed to steps 1 and 2."}
+                SkipAzure: {"name":"SkipAzure","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Optional. Do not run step 2 (for a host without the Azure CLI; step 1 still reads Azure for its counts)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-PostDeploymentVerification-Orchestrated.ps1","description":"Invoke-PostDeploymentVerification-Orchestrated.ps1. Optional. Passed to steps 1 and 2, and the progress lines of this script are appended to it. Keep it out of the repository."}
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_09_post_deployment_verification_powershell_Invoke_VerifyPostDeployment_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1"
@@ -22503,10 +22557,11 @@ tools:
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_01_validate_sdn_prerequisites_powershell_Invoke_SdnPrerequisites_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. Optional. The machine to ask (a node name of the file or an address), instead of the first node of nodes[] that answers."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. Optional. The account for the remoting session. Without it the account of the file is used (see above)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1","description":"Invoke-SdnPrerequisites-Orchestrated.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_02_configure_network_security_groups_azurecli_Set_NetworkSecurityGroupRule_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1"
@@ -22517,23 +22572,16 @@ tools:
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_02_configure_network_security_groups_powershell_Invoke_SdnIntegration_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1","description":"Invoke-SdnIntegration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1","description":"Invoke-SdnIntegration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1","description":"Invoke-SdnIntegration-Orchestrated.ps1. The master infrastructure.yml (schema 5). Passed to each step."}
+                RemoveUnlistedRules: {"name":"RemoveUnlistedRules","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1","description":"Invoke-SdnIntegration-Orchestrated.ps1. Optional. Passed to step 2: remove the rules a group has and the file does not list."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/powershell/Invoke-SdnIntegration-Orchestrated.ps1","description":"Invoke-SdnIntegration-Orchestrated.ps1. Optional. Passed to each step: the progress lines are appended to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_03_configure_network_security_groups_azurecli_Test_NetworkSecurityGroupRule_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1"
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1","description":"Test-NetworkSecurityGroupRule.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1","description":"Test-NetworkSecurityGroupRule.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_03_configure_network_security_groups_powershell_Invoke_NsgConfiguration_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Invoke-NsgConfiguration-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Invoke-NsgConfiguration-Orchestrated.ps1","description":"Invoke-NsgConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Invoke-NsgConfiguration-Orchestrated.ps1","description":"Invoke-NsgConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_01_configure_log_analytics_workspace_azurecli_Deploy_DataCollectionEndpoint_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/azurecli/Deploy-DataCollectionEndpoint.azcli.ps1"
@@ -22546,13 +22594,6 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/azurecli/Deploy-LogAnalyticsWorkspace.azcli.ps1","description":"Deploy-LogAnalyticsWorkspace.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/azurecli/Deploy-LogAnalyticsWorkspace.azcli.ps1","description":"Deploy-LogAnalyticsWorkspace.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_01_configure_log_analytics_workspace_powershell_Invoke_MonitoringSecurity_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Invoke-MonitoringSecurity-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Invoke-MonitoringSecurity-Orchestrated.ps1","description":"Invoke-MonitoringSecurity-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Invoke-MonitoringSecurity-Orchestrated.ps1","description":"Invoke-MonitoringSecurity-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_02_configure_azure_monitor_agent_azurecli_Install_AzureMonitorAgent_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/azurecli/Install-AzureMonitorAgent.azcli.ps1"
@@ -22571,13 +22612,6 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/azurecli/Deploy-ActionGroup.azcli.ps1","description":"Deploy-ActionGroup.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/azurecli/Deploy-ActionGroup.azcli.ps1","description":"Deploy-ActionGroup.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_04_setup_alerting_powershell_Invoke_Alerting_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Invoke-Alerting-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Invoke-Alerting-Orchestrated.ps1","description":"Invoke-Alerting-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Invoke-Alerting-Orchestrated.ps1","description":"Invoke-Alerting-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_04_security_governance_task_01_enable_defender_for_cloud_azurecli_Enable_DefenderForCloud_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/azurecli/Enable-DefenderForCloud.azcli.ps1"
@@ -22590,46 +22624,30 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1","description":"Enable-DefenderForCloud.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1","description":"Enable-DefenderForCloud.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_01_enable_defender_for_cloud_powershell_Invoke_DefenderForCloud_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Invoke-DefenderForCloud-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Invoke-DefenderForCloud-Orchestrated.ps1","description":"Invoke-DefenderForCloud-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Invoke-DefenderForCloud-Orchestrated.ps1","description":"Invoke-DefenderForCloud-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_04_security_governance_task_02_apply_azure_policy_initiatives_azurecli_Invoke_AzurePolicyTier1_Orchestrated_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/azurecli/Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1"
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/azurecli/Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1","description":"Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1. The master infrastructure.yml (schema 5). Only the three keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/azurecli/Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1","description":"Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_03_configure_security_baselines_powershell_Invoke_SecurityBaselines_Orchestrated_ps1_generated:
+            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_04_enable_security_logging_azurecli_Invoke_SecurityLogging_Orchestrated_azcli_ps1_generated:
               type: object
-              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
+              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/azurecli/Invoke-SecurityLogging-Orchestrated.azcli.ps1"
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1","description":"Invoke-SecurityBaselines-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1","description":"Invoke-SecurityBaselines-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/azurecli/Invoke-SecurityLogging-Orchestrated.azcli.ps1","description":"Invoke-SecurityLogging-Orchestrated.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/azurecli/Invoke-SecurityLogging-Orchestrated.azcli.ps1","description":"Invoke-SecurityLogging-Orchestrated.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_04_security_governance_task_04_enable_security_logging_powershell_Invoke_SecurityLogging_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1","description":"Invoke-SecurityLogging-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1","description":"Invoke-SecurityLogging-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1","description":"Invoke-SecurityLogging-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/powershell/Invoke-SecurityLogging-Orchestrated.ps1","description":"Invoke-SecurityLogging-Orchestrated.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_01_enable_azure_hybrid_benefit_azurecli_Enable_AzureHybridBenefit_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/azurecli/Enable-AzureHybridBenefit.azcli.ps1"
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/azurecli/Enable-AzureHybridBenefit.azcli.ps1","description":"Enable-AzureHybridBenefit.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/azurecli/Enable-AzureHybridBenefit.azcli.ps1","description":"Enable-AzureHybridBenefit.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
-            scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_01_enable_azure_hybrid_benefit_powershell_Invoke_AzureHybridBenefit_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Invoke-AzureHybridBenefit-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Invoke-AzureHybridBenefit-Orchestrated.ps1","description":"Invoke-AzureHybridBenefit-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Invoke-AzureHybridBenefit-Orchestrated.ps1","description":"Invoke-AzureHybridBenefit-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_02_activate_windows_server_subscription_azurecli_Enable_WindowsServerSubscription_azcli_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/azurecli/Enable-WindowsServerSubscription.azcli.ps1"
@@ -22645,24 +22663,26 @@ tools:
             scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_02_activate_windows_server_subscription_powershell_Invoke_WindowsServerSubscription_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. The master infrastructure.yml (schema 5)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. Optional. The account for the remoting sessions to the nodes. Without it the account of the file is used (see above)."}
+                SkipSync: {"name":"SkipSync","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. Optional. Do not run Sync-AzureStackHCI; only check the nodes."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription/powershell/Invoke-WindowsServerSubscription-Orchestrated.ps1","description":"Invoke-WindowsServerSubscription-Orchestrated.ps1. Optional. Passed to step 1, and the progress lines of this script are appended to it. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_03_configure_enhanced_telemetry_azurecli_Invoke_TelemetryConfiguration_Orchestrated_azcli_ps1_generated:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/azurecli/Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/azurecli/Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/azurecli/Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.azcli.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_03_configure_enhanced_telemetry_powershell_Invoke_TelemetryConfiguration_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_06_testing_validation_task_01_infrastructure_health_validation_powershell_Invoke_InfrastructureHealth_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Invoke-InfrastructureHealth-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Invoke-InfrastructureHealth-Orchestrated.ps1","description":"Invoke-InfrastructureHealth-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Invoke-InfrastructureHealth-Orchestrated.ps1","description":"Invoke-InfrastructureHealth-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Optional. The node to run Sync-AzureStackHCI on (a node name of the file or an address), instead of the first node of nodes[]."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Optional. The account for the remoting session of the sync. Without it the account of the file is used (see above)."}
+                SkipSync: {"name":"SkipSync","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Optional. Do not run Sync-AzureStackHCI after a change."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry/powershell/Invoke-TelemetryConfiguration-Orchestrated.ps1","description":"Invoke-TelemetryConfiguration-Orchestrated.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_06_testing_validation_task_01_infrastructure_health_validation_powershell_Test_InfrastructureHealth_ps1_generated:
               type: object
               area: "scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Test-InfrastructureHealth.ps1"
@@ -22672,13 +22692,6 @@ tools:
                 ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Test-InfrastructureHealth.ps1","description":"Test-InfrastructureHealth.ps1. Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers at its management address."}
                 Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Test-InfrastructureHealth.ps1","description":"Test-InfrastructureHealth.ps1. Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, through the toolkit's secret resolver."}
                 TestClusterTimeoutMinutes: {"name":"TestClusterTimeoutMinutes","type":"integer","declared_type":"int","default":"60","required":"N","read_at":"scripts/deploy/06-testing-validation/task-01-infrastructure-health-validation/powershell/Test-InfrastructureHealth.ps1","description":"Test-InfrastructureHealth.ps1. How long to wait for Test-Cluster, which runs as a one-shot scheduled task on the node (see the TestCluster block). Default: 60."}
-            scripts_deploy_06_testing_validation_task_02_vmfleet_storage_testing_powershell_Invoke_VmFleetStorageTest_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest-Orchestrated.ps1","description":"Invoke-VmFleetStorageTest-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest-Orchestrated.ps1","description":"Invoke-VmFleetStorageTest-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_06_testing_validation_task_02_vmfleet_storage_testing_powershell_Invoke_VmFleetStorageTest_ps1_generated:
               type: object
               area: "scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest.ps1"
@@ -22690,13 +22703,6 @@ tools:
                 CollectVolumeSizeGiB: {"name":"CollectVolumeSizeGiB","type":"integer","declared_type":"int","default":"50","required":"N","read_at":"scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest.ps1","description":"Invoke-VmFleetStorageTest.ps1. Size of the Collect volume VMFleet writes its results to, in GiB. Default: 50."}
                 VmFleetModuleVersion: {"name":"VmFleetModuleVersion","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest.ps1","description":"Invoke-VmFleetStorageTest.ps1. Optional. The version of the VMFleet module to install when it is missing. Without it the latest version is installed."}
                 FleetAdminCredential: {"name":"FleetAdminCredential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/06-testing-validation/task-02-vmfleet-storage-testing/powershell/Invoke-VmFleetStorageTest.ps1","description":"Invoke-VmFleetStorageTest.ps1. The administrator account of the fleet VMs (VMFleet -AdminPass). Required unless -WhatIf. The script never prompts for it."}
-            scripts_deploy_06_testing_validation_task_03_network_rdma_validation_powershell_Invoke_NetworkRdmaValidation_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Invoke-NetworkRdmaValidation-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Invoke-NetworkRdmaValidation-Orchestrated.ps1","description":"Invoke-NetworkRdmaValidation-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Invoke-NetworkRdmaValidation-Orchestrated.ps1","description":"Invoke-NetworkRdmaValidation-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_06_testing_validation_task_03_network_rdma_validation_powershell_Test_NetworkRdmaValidation_ps1_generated:
               type: object
               area: "scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Test-NetworkRdmaValidation.ps1"
@@ -22705,13 +22711,6 @@ tools:
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":".\\logs\\validation-reports","required":"N","read_at":"scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Test-NetworkRdmaValidation.ps1","description":"Test-NetworkRdmaValidation.ps1. Path to save validation report. Default: .\\logs\\validation-reports\\"}
                 ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Test-NetworkRdmaValidation.ps1","description":"Test-NetworkRdmaValidation.ps1. Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers at its management address."}
                 Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/06-testing-validation/task-03-network-rdma-validation/powershell/Test-NetworkRdmaValidation.ps1","description":"Test-NetworkRdmaValidation.ps1. Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, through the toolkit's secret resolver."}
-            scripts_deploy_06_testing_validation_task_04_high_availability_testing_powershell_Invoke_HighAvailability_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/06-testing-validation/task-04-high-availability-testing/powershell/Invoke-HighAvailability-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-04-high-availability-testing/powershell/Invoke-HighAvailability-Orchestrated.ps1","description":"Invoke-HighAvailability-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-04-high-availability-testing/powershell/Invoke-HighAvailability-Orchestrated.ps1","description":"Invoke-HighAvailability-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_06_testing_validation_task_04_high_availability_testing_powershell_Test_HighAvailability_ps1_generated:
               type: object
               area: "scripts/deploy/06-testing-validation/task-04-high-availability-testing/powershell/Test-HighAvailability.ps1"
@@ -22728,13 +22727,6 @@ tools:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-05-security-compliance-validation/azurecli/Test-SecurityCompliance.azcli.ps1","description":"Test-SecurityCompliance.azcli.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-05-security-compliance-validation/azurecli/Test-SecurityCompliance.azcli.ps1","description":"Test-SecurityCompliance.azcli.ps1. Folder to save the JSON validation report in. Empty (the default): no report file is written."}
                 MaximumOwnerAssignments: {"name":"MaximumOwnerAssignments","type":"integer","declared_type":"int","default":"3","required":"N","read_at":"scripts/deploy/06-testing-validation/task-05-security-compliance-validation/azurecli/Test-SecurityCompliance.azcli.ps1","description":"Test-SecurityCompliance.azcli.ps1. The most Owner role assignments on the resource group before the script warns. Default: 3 (the Azure RBAC best practice: fewer than three owners)."}
-            scripts_deploy_06_testing_validation_task_05_security_compliance_validation_powershell_Invoke_SecurityCompliance_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Invoke-SecurityCompliance-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
-              properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Invoke-SecurityCompliance-Orchestrated.ps1","description":"Invoke-SecurityCompliance-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Invoke-SecurityCompliance-Orchestrated.ps1","description":"Invoke-SecurityCompliance-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
             scripts_deploy_06_testing_validation_task_05_security_compliance_validation_powershell_Test_SecurityCompliance_ps1_generated:
               type: object
               area: "scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Test-SecurityCompliance.ps1"

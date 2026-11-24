@@ -116,13 +116,13 @@ Describe 'No script of these folders uses the old layout' {
 }
 
 Describe 'The placeholders of scripts/deploy 03, 05 and 06 take -InfrastructureFile' {
-    It 'finds the placeholders (42 of them when this was written; 27 after K2 batch 3 retired four whose task a real script does)' {
+    It 'finds the placeholders (42 of them when this was written; 27 after K2 batch 3 retired four whose task a real script does; 11 after D140 made seven real and retired eleven)' {
         $count = 0
         foreach ($area in '03-onprem-readiness', '05-operational-foundations', '06-testing-validation') {
             $count += @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', $area)) -Recurse -File -Filter '*.ps1' |
                     Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'Invoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)\b' }).Count
         }
-        $count | Should -BeGreaterThan 20
+        $count | Should -BeGreaterThan 5
     }
     It '<Name> takes a mandatory -InfrastructureFile and has no -ConfigPath, -Credential or -TargetNode' -ForEach $script:Placeholders {
         $text = Get-Content -LiteralPath $Path -Raw

@@ -101,6 +101,8 @@ $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+# The intent layouts Learn does not support with SDN enabled by Arc: one copy, shared with the prerequisite check of operational foundations phase 01.
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'sdn', 'AzlSdn.psm1'))) -Force
 
 # Microsoft Learn: SDN enabled by Arc needs OS build 26100 or later; the Network Controller record is the fifth address of the infrastructure range.
 $MinimumBuild = 26100
@@ -136,32 +138,6 @@ function ConvertFrom-Number([long]$Number) {
     $bytes = [BitConverter]::GetBytes([uint32]$Number)
     [Array]::Reverse($bytes)
     [Net.IPAddress]::new($bytes).ToString()
-}
-
-# The intent layouts Learn does not support with SDN enabled by Arc (Software Defined Networking enabled by Azure Arc on Azure Local, Unsupported intent
-# configurations and Supported networking patterns). Returns one sentence per problem.
-function Get-IntentProblem([object[]]$Intents, [int]$NodeCount, [string]$Connectivity, [string]$Architecture) {
-    $problems = [System.Collections.Generic.List[string]]::new()
-    $list = @($Intents | Where-Object { $_ -is [System.Collections.IDictionary] })
-    if ($list.Count -eq 0) { return @() }
-    $traffic = @{}
-    foreach ($intent in $list) { $traffic[[string](Get-Field $intent 'name' '?')] = @(@(Get-Field $intent 'traffic' @()) | ForEach-Object { "$_".ToLowerInvariant() }) }
-    if ($list.Count -gt 3) { $problems.Add("networking.intents holds $($list.Count) intents; SDN enabled by Arc supports at most three.") }
-    foreach ($name in $traffic.Keys) {
-        $t = $traffic[$name]
-        if ('compute' -in $t -and 'storage' -in $t -and 'management' -notin $t) { $problems.Add("The intent '$name' carries compute and storage without management; SDN enabled by Arc does not support a combined compute and storage intent.") }
-        if ($t.Count -eq 1 -and $t[0] -eq 'compute' -and $NodeCount -eq 1) { $problems.Add("The intent '$name' carries only compute on a single machine; SDN enabled by Arc does not support a standalone compute intent on one machine.") }
-    }
-    if ($Architecture -ne 'san') {
-        $switchless = $Connectivity -eq 'switchless'
-        if ($list.Count -eq 3 -and $NodeCount -in 2, 3 -and $switchless) { $problems.Add("Three intents on $NodeCount machines with switchless storage are not supported by SDN enabled by Arc.") }
-        if ($list.Count -eq 1 -and @(@($traffic.Values)[0]).Count -ge 3 -and $switchless) { $problems.Add('The group-all-traffic intent is supported by SDN enabled by Arc only with switched storage (scenario.storage_connectivity).') }
-        if ($NodeCount -ge 5 -and $switchless) { $problems.Add("$NodeCount machines are supported by SDN enabled by Arc only with switched storage (scenario.storage_connectivity).") }
-        $storageIntents = @($traffic.Keys | Where-Object { 'storage' -in $traffic[$_] })
-        $mgmtCompute = @($traffic.Keys | Where-Object { 'management' -in $traffic[$_] -and 'compute' -in $traffic[$_] -and 'storage' -notin $traffic[$_] })
-        if ($mgmtCompute.Count -gt 0 -and $storageIntents.Count -eq 0 -and $NodeCount -gt 1) { $problems.Add('Management and compute in one intent without a storage intent is supported by SDN enabled by Arc only on a single machine.') }
-    }
-    @($problems)
 }
 
 # The commands that run on the machine. Each takes the step name first, so one remoting call shape serves all of them.
@@ -234,7 +210,7 @@ $connectivity = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Pat
 $nodeInfo = @(Get-AzlInfrastructureNode -Infrastructure $infra)
 $intentValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'networking.intents'
 $intents = @(@($intentValue) | Where-Object { $null -ne $_ })
-$intentProblems = @(Get-IntentProblem -Intents $intents -NodeCount $nodeInfo.Count -Connectivity $connectivity -Architecture $architecture)
+$intentProblems = @(Get-AzlSdnIntentProblem -Intents $intents -NodeCount $nodeInfo.Count -Connectivity $connectivity -Architecture $architecture)
 if ($intentProblems) { Exit-InputProblem ("This design is not supported by SDN enabled by Azure Arc (Microsoft Learn, sdn-overview):`n  " + ($intentProblems -join "`n  ")) }
 if ($intents.Count -eq 0) { Write-Caution 'networking.intents is not in the file, so the intent layout was not checked against what SDN enabled by Arc supports.' }
 
