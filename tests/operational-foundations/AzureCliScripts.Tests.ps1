@@ -33,8 +33,10 @@ BeforeDiscovery {
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Repo = $repo
-    # az rest is only ever a PUT in these scripts (the Tier 1 policy assignment), so it counts as a change.
+    # az rest counts as a change unless it is a GET: the Tier 1 policy assignment is a PUT, the reads of the inherited policy assignments
+    # (Enable-DefenderForCloud, Test-SecurityCompliance) are GETs.
     $script:ChangeCommand = '(create|update|delete|register|extend-software-assurance-benefit)$|^rest$'
+    $script:IsChange = { param($Call) if ($Call.Command -eq 'rest') { return ([string]@($Call.Options['--method'])[0]) -ine 'get' }; $Call.Command -match $script:ChangeCommand }
     Import-Module powershell-yaml
     # A stub with the name of the command, so the mock works whether or not the Azure CLI is installed.
     function az { }
@@ -108,7 +110,7 @@ BeforeAll {
         }
     }
     function Get-K6Call([string]$Command) { @($global:K6Calls | Where-Object Command -EQ $Command) }
-    function Get-K6Change { @($global:K6Calls | Where-Object { $_.Command -match $script:ChangeCommand }) }
+    function Get-K6Change { @($global:K6Calls | Where-Object { & $script:IsChange $_ }) }
     function Get-K6Option($Call, [string]$Name) { $Call.Options[$Name] }
 
     # The state of the fake Azure: signed in to the tenant of the file, the stack-hci and stack-hci-vm extensions installed, nothing else exists.
@@ -725,7 +727,7 @@ Describe 'the security and licensing scripts' {
             $c.Options['--name'] | Should -Be 'default'
             $c.Options['--emails'] | Should -Be 'security@improbability.cloud'
             @($global:K6Calls.Command | Where-Object { $_ -like 'security pricing*' -or $_ -like '*auto-provisioning*' }) | Should -BeNullOrEmpty
-            @($global:K6Calls.Command | Sort-Object -Unique | Where-Object { $_ -match $script:ChangeCommand }) | Should -Be @('policy assignment create', 'provider register', 'security contact create')
+            @($global:K6Calls | Where-Object { & $script:IsChange $_ } | ForEach-Object Command | Sort-Object -Unique) | Should -Be @('policy assignment create', 'provider register', 'security contact create')
         }
         It 'changes nothing when every item is in place, and never replaces a contact that exists' {
             $global:K6Handlers['provider show'] = { param($o, $a) 'Registered' }
