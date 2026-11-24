@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.35"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "ansible"
   # Your own version of this file.
@@ -188,16 +188,16 @@ identity:
       # A Key Vault secret reference.
       # required; used by: os_configuration, monitoring, ansible
       password: "keyvault://kv-example-01/password"
-    # (since 5.6.23) 
+    # (since 5.6.23) Whether Set-ADConfiguration.ps1 creates the computer objects of the machines (nodes[].name) and of the cluster (cluster.name) in the OU bef...
     # default: false; used by: deployment, ansible
     precreate_computer_objects: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry...
     # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
     forest_functional_level: "WinThreshold"
-    # (since 5.6.28) 
+    # (since 5.6.28) Domain functional level of that new forest's domain.
     # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
     domain_functional_level: "WinThreshold"
-    # (since 5.6.28) 
+    # (since 5.6.28) The DNS forwarders of the domain controllers that the toolkit's Ansible domain controller role promotes: the servers they ask for names out...
     # used by: ansible
     dns_forwarders: ["192.0.2.53"]
     # Groups created in the OU for administration of the instance.
@@ -245,13 +245,13 @@ landing_zone:
       # Private IPv4 address of the machine.
       # used by: terraform, ansible, trailwright
       private_ip: "10.20.4.10"
-      # (since 5.6.19) 
+      # (since 5.6.19) Operating system image of the machine: windows_server_2022 or windows_server_2025 (Windows Server Datacenter: Azure Edition) or ubuntu_2404...
       # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
       os: "windows_server_2025"
-      # (since 5.6.28) 
+      # (since 5.6.28) For a machine with role domain_controller: new_forest (the first domain controller: it creates the forest of identity.active_directory.doma...
       # one of: new_forest | replica; used by: ansible
       dc_promotion: "new_forest"
-      # (since 5.6.28) 
+      # (since 5.6.28) For a machine with role domain_controller: a Key Vault secret reference (keyvault://<vault>/<secret>) to the Directory Services Restore Mod...
       # used by: ansible
       dsrm_password: "keyvault://kv-iic-mgmt-01/dsrm-password"
 
@@ -267,13 +267,13 @@ devops:
   # Organization, group or project collection.
   # used by: cicd_infra, ansible, terraform, trailwright
   organization: "improbability-cloud"
-  # (since 5.5) 
+  # (since 5.5) How the pipelines sign in to Azure (tasks 01 and 05).
   # used by: cicd_infra
   authentication:
     # Key Vault reference where task 01 stores the generated client secret (method client_secret).
     # used by: cicd_infra, ansible
     client_secret: "keyvault://kv-example-01/client-secret"
-  # (since 5.5) 
+  # (since 5.5) The self-hosted runners that task 06 deploys with Terraform.
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
@@ -303,9 +303,9 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
-      # (since 5.6.28) 
+      # (since 5.6.28) Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner p...
       # default: "runneradmin"; used by: cicd_infra, terraform, ansible
       admin_username: "runneradmin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists.
       # used by: cicd_infra, ansible
       identity_client_id: "00000000-0000-0000-0000-000000000000"

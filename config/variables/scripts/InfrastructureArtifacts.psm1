@@ -423,8 +423,11 @@ function Get-InfrastructureTemplateText {
 
     function Add-CommentLine($Entry, [string]$Ind, $Clauses, [bool]$Req) {
         $eff = if ($Entry.Contains('file_schema')) { $Entry['file_schema'] } else { $Entry }
-        $desc = Get-FirstSentence ([string]$(if ($eff.Contains('description')) { $eff['description'] } else { '' }))
-        $desc = $desc -replace '^Schema (\d+\.\d+(\.\d+)?)\.\s*', '(since $1) '
+        # "Schema 5.6.29. The one folder ..." is a version marker and a sentence: the sentence is the comment, the marker is "(since 5.6.29)".
+        $rawDesc = [string]$(if ($eff.Contains('description')) { $eff['description'] } else { '' })
+        $since = ''
+        if ($rawDesc -match '^Schema (\d+\.\d+(\.\d+)?)\.\s+(?<rest>.*)$') { $since = "(since $($Matches[1])) "; $rawDesc = $Matches['rest'] }
+        $desc = $since + (Get-FirstSentence $rawDesc)
         if ($desc) { $lines.Add("$Ind# $desc") }
         $notes = @()
         if ($Req) { $notes += 'required' }

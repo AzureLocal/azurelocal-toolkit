@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.35"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "cicd_infra"
   # Your own version of this file.
@@ -76,28 +76,28 @@ key_vaults:
     # used by: cicd_infra, trailwright, loadtools
     purpose: "management"
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) The provider New-AzlSecretReference uses for a new reference when the caller does not name one.
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -208,13 +208,13 @@ landing_zone:
           # Name of the route table on the subnet.
           # used by: cicd_infra
           route_table: ""
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network accept traffic that was sent by a machine outside the peered network (Microsoft Learn: Virt...
       # default: true; used by: cicd_infra, terraform
       allow_forwarded_traffic: true
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network let the peer use the VPN or ExpressRoute gateway of this network (Microsoft Learn: Virtual...
       # default: false; used by: cicd_infra, terraform
       allow_gateway_transit: false
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network use the gateway of the peer (Microsoft Learn: Virtual network peering, Use remote gateways).
       # default: false; used by: cicd_infra
       use_remote_gateways: false
 
@@ -233,19 +233,19 @@ devops:
   # Name of the project or organization on the platform.
   # used by: cicd_infra
   project: "iic-azure-local"
-  # (since 5.5) 
+  # (since 5.5) Key Vault reference to a token with administrator rights on the organization or project.
   # used by: cicd_infra
   api_token: "keyvault://kv-iic-mgmt-01/devops-admin-token"
-  # (since 5.5) 
+  # (since 5.5) Name of the subscription in landing_zone.subscriptions that holds the runners (role devops).
   # used by: cicd_infra, terraform
   subscription: "sub-iic-devops"
-  # (since 5.5) 
+  # (since 5.5) Resource group of the runners, their identity and their network.
   # used by: cicd_infra, terraform
   resource_group: "rg-iic-runners-01"
-  # (since 5.5) 
+  # (since 5.5) Create devops.resource_group.
   # default: false; used by: cicd_infra, terraform
   create_resource_group: false
-  # (since 5.5) 
+  # (since 5.5) The deployment repository or project that task 02 creates.
   # used by: cicd_infra
   repository:
     # Repository name.
@@ -260,7 +260,7 @@ devops:
     # The protected default branch.
     # default: "main"; used by: cicd_infra
     default_branch: "main"
-  # (since 5.5) 
+  # (since 5.5) What task 03 sets on the repository: branch protection, approvals and security.
   # used by: cicd_infra
   settings:
     # Approvals a pull request needs before it merges. 0 for a sandbox.
@@ -281,7 +281,7 @@ devops:
     # Pipeline checks that must pass before a merge.
     # used by: cicd_infra
     required_status_checks: []
-  # (since 5.5) 
+  # (since 5.5) The deployment environments that task 04 creates, with their approval gate.
   # used by: cicd_infra
   environments:
     # Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.
@@ -299,76 +299,76 @@ devops:
       # The only branch that may deploy to the environment.
       # default: "main"; used by: cicd_infra
       deployment_branch: "main"
-  # (since 5.6.25) 
+  # (since 5.6.25) What the toolkit's own pipelines (the files under pipelines/) select: the runner label and the approval environment of each pipeline.
   # used by: cicd_infra
   pipelines:
-    # (since 5.6.25) 
+    # (since 5.6.25) The one label by which the pipelines choose the general runner: runs-on on GitHub (after self-hosted and linux) and tags on GitLab.
     # used by: cicd_infra
     runner_label: "azure-local"
-    # (since 5.6.25) 
+    # (since 5.6.25) The approval environment of each pipeline.
     # used by: cicd_infra
     environments:
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Apply job of the OS configuration pipelines (pipelines/github-actions/os-configuration.yml, pipelines/gitlab...
       # used by: cicd_infra
       os_configuration: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment of the second approval in front of a storage wipe (stage ConfirmStorageWipe of pipelines/azure-devops/os-configuration.yml).
       # used by: cicd_infra
       os_configuration_clear_storage: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Deploy job of the ARM deployment pipelines (pipelines/github-actions/arm-deployment.yml, pipelines/gitlab/st...
       # used by: cicd_infra
       arm_deployment: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Apply job of the CI/CD infrastructure pipelines (the runners; pipelines/github-actions/cicd-infra.yml, pipel...
       # used by: cicd_infra
       cicd_infra: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Terraform apply and the on-premises Ansible jobs of the Terraform and Ansible sample pipelines (pipelines/gi...
       # used by: cicd_infra
       terraform_deployment: "azr-prod-us"
-      # (since 5.6.28) 
+      # (since 5.6.28) The environment that gates every day 2 job that changes the cluster: the update (pipelines/github-actions/day2-update.yml, pipelines/gitlab...
       # used by: cicd_infra
       operations: "azr-prod-us"
-    # (since 5.6.28) 
+    # (since 5.6.28) When the toolkit's scheduled pipelines run.
     # used by: cicd_infra
     schedules:
-      # (since 5.6.28) 
+      # (since 5.6.28) When the day 2 check for updates runs (pipelines/github-actions/day2-check-updates.yml, pipelines/gitlab/stages/day2-check-updates.yml, pip...
       # default: "17 4 * * *"; used by: cicd_infra
       check_for_updates: "17 4 * * *"
-    # (since 5.6.27) 
+    # (since 5.6.27) Azure DevOps only.
     # used by: cicd_infra
     service_connection: "iic-azure-local"
-    # (since 5.6.27) 
+    # (since 5.6.27) Azure DevOps only.
     # used by: cicd_infra
     variable_group: "iic-azure-credentials"
-    # (since 5.6.28) 
+    # (since 5.6.28) The path, in the deployment repository, of the infrastructure file the toolkit's pipelines pass to the scripts (-InfrastructureFile).
     # default: "config/infrastructure.yml"; used by: cicd_infra
     infrastructure_file: "config/infrastructure.yml"
-    # (since 5.6.28) 
+    # (since 5.6.28) The repository path of the ZTP handoff files (a handoff file or a directory of *.ztp-handoff.json) the OS configuration pipelines pass to t...
     # default: "ztp-state"; used by: cicd_infra
     handoff_path: "ztp-state"
-    # (since 5.6.28) 
+    # (since 5.6.28) The tool versions every toolkit pipeline installs, the same on GitHub, GitLab and Azure DevOps.
     # used by: cicd_infra
     tool_versions:
-      # (since 5.6.28) 
+      # (since 5.6.28) The Terraform release the pipelines install (AZL_TERRAFORM_VERSION): hashicorp/setup-terraform, TerraformInstaller, or pipelines/gitlab/Use...
       # default: "1.16.3"; used by: cicd_infra
       terraform: "1.16.3"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Python minor version of the Ansible jobs (AZL_PYTHON_VERSION): actions/setup-python, UsePythonVersion, or the python<version> virtual e...
       # default: "3.12"; used by: cicd_infra
       python: "3.12"
-      # (since 5.6.28) 
+      # (since 5.6.28) The ansible-core release the Ansible jobs install with pip (AZL_ANSIBLE_CORE_VERSION).
       # default: "2.21.5"; used by: cicd_infra
       ansible_core: "2.21.5"
-      # (since 5.6.28) 
+      # (since 5.6.28) The ansible-lint release the lint jobs install with pip (AZL_ANSIBLE_LINT_VERSION).
       # default: "26.10.1"; used by: cicd_infra
       ansible_lint: "26.10.1"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Az PowerShell module version (AZL_AZ_POWERSHELL_VERSION): preferredAzurePowerShellVersion of AzurePowerShell@5 on Azure DevOps, Install...
       # default: "16.3.0"; used by: cicd_infra
       az_powershell: "16.3.0"
-      # (since 5.6.28) 
+      # (since 5.6.28) The powershell-yaml module version the pipelines install to read infrastructure.yml (AZL_POWERSHELL_YAML_VERSION).
       # default: "0.4.12"; used by: cicd_infra
       powershell_yaml: "0.4.12"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Az.KeyVault module version the pipelines install to read keyvault:// secrets (AZL_AZ_KEYVAULT_VERSION).
       # default: "6.6.1"; used by: cicd_infra
       az_keyvault: "6.6.1"
-  # (since 5.5) 
+  # (since 5.5) How the pipelines sign in to Azure (tasks 01 and 05).
   # used by: cicd_infra
   authentication:
     # oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentic...
@@ -386,7 +386,7 @@ devops:
     # Register Microsoft.Compute and the EncryptionAtHost feature on each subscription.
     # default: true; used by: cicd_infra
     register_encryption_at_host: true
-  # (since 5.5) 
+  # (since 5.5) The self-hosted runners that task 06 deploys with Terraform.
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
@@ -431,43 +431,43 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
-      # (since 5.6.28) 
+      # (since 5.6.28) The SSH public key of the administrator of a Linux runner (a public key, not a secret): the key itself (ssh-ed25519, ssh-rsa or ecdsa-sha2-...
       # used by: cicd_infra
       admin_ssh_public_key: "file://runner-admin.pub"
-      # (since 5.6.28) 
+      # (since 5.6.28) Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner p...
       # default: "runneradmin"; used by: cicd_infra, terraform, ansible
       admin_username: "runneradmin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists.
       # used by: cicd_infra, ansible
       identity_client_id: "00000000-0000-0000-0000-000000000000"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the network security group of the runner subnet.
       # used by: cicd_infra, terraform
       nsg_name: "nsg-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the user-assigned managed identity the runner signs in to Azure as.
       # used by: cicd_infra, terraform
       managed_identity_name: "id-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Windows runners only: Key Vault reference to the secret task 06 writes the generated administrator password to.
       # used by: cicd_infra, terraform
       windows_admin_password_secret: "keyvault://kv-iic-mgmt-01/runner-ztp-local-admin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Availability zones the runner machines are spread over (the VM scale set spans them).
       # used by: cicd_infra, terraform
       zones: ["1", "2"]
-      # (since 5.6.28) 
+      # (since 5.6.28) Size of the OS disk in GB.
       # used by: cicd_infra, terraform
       os_disk_size_gb: 128
-      # (since 5.6.28) 
+      # (since 5.6.28) Storage type of the OS disk and of the data disk.
       # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: cicd_infra, terraform
       os_disk_type: "Premium_LRS"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the OS disk.
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       os_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the data disk (data_disk_gb).
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       data_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Encryption at host of the runner machines.
       # default: false; used by: cicd_infra, terraform
       encryption_at_host: false
-      # (since 5.6.28) 
+      # (since 5.6.28) Marketplace image of the runner machines.
       # used by: cicd_infra, terraform
       image:
         # Image publisher.
@@ -482,7 +482,7 @@ devops:
         # Image version.
         # default: "latest"; used by: cicd_infra, terraform
         version: "latest"
-  # (since 5.5) 
+  # (since 5.5) The VNet of the runners, the peering with the hub and the lab ranges they reach.
   # used by: cicd_infra
   runner_network:
     # Name of the virtual network the runners are placed in.
@@ -512,10 +512,10 @@ devops:
       # Create the hub half of the peering.
       # default: true; used by: cicd_infra, terraform
       create_hub_side: true
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the spoke half of the peering (on the runner VNet).
       # used by: cicd_infra, terraform
       spoke_name: "peer-vnet-iic-devops-01-to-hub"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the hub half of the peering (on the hub VNet).
       # used by: cicd_infra, terraform
       hub_name: "peer-hub-to-vnet-iic-devops-01"
     # Lab networks the runners reach: management, storage, BMC.
@@ -530,16 +530,16 @@ devops:
     # Ranges that may reach SSH or RDP on the runners.
     # used by: cicd_infra, terraform
     admin_source_cidrs: []
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads.
     # default: true; used by: cicd_infra, terraform
     allow_internet_https: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata.
     # default: true; used by: cicd_infra, terraform
     allow_internet_http: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows ICMP outbound to reachable_cidrs and bmc_cidrs, for reachability checks.
     # default: true; used by: cicd_infra, terraform
     allow_icmp: true
-  # (since 5.5) 
+  # (since 5.5) What the runners may do in Azure (least privilege).
   # used by: cicd_infra
   runner_access:
     # Resource groups where the runners are Contributor.
@@ -557,7 +557,7 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra, terraform
     key_vaults: ["kv-iic-mgmt-01"]
-    # (since 5.6.28) 
+    # (since 5.6.28) Other role assignments of the runner identities, each with a short name, a scope (a resource ID) and a role name.
     # used by: cicd_infra, terraform
     additional_role_assignments:
       # Short name of the assignment (unique in the list).
@@ -605,10 +605,10 @@ devops:
   # Where the Terraform state is kept.
   # used by: cicd_infra
   state:
-    # (since 5.5) 
+    # (since 5.5) Subscription of the state storage account.
     # used by: cicd_infra, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
-    # (since 5.5) 
+    # (since 5.5) Blob name of the CI/CD runners state.
     # default: "cicd-infra.tfstate"; used by: cicd_infra, terraform
     key: "cicd-infra.tfstate"
     # Storage account that holds the state.
@@ -620,6 +620,6 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local).
     # default: "azure-local.tfstate"; used by: cicd_infra, terraform
     azure_local_key: "azure-local.tfstate"

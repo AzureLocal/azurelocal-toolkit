@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.35"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "terraform"
   # Your own version of this file.
@@ -68,7 +68,7 @@ azure:
     # Object ID (GUID) of the identity's principal in Microsoft Entra ID.
     # used by: terraform
     object_id: "00000000-0000-0000-0000-000000000000"
-    # (since 5.6.28) 
+    # (since 5.6.28) Roles of the automation identity at resource group scope, assigned by the Terraform identity module (the subscription roles are devops.auth...
     # used by: terraform
     resource_group_roles:
       # Name of the resource group.
@@ -90,10 +90,10 @@ key_vaults:
     # Resource group that holds the vault.
     # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview).
     # default: 90; used by: deployment, terraform
     soft_delete_retention_days: 90
-    # (since 5.6.28) 
+    # (since 5.6.28) Public IP addresses or CIDR ranges that may reach the vault.
     # used by: terraform
     allowed_ip_ranges: ["198.51.100.0/24"]
 
@@ -125,10 +125,10 @@ security:
     # Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolon...
     # used by: terraform
     security_contact_email: "security@improbability.cloud"
-    # (since 5.6.28) 
+    # (since 5.6.28) Defender for Cloud sends security_contact_email the security alerts.
     # default: true; used by: terraform
     alert_notifications: true
-    # (since 5.6.28) 
+    # (since 5.6.28) Defender for Cloud sends the security alerts to the subscription owners too.
     # default: true; used by: terraform
     alerts_to_admins: true
 
@@ -200,7 +200,7 @@ landing_zone:
     - name: "rg-iic-conn-01"
   # Azure Policy of the landing zone.
   policy:
-    # (since 5.6.28) 
+    # (since 5.6.28) Azure Policy assignments at the scope of the Azure Local subscription (azure.subscription_id), made by the Terraform security module.
     # used by: terraform
     assignments:
       # Name of the assignment (its resource name, unique in its scope).
@@ -221,7 +221,7 @@ landing_zone:
         # Message shown when a resource is not compliant.
         # used by: terraform
         non_compliance_message: ""
-    # (since 5.6.28) 
+    # (since 5.6.28) Azure Policy assignments at the scope of a resource group of the landing zone, made by the Terraform security module.
     # used by: terraform
     resource_group_assignments:
       # Name of the assignment (its resource name, unique in its scope).
@@ -275,49 +275,49 @@ landing_zone:
           # Name of the network security group on the subnet.
           # used by: cicd_infra, terraform
           network_security_group: ""
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network accept traffic that was sent by a machine outside the peered network (Microsoft Learn: Virt...
       # default: true; used by: cicd_infra, terraform
       allow_forwarded_traffic: true
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network let the peer use the VPN or ExpressRoute gateway of this network (Microsoft Learn: Virtual...
       # default: false; used by: cicd_infra, terraform
       allow_gateway_transit: false
-  # (since 5.6.21) 
+  # (since 5.6.21) Network security groups (NSG) of the Azure landing zone networks, with their rules.
   # used by: terraform
   network_security_groups:
-    # (since 5.6.21) 
+    # (since 5.6.21) Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit an...
     # required; used by: terraform
     - name: "nsg-iic-mgmt-01"
-      # (since 5.6.21) 
+      # (since 5.6.21) The security rules of the group.
       # used by: terraform
       rules:
-        # (since 5.6.21) 
+        # (since 5.6.21) Name of the rule, 1 to 80 characters, with the same characters as the group name.
         # required; used by: terraform
         - name: "allow-rdp-from-hub"
-          # (since 5.6.21) 
+          # (since 5.6.21) Priority of the rule, 100 to 4096.
           # required; used by: terraform
           priority: 100
-          # (since 5.6.21) 
+          # (since 5.6.21) Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic.
           # required; one of: Inbound | Outbound; used by: terraform
           direction: "Inbound"
-          # (since 5.6.21) 
+          # (since 5.6.21) Allow or Deny the traffic the rule matches.
           # required; one of: Allow | Deny; used by: terraform
           access: "Allow"
-          # (since 5.6.21) 
+          # (since 5.6.21) Protocol the rule matches: * (any, the default), Tcp, Udp, Icmp, Esp or Ah (New-AzNetworkSecurityRuleConfig -Protocol).
           # one of: * | Tcp | Udp | Icmp | Esp | Ah; default: "*"; used by: terraform
           protocol: "*"
-          # (since 5.6.21) 
+          # (since 5.6.21) Source the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag such as VirtualNetwork or Internet...
           # used by: terraform
           source_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535.
           # used by: terraform
           source_port_ranges: ["*", "1024-2048"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Destination the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag.
           # used by: terraform
           destination_address_prefixes: ["203.0.113.0/24", "198.51.100.0/24"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535.
           # required; used by: terraform
           destination_port_ranges: ["443", "8000-8100"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Optional text for the rule, at most 140 characters.
           # used by: terraform
           description: "Allow RDP from the hub network"
   # Gateways, bastion and firewall of the connectivity hub.
@@ -337,13 +337,13 @@ landing_zone:
       # SKU of the VPN gateway, for example VpnGw1AZ.
       # used by: terraform
       sku: "VpnGw1AZ"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the VPN gateway (of its first instance in active-active mode).
       # used by: terraform
       public_ip_name: "pip-iic-vpng-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the second instance; needed when active_active is true (Microsoft Learn: About active-active mode VPN gate...
       # used by: terraform
       secondary_public_ip_name: "pip-iic-vpng-hub-02"
-      # (since 5.6.28) 
+      # (since 5.6.28) Active-active mode: both gateway instances carry tunnels; it needs a route-based VPN, a SKU other than Basic and two Standard static public...
       # default: false; used by: terraform
       active_active: false
       # BGP autonomous system number of the gateway.
@@ -384,13 +384,13 @@ landing_zone:
       # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
-      # (since 5.6.19) 
+      # (since 5.6.19) Name of the virtual network the Bastion host is in: an entry of landing_zone.networks with a subnet named AzureBastionSubnet of /26 or larg...
       # used by: terraform
       network: "vnet-iic-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the Bastion host (Standard SKU, static: Microsoft Learn, About Azure Bastion configuration settings).
       # used by: terraform
       public_ip_name: "pip-iic-bas-hub-01"
-    # (since 5.6.19) 
+    # (since 5.6.19) An Azure NAT gateway for the outbound traffic of subnets of a landing zone network.
     # used by: terraform
     nat_gateway:
       # Name of the NAT gateway.
@@ -408,10 +408,10 @@ landing_zone:
       # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
       # used by: terraform
       idle_timeout_minutes: 10
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the NAT gateway.
       # used by: terraform
       public_ip_name: "pip-iic-ng-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) SKU of the NAT gateway and of its public IP: Standard or StandardV2 (zone redundant; it takes StandardV2 public IPs only).
       # one of: Standard | StandardV2; default: "Standard"; used by: terraform
       sku: "Standard"
   # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
@@ -441,7 +441,7 @@ landing_zone:
       # Azure VM size, for example Standard_D2s_v5.
       # used by: terraform, trailwright
       size: "Standard_D2s_v5"
-      # (since 5.6.19) 
+      # (since 5.6.19) Operating system image of the machine: windows_server_2022 or windows_server_2025 (Windows Server Datacenter: Azure Edition) or ubuntu_2404...
       # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
       os: "windows_server_2025"
       # Local administrator user name of the machine.
@@ -450,16 +450,16 @@ landing_zone:
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # used by: terraform
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
-      # (since 5.6.28) 
+      # (since 5.6.28) Size of the OS disk in GB (VMs in Azure).
       # default: 128; used by: terraform
       os_disk_size_gb: 128
-      # (since 5.6.28) 
+      # (since 5.6.28) Storage type of the OS disk (VMs in Azure).
       # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: terraform
       os_disk_type: "Premium_LRS"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the OS disk (VMs in Azure).
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: terraform
       os_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Version of the Marketplace image of os (VMs in Azure): latest, or a version such as 26100.1234.250101.
       # default: "latest"; used by: terraform
       image_version: "latest"
 
@@ -475,22 +475,22 @@ devops:
   # Organization, group or project collection.
   # used by: cicd_infra, ansible, terraform, trailwright
   organization: "improbability-cloud"
-  # (since 5.5) 
+  # (since 5.5) Name of the subscription in landing_zone.subscriptions that holds the runners (role devops).
   # used by: cicd_infra, terraform
   subscription: "sub-iic-devops"
-  # (since 5.5) 
+  # (since 5.5) Resource group of the runners, their identity and their network.
   # used by: cicd_infra, terraform
   resource_group: "rg-iic-runners-01"
-  # (since 5.5) 
+  # (since 5.5) Create devops.resource_group.
   # default: false; used by: cicd_infra, terraform
   create_resource_group: false
-  # (since 5.5) 
+  # (since 5.5) How the pipelines sign in to Azure (tasks 01 and 05).
   # used by: cicd_infra
   authentication:
     # Roles the service principal gets on each subscription.
     # used by: cicd_infra, terraform
     roles: ["Contributor", "User Access Administrator"]
-  # (since 5.5) 
+  # (since 5.5) The self-hosted runners that task 06 deploys with Terraform.
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
@@ -535,37 +535,37 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
-      # (since 5.6.28) 
+      # (since 5.6.28) Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner p...
       # default: "runneradmin"; used by: cicd_infra, terraform, ansible
       admin_username: "runneradmin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the network security group of the runner subnet.
       # used by: cicd_infra, terraform
       nsg_name: "nsg-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the user-assigned managed identity the runner signs in to Azure as.
       # used by: cicd_infra, terraform
       managed_identity_name: "id-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Windows runners only: Key Vault reference to the secret task 06 writes the generated administrator password to.
       # used by: cicd_infra, terraform
       windows_admin_password_secret: "keyvault://kv-iic-mgmt-01/runner-ztp-local-admin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Availability zones the runner machines are spread over (the VM scale set spans them).
       # used by: cicd_infra, terraform
       zones: ["1", "2"]
-      # (since 5.6.28) 
+      # (since 5.6.28) Size of the OS disk in GB.
       # used by: cicd_infra, terraform
       os_disk_size_gb: 128
-      # (since 5.6.28) 
+      # (since 5.6.28) Storage type of the OS disk and of the data disk.
       # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: cicd_infra, terraform
       os_disk_type: "Premium_LRS"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the OS disk.
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       os_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the data disk (data_disk_gb).
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       data_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Encryption at host of the runner machines.
       # default: false; used by: cicd_infra, terraform
       encryption_at_host: false
-      # (since 5.6.28) 
+      # (since 5.6.28) Marketplace image of the runner machines.
       # used by: cicd_infra, terraform
       image:
         # Image publisher.
@@ -580,7 +580,7 @@ devops:
         # Image version.
         # default: "latest"; used by: cicd_infra, terraform
         version: "latest"
-  # (since 5.5) 
+  # (since 5.5) The VNet of the runners, the peering with the hub and the lab ranges they reach.
   # used by: cicd_infra
   runner_network:
     # Name of the virtual network the runners are placed in.
@@ -610,10 +610,10 @@ devops:
       # Create the hub half of the peering.
       # default: true; used by: cicd_infra, terraform
       create_hub_side: true
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the spoke half of the peering (on the runner VNet).
       # used by: cicd_infra, terraform
       spoke_name: "peer-vnet-iic-devops-01-to-hub"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the hub half of the peering (on the hub VNet).
       # used by: cicd_infra, terraform
       hub_name: "peer-hub-to-vnet-iic-devops-01"
     # Lab networks the runners reach: management, storage, BMC.
@@ -628,16 +628,16 @@ devops:
     # Ranges that may reach SSH or RDP on the runners.
     # used by: cicd_infra, terraform
     admin_source_cidrs: []
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads.
     # default: true; used by: cicd_infra, terraform
     allow_internet_https: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata.
     # default: true; used by: cicd_infra, terraform
     allow_internet_http: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows ICMP outbound to reachable_cidrs and bmc_cidrs, for reachability checks.
     # default: true; used by: cicd_infra, terraform
     allow_icmp: true
-  # (since 5.5) 
+  # (since 5.5) What the runners may do in Azure (least privilege).
   # used by: cicd_infra
   runner_access:
     # Resource groups where the runners are Contributor.
@@ -655,7 +655,7 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra, terraform
     key_vaults: ["kv-iic-mgmt-01"]
-    # (since 5.6.28) 
+    # (since 5.6.28) Other role assignments of the runner identities, each with a short name, a scope (a resource ID) and a role name.
     # used by: cicd_infra, terraform
     additional_role_assignments:
       # Short name of the assignment (unique in the list).
@@ -670,10 +670,10 @@ devops:
   # Where the Terraform state is kept.
   # used by: cicd_infra
   state:
-    # (since 5.5) 
+    # (since 5.5) Subscription of the state storage account.
     # used by: cicd_infra, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
-    # (since 5.5) 
+    # (since 5.5) Blob name of the CI/CD runners state.
     # default: "cicd-infra.tfstate"; used by: cicd_infra, terraform
     key: "cicd-infra.tfstate"
     # Storage account that holds the state.
@@ -685,27 +685,27 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local).
     # default: "azure-local.tfstate"; used by: cicd_infra, terraform
     azure_local_key: "azure-local.tfstate"
-    # (since 5.6.28) 
+    # (since 5.6.28) Redundancy of the state storage account (Microsoft Learn: Azure Storage redundancy).
     # one of: LRS | ZRS | GRS | RAGRS | GZRS | RAGZRS; default: "GRS"; used by: terraform
     replication_type: "GRS"
-    # (since 5.6.28) 
+    # (since 5.6.28) Public network access of the state storage account. false (default): private endpoints only. allowed_ip_ranges needs true.
     # default: false; used by: terraform
     public_network_access: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Public IP addresses or CIDR ranges that may reach the state storage account (its IP network rules).
     # used by: terraform
     allowed_ip_ranges: ["203.0.113.0/24"]
-    # (since 5.6.28) 
+    # (since 5.6.28) Blob versioning of the state storage account: every overwrite of a state file keeps the earlier version.
     # default: true; used by: terraform
     versioning: true
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted state blob stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for blobs).
     # default: 30; used by: terraform
     blob_soft_delete_days: 30
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted state container stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for containers).
     # default: 30; used by: terraform
     container_soft_delete_days: 30
-    # (since 5.6.28) 
+    # (since 5.6.28) Traffic that passes the network rules of the state storage account: AzureServices (trusted Microsoft services), Logging, Metrics, or None.
     # default: ["AzureServices", "Logging", "Metrics"]; used by: terraform
     network_bypass: ["AzureServices", "Logging", "Metrics"]

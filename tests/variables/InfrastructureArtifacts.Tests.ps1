@@ -156,10 +156,10 @@ Describe 'A cut is a scoped file (_metadata.scope = the tool id)' {
         foreach ($t in $script:Tools) { @(Get-ScopeValue -Registry $script:Registry) | Should -Contain $t }
     }
 
-    It 'the cut for <_> passes the validator of the toolkit with no finding (the tool schema and the secret reference rules)' -ForEach @('ztp', 'os_configuration', 'deployment', 'monitoring', 'cicd_infra', 'discovery') {
+    It 'the cut for <_> passes the validator of the toolkit with no finding (the tool schema and the secret reference rules; the ztp cut also carries the placeholder GUIDs of the example, AZL-071)' -ForEach @('ztp', 'os_configuration', 'deployment', 'monitoring', 'cicd_infra', 'discovery') {
         $out = Join-Path $TestDrive "cut.$_.yml"
         & (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Cut $_ -From (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Out $out 6>$null
-        @(Test-AzlInfrastructure -Path $out) | Should -BeNullOrEmpty
+        @(Test-AzlInfrastructure -Path $out | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
     }
 
     It 'a cut keeps a free-key map whole (hardware.bios, nodes[].bios) and never empties it' {
@@ -192,5 +192,36 @@ Describe 'A cut is a scoped file (_metadata.scope = the tool id)' {
         }
         $result = & pwsh -NoProfile -Command "& { $($run.ToString()) } -Ztp '$ztp' -Toolkit '$($script:Repo)' -File '$out'" 2>&1 | Out-String
         $result | Should -Match 'read' -Because $result
+    }
+}
+
+Describe 'The generated templates say which schema they follow and describe every key' {
+    It 'the <_> template names the current schema version in _metadata.schema_version' -ForEach (@('infrastructure.master.yml') + @($script:Tools | ForEach-Object { 'tools\' + ($_ -replace '_', '-') + '.yml' })) {
+        $current = [string]$script:Registry['_metadata']['infrastructure_schema_version']
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath (Join-Path $script:Vars "templates\$_") -Raw) -Ordered
+        [string]$doc['_metadata']['schema_version'] | Should -Be $current
+    }
+
+    It 'no comment of a template is only the version marker of a key (a description that starts with Schema x.y.z. keeps its sentence)' {
+        $bad = foreach ($file in (Get-ChildItem (Join-Path $script:Vars 'templates') -Recurse -Filter '*.yml')) {
+            Select-String -LiteralPath $file.FullName -Pattern '^\s*# \(since [0-9.]+\)\s*$' | ForEach-Object { "$($file.Name):$($_.LineNumber)" }
+        }
+        @($bad) | Should -BeNullOrEmpty
+    }
+
+    It 'deployment.events_directory says what it is in the monitoring template, and the folders of the site agree' {
+        $text = Get-Content -LiteralPath (Join-Path $script:Vars 'templates\tools\monitoring.yml') -Raw
+        $text | Should -Match '(?m)^\s*# \(since 5\.6\.29\) The one folder where the toolkit'
+        $text | Should -Match 'events_directory: "D:\\\\Data\\\\azl-ztp\\\\iic-azl-01\\\\events"'
+        $text | Should -Match 'pre_cluster_verification_report_directory: "D:\\\\Data\\\\azl-ztp\\\\iic-azl-01\\\\arm-report'
+        $text | Should -Match 'evidence_path: "D:\\\\Data\\\\azl-ztp\\\\iic-azl-01\\\\evidence"'
+    }
+
+    It 'hardware.discovery.output_directory is in the discovery and monitoring templates, next to hardware.inventory' {
+        foreach ($t in 'discovery', 'monitoring') {
+            $doc = ConvertFrom-Yaml (Get-Content -LiteralPath (Join-Path $script:Vars "templates\tools\$t.yml") -Raw) -Ordered
+            $doc['hardware'].Contains('discovery') | Should -BeTrue -Because $t
+            $doc['hardware']['discovery'].Contains('output_directory') | Should -BeTrue -Because $t
+        }
     }
 }

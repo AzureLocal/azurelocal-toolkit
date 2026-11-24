@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.35"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "loadtools"
   # Your own version of this file.
@@ -122,7 +122,7 @@ storage:
       # Size of the volume in GiB (binary units, as Windows counts).
       # required; used by: deployment, trailwright, ranger
       size_gib: 4096
-  # (since 5.6.9) 
+  # (since 5.6.9) The Azure Local storage paths to create after deployment: the Azure resources that say where on a cluster shared volume the virtual machine...
   # used by: deployment
   paths:
     # Name of the storage path resource: 3 to 64 letters, digits or hyphens.

@@ -18,7 +18,7 @@ BeforeAll {
         & $Change $infra
         $file = Join-Path $TestDrive ('f-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.yml')
         ConvertTo-Yaml $infra | Set-Content -LiteralPath $file
-        @(Test-AzlInfrastructure -Path $file)
+        @(Test-AzlInfrastructure -Path $file | Where-Object Id -ne 'AZL-071') # AZL-071: the placeholder GUIDs of the example are not what these tests are about
     }
 }
 
