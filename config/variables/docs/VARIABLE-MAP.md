@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.65. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.66. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 757 | 508 | 85 | 5 | 157 | 2 |
-| Owned by a tool (`tools.*`) | 4792 | 4584 | 0 | 0 | 208 | 0 |
+| Keys of infrastructure.yml | 768 | 519 | 85 | 5 | 157 | 2 |
+| Owned by a tool (`tools.*`) | 4796 | 4588 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6922 | 5094 | 96 | 5 | 1715 | 12 |
+| All registry leaves | 6937 | 5109 | 96 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 349 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 360 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -73,7 +73,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
 | `network_devices` |  |  |  |  |  |  |  | 16 |
-| `landing_zone` | 1 |  |  |  |  |  |  | 76 |
+| `landing_zone` | 1 |  |  |  |  |  |  | 87 |
 | `extensions` |  |  |  |  |  |  |  |  |
 | `_metadata` |  |  | 1 | 1 |  | 1 | 1 | 1 |
 
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1097 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1101 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 41 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 232 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 243 | 0 | 0 |
 
 ### trailwright
 
@@ -307,13 +307,13 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (232):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (243):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 3 keys
 - `hardware`: 14 keys
 - `identity`: 20 keys
-- `landing_zone`: 70 keys
+- `landing_zone`: 81 keys
 - `network_devices`: 16 keys
 - `networking`: 27 keys
 - `nodes`: 2 keys
@@ -327,7 +327,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 136 places, the first 12):
+Where in the code (file, function, keys read by name; 139 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -1347,6 +1347,17 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.resource_groups[].subscription` | string | operator | cicd_infra | toolkit-legacy-scripts |  | read |
 | `landing_zone.resource_groups[].location` | string (azure_region) | operator | cicd_infra | toolkit-legacy-scripts |  | read |
 | `landing_zone.resource_groups[].purpose` | string | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].name` | string, required | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].scope` | string, default `subscription`, one of `subscription`, `resource_group` | operator; default | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].subscription` | string | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].resource_group` | string (resource_group) | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].amount` | number, required | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].time_grain` | string, default `Monthly`, one of `Monthly`, `Quarterly`, `Annually` | operator; default | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].start_date` | string (date) | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].end_date` | string (date) | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].thresholds` | array, default `[80, 100]` | operator; default | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].forecast_thresholds` | array | operator | cicd_infra | toolkit-legacy-scripts |  | read |
+| `landing_zone.budgets[].contact_emails` | array, required | operator | cicd_infra | toolkit-legacy-scripts |  | read |
 | `landing_zone.policy.required_tags` | array | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.policy.management_group` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.policy.assignments[].name` | string, required | operator | terraform |  |  | placeholder |
@@ -1878,7 +1889,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 984 | 984 | 0 |
+| arm_deployment | parameters | 988 | 988 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

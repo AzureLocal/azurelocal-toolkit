@@ -63,6 +63,7 @@ BeforeDiscovery {
         @{ Script = 'Set-ManagementGroupDisplayNames.azcli.ps1'; Key = 'display_name'; Bad = 'Root & Co'; Edit = { param($d) $d.landing_zone.management_groups[0].display_name = 'Root & Co' } }
         @{ Script = 'Deploy-Subscriptions.azcli.ps1'; Key = '\.name'; Bad = 'sub|new'; Edit = { param($d) $d.landing_zone.subscriptions[1].name = 'sub|new' } }
         @{ Script = 'Deploy-ResourceGroups.azcli.ps1'; Key = 'location'; Bad = 'east&us'; Edit = { param($d) $d.landing_zone.resource_groups[0].location = 'east&us' } }
+        @{ Script = 'Deploy-CostBudgets.azcli.ps1'; Key = 'resource_group'; Bad = 'rg&x'; Edit = { param($d) $d.landing_zone.budgets = @([ordered]@{ name = 'budget-azl-01'; scope = 'resource_group'; resource_group = 'rg&x'; amount = 10; contact_emails = @('ops@example.test') }) } }
         @{ Script = 'Deploy-VirtualNetworks.azcli.ps1'; Key = 'subnet names'; Bad = 'snet&x'; Edit = { param($d) $d.landing_zone.networks[0].subnets[2].name = 'snet&x' } }
         @{ Script = 'Deploy-VpnGateway.azcli.ps1'; Key = 'the resource group'; Bad = 'rg^x'; Edit = { param($d) $d.landing_zone.connectivity.vpn_gateway.resource_group = 'rg^x' } }
         @{ Script = 'New-AzureBastion.azcli.ps1'; Key = 'the resource group'; Bad = 'rg^x'; Edit = { param($d) $d.landing_zone.connectivity.bastion.resource_group = 'rg^x' } }

@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.connectivity = connected with every variable. Schema 5.6.29. Scenario: connectivity=connected.
+# Template for infrastructure.yml for scenario.connectivity = connected with every variable. Schema 5.6.30. Scenario: connectivity=connected.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1844,6 +1844,42 @@ landing_zone:
       # What the resource group is for, in words.
       # used by: cicd_infra
       purpose: "hub network"
+  # Cost Management budgets of the landing zone (schema 5.6.30; Microsoft Learn: Tutorial: Create and manage budgets).
+  # used by: cicd_infra
+  budgets:
+    # Name of the budget, unique in its scope: 1 to 63 letters, digits, hyphens and underscores (Microsoft Learn: Naming rules and restrictions,...
+    # required; used by: cicd_infra
+    - name: "budget-iic-azl-monthly"
+      # What the budget tracks: subscription (the whole subscription) or resource_group (one resource group of the subscription, named in resource_...
+      # one of: subscription | resource_group; default: "subscription"; used by: cicd_infra
+      scope: "subscription"
+      # Name of a subscription in landing_zone.subscriptions.
+      # used by: cicd_infra
+      subscription: "sub-iic-azure-local"
+      # The resource group the budget tracks.
+      # used by: cicd_infra
+      resource_group: "rg-iic-azl-01"
+      # The amount of the budget for one time grain, in the billing currency of the subscription (a Cost Management budget carries no currency of i...
+      # required; used by: cicd_infra
+      amount: 1000
+      # The period the amount covers; the tracked cost starts again at 0 at the start of each period: Monthly, Quarterly or Annually (the BillingMo...
+      # one of: Monthly | Quarterly | Annually; default: "Monthly"; used by: cicd_infra
+      time_grain: "Monthly"
+      # First day of the budget, YYYY-MM-01: the first of a month, on or after 2017-06-01 and not more than twelve months ahead (Microsoft Learn: B...
+      # used by: cicd_infra
+      start_date: "2026-12-01"
+      # Last day of the budget, YYYY-MM-DD, after start_date.
+      # used by: cicd_infra
+      end_date: "2029-11-30"
+      # Percentages of the amount at which an e-mail is sent when the actual cost passes them, each greater than 0 and at most 1000.
+      # default: [80, 100]; used by: cicd_infra
+      thresholds: [80, 100]
+      # Percentages of the amount at which an e-mail is sent when the forecast cost of the period passes them (an early warning), each greater than...
+      # used by: cicd_infra
+      forecast_thresholds: [90, 100]
+      # E-mail addresses that get the alert of every threshold.
+      # required; used by: cicd_infra
+      contact_emails: ["cloud-costs@example.com", "finance@example.com"]
   # Azure Policy of the landing zone.
   policy:
     # Tag names that every resource should carry, one audit assignment of the built-in policy 'Require a tag on resources' for each.

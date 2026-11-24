@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 120.
+Task folders: 121.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 68 | 52 | 0 |
-| Azure CLI | 47 | 0 | 73 |
+| PowerShell | 69 | 52 | 0 |
+| Azure CLI | 48 | 0 | 73 |
 
-Azure CLI applies to 47 tasks, does not apply to 73, and is not decided for 0.
+Azure CLI applies to 48 tasks, does not apply to 73, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -42,6 +42,7 @@ Azure CLI applies to 47 tasks, does not apply to 73, and is not decided for 0.
 | `phase-01-landing-zones/full-deployment/task-01-configure-management-groups` | built | built | yes |
 | `phase-01-landing-zones/full-deployment/task-02-create-subscriptions` | built | built | yes |
 | `phase-01-landing-zones/full-deployment/task-03-create-resource-groups` | built | built | yes |
+| `phase-01-landing-zones/full-deployment/task-04-create-cost-budgets` | built | built | yes |
 | `phase-02-resource-providers/task-01-register-resource-providers` | built | built | yes |
 | `phase-02-resource-providers/task-02-verify-provider-registration` | built | built | yes |
 | `phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn` | built | built | yes |

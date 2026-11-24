@@ -498,6 +498,10 @@ landing_zone:
     - { name: "rg-iic-mgmt-01", subscription: "sub-iic-management", location: "eastus", purpose: "management" }
     - { name: "rg-iic-runners-01", subscription: "sub-iic-devops", location: "eastus", purpose: "CI/CD runners" }
     - { name: "rg-iic-azl-01", subscription: "sub-iic-azure-local", location: "eastus", purpose: "Azure Local instance" }
+  # Schema 5.6.30. Cost Management budgets (free): task 04 creates each one and keeps it as written here. thresholds are percentages of the
+  # amount for the actual cost (default 80 and 100), forecast_thresholds for the forecast cost; at most five together.
+  budgets:
+    - { name: "budget-iic-azl-monthly", subscription: "sub-iic-azure-local", amount: 1000, time_grain: Monthly, thresholds: [80, 100], forecast_thresholds: [100], contact_emails: ["cloud-costs@example.com"] }
   networks:
     - name: "vnet-iic-hub-01"
       subscription: "sub-iic-connectivity"

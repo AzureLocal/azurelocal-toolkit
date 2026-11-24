@@ -23,6 +23,7 @@
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
+        @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets'; AzureCli = 'yes'; Reason = 'Creates or updates Cost Management budgets on subscriptions or resource groups (Microsoft.Consumption budgets REST API).' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
         @{ Path = '02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn'; AzureCli = 'yes'; Reason = 'Creates the deployment service principal or assigns RBAC roles.' }

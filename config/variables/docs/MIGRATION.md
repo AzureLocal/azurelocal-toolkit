@@ -390,6 +390,13 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.30: Cost Management budgets
+
+Schema 5.6.30 adds one optional list, `landing_zone.budgets[]`. A file without it is valid as it is: no budget is created.
+
+- Each entry is one Cost Management budget (free; Microsoft Learn: Tutorial: Create and manage budgets): `name`, `amount` and `contact_emails` are required; `scope` (`subscription`, the default, or `resource_group` with `resource_group`), `subscription` (a name in `landing_zone.subscriptions`, else `azure.subscription_id`), `time_grain` (`Monthly`, `Quarterly` or `Annually`; default `Monthly`), `start_date` (the first of a month; default the first day of the current month), `end_date`, `thresholds` (percentages of the amount for the actual cost; default 80 and 100) and `forecast_thresholds` (for the forecast cost) are optional. At most five thresholds together.
+- Phase 01, task 04 (`scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-04-create-cost-budgets`) creates them: `Deploy-CostBudgets.ps1` (Az.Accounts) or `Deploy-CostBudgets.azcli.ps1` (Azure CLI). A budget that exists with the same name is updated to the file; its start date is kept.
+
 ## To 5.6.27: the service connection and the variable group of the Azure DevOps pipelines
 
 Schema 5.6.27 adds two optional keys under `devops.pipelines`. A file that does not run the toolkit's pipelines on Azure DevOps needs neither: a 5.6.26 file is valid as it is.
