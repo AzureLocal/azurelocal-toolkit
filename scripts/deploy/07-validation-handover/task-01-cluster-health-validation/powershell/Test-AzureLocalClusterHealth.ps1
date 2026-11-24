@@ -1,23 +1,39 @@
 <#
 .SYNOPSIS
-    Validates Azure Local cluster health and configuration.
+    Validates Azure Local cluster health and configuration. Read only.
 
 .DESCRIPTION
-    This script performs comprehensive cluster health validation including:
-    - Cluster service status
-    - Node health and connectivity
-    - Storage Spaces Direct health
-    - Network adapter status
-    - Azure Arc connection status
+    Stage 07 (validation and handover), task 01. Over PowerShell remoting the script asks a node of the cluster:
+    - Cluster service status (and that the node asked is a node of cluster.name)
+    - Node health
+    - Storage Spaces Direct, storage pool and virtual disk health
+    - Cluster network status
+    - Quorum
+    - Azure Arc agent status of every node that is Up (each node is asked at its own management address)
+
+    Run it from the management host. Every question is asked on a node, so this host needs neither the failover clustering tools nor
+    membership of the cluster's domain, and the cluster name need not resolve from it. The script asks nothing and changes nothing.
+
+    Exit codes: 0 no check failed (warnings are listed); 1 a check failed or the cluster could not be reached; 2 cluster.name is
+    missing or the file cannot be read.
 
 .PARAMETER InfrastructureFile
-    The master infrastructure.yml (schema 5). Reads cluster.name (the cluster to validate); the whole file is not validated here.
+    The master infrastructure.yml (schema 5). Reads cluster.name (the cluster to validate), nodes[] (the management addresses to connect to)
+    and identity.active_directory (the deployment user and its secret reference); the whole file is not validated here.
+
+.PARAMETER ComputerName
+    Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers on WinRM at its management
+    address; cluster.name when the file has no node address.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, its secret read through the
+    toolkit's secret resolver; the account that runs the script when the file has none or the secret cannot be read.
 
 .PARAMETER OutputFormat
     Output format: Console, JSON, or HTML. Default: Console
 
 .PARAMETER OutputPath
-    Path to save the validation report (for JSON/HTML output).
+    Folder to save the validation report in (for JSON/HTML output). Created when it does not exist.
 
 .EXAMPLE
     .\Test-AzureLocalClusterHealth.ps1 -InfrastructureFile ./infrastructure.yml
@@ -27,10 +43,8 @@
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team
-    Version: 1.0.0
+    Version: 2.0.0
     Created: 2026-02-01
-    
-    Must be run from a cluster node or management server with RSAT tools installed.
 #>
 #Requires -Version 7.0
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read by the functions of the script.')]
@@ -39,6 +53,12 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$InfrastructureFile,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ComputerName,
+
+    [Parameter(Mandatory = $false)]
+    [pscredential]$Credential,
 
     [Parameter(Mandatory = $false)]
     [ValidateSet("Console", "JSON", "HTML")]
@@ -52,6 +72,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 $script:ErrorCount = 0
 function Write-Line {
@@ -66,13 +87,15 @@ try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidatio
 catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 $ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
 if (-not $ClusterName) { Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to validate.' -ErrorAction Continue; exit 2 }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+$script:Nodes = @()
 
 # Initialize results collection
 $ValidationResults = @{
-    Timestamp        = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-    ClusterName      = $ClusterName
-    OverallStatus    = "Unknown"
-    Checks           = @()
+    Timestamp     = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    ClusterName   = $ClusterName
+    OverallStatus = "Unknown"
+    Checks        = @()
 }
 
 function Add-ValidationResult {
@@ -83,24 +106,22 @@ function Add-ValidationResult {
         [string]$Message,
         [object]$Details = $null
     )
-    
-    $result = @{
+
+    $script:ValidationResults.Checks += @{
         Category = $Category
         Check    = $Check
         Status   = $Status
         Message  = $Message
         Details  = $Details
     }
-    
-    $script:ValidationResults.Checks += $result
-    
+
     $statusColor = switch ($Status) {
         "PASSED" { "Green" }
         "FAILED" { "Red" }
         "WARNING" { "Yellow" }
         default { "White" }
     }
-    
+
     if ($OutputFormat -eq "Console") {
         Write-Host "  [$Status] $Category - $Check" -ForegroundColor $statusColor
         if ($Message) {
@@ -109,12 +130,40 @@ function Add-ValidationResult {
     }
 }
 
+# The blocks that run on a node (Windows PowerShell): read only. They return plain values, so nothing depends on the failover clustering tools of this host.
+$ReadCluster = { $c = Get-Cluster -ErrorAction Stop; @{ Name = [string]$c.Name; Domain = [string]$c.Domain } }
+$ReadNodes = { @(Get-ClusterNode -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } }) }
+$ReadStorage = {
+    $s2d = Get-ClusterStorageSpacesDirect -ErrorAction Stop
+    @{
+        S2dState = [string]$s2d.State
+        Pools    = @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.FriendlyName; Health = [string]$_.HealthStatus } })
+        BadDisks = @(Get-VirtualDisk -ErrorAction Stop | Where-Object { [string]$_.HealthStatus -ne 'Healthy' } | ForEach-Object { @{ FriendlyName = [string]$_.FriendlyName; HealthStatus = [string]$_.HealthStatus } })
+    }
+}
+$ReadNetworks = { @(Get-ClusterNetwork -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State; Role = [string]$_.Role } }) }
+$ReadQuorum = { $q = Get-ClusterQuorum -ErrorAction Stop; @{ Type = [string]$q.QuorumType; Resource = [string]$(if ($q.QuorumResource) { $q.QuorumResource.Name }) } }
+$ReadArc = {
+    $agentPath = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
+    if (Test-Path $agentPath) {
+        $status = & $agentPath show --json 2>$null | ConvertFrom-Json
+        return @{ Installed = $true; Status = [string]$status.status; LastHeartbeat = [string]$status.lastHeartbeat }
+    }
+    return @{ Installed = $false }
+}
+
 function Test-ClusterService {
     Write-Line -Message "Checking cluster service status..." -Level "INFO"
-    
+
     try {
-        $cluster = Get-Cluster -Name $ClusterName -ErrorAction Stop
-        
+        $cluster = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadCluster
+        if ($null -eq $cluster -or -not $cluster.Name) { throw 'the node returned no cluster' }
+        if ([string]$cluster.Name -ne $ClusterName) {
+            Add-ValidationResult -Category "Cluster" -Check "Cluster Service" `
+                -Status "FAILED" -Message "The machine asked ($($connection.Target)) is a node of cluster '$($cluster.Name)', not of '$ClusterName' (cluster.name of the file)"
+            return $false
+        }
+
         Add-ValidationResult -Category "Cluster" -Check "Cluster Service" `
             -Status "PASSED" -Message "Cluster '$($cluster.Name)' is online" `
             -Details @{ Name = $cluster.Name; Domain = $cluster.Domain }
@@ -124,27 +173,22 @@ function Test-ClusterService {
             -Status "FAILED" -Message "Cannot connect to cluster: $($_.Exception.Message)"
         return $false
     }
-    
+
     return $true
 }
 
 function Test-ClusterNodes {
     Write-Line -Message "Checking cluster node health..." -Level "INFO"
-    
+
     try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName -ErrorAction Stop
-        
-        foreach ($node in $nodes) {
-            if ($node.State -eq "Up") {
-                Add-ValidationResult -Category "Nodes" -Check "Node: $($node.Name)" `
-                    -Status "PASSED" -Message "State: $($node.State)" `
-                    -Details @{ Name = $node.Name; State = $node.State.ToString() }
-            }
-            else {
-                Add-ValidationResult -Category "Nodes" -Check "Node: $($node.Name)" `
-                    -Status "FAILED" -Message "State: $($node.State)" `
-                    -Details @{ Name = $node.Name; State = $node.State.ToString() }
-            }
+        $script:Nodes = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadNodes)
+        if ($script:Nodes.Count -eq 0) { Add-ValidationResult -Category "Nodes" -Check "Node Health" -Status "FAILED" -Message "The cluster lists no node" }
+
+        foreach ($node in $script:Nodes) {
+            $status = if ($node.State -eq "Up") { "PASSED" } else { "FAILED" }
+            Add-ValidationResult -Category "Nodes" -Check "Node: $($node.Name)" `
+                -Status $status -Message "State: $($node.State)" `
+                -Details @{ Name = $node.Name; State = $node.State }
         }
     }
     catch {
@@ -155,49 +199,31 @@ function Test-ClusterNodes {
 
 function Test-StorageSpacesDirect {
     Write-Line -Message "Checking Storage Spaces Direct health..." -Level "INFO"
-    
+
     try {
-        # Check S2D status
-        $s2d = Get-ClusterStorageSpacesDirect -CimSession $ClusterName -ErrorAction Stop
-        
-        if ($s2d.State -eq "Enabled") {
-            Add-ValidationResult -Category "Storage" -Check "Storage Spaces Direct" `
-                -Status "PASSED" -Message "S2D is enabled and running" `
-                -Details @{ State = $s2d.State.ToString() }
+        $storage = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadStorage
+
+        $status = if ($storage.S2dState -eq "Enabled") { "PASSED" } else { "FAILED" }
+        Add-ValidationResult -Category "Storage" -Check "Storage Spaces Direct" `
+            -Status $status -Message $(if ($status -eq 'PASSED') { "S2D is enabled and running" } else { "S2D state: $($storage.S2dState)" }) `
+            -Details @{ State = $storage.S2dState }
+
+        foreach ($pool in @($storage.Pools)) {
+            $status = if ($pool.Health -eq "Healthy") { "PASSED" } else { "FAILED" }
+            Add-ValidationResult -Category "Storage" -Check "Pool: $($pool.Name)" `
+                -Status $status -Message "Health: $($pool.Health)" `
+                -Details @{ Name = $pool.Name; Health = $pool.Health }
         }
-        else {
-            Add-ValidationResult -Category "Storage" -Check "Storage Spaces Direct" `
-                -Status "FAILED" -Message "S2D state: $($s2d.State)" `
-                -Details @{ State = $s2d.State.ToString() }
-        }
-        
-        # Check storage pools
-        $pools = Get-StoragePool -CimSession $ClusterName | Where-Object { $_.IsPrimordial -eq $false }
-        
-        foreach ($pool in $pools) {
-            if ($pool.HealthStatus -eq "Healthy") {
-                Add-ValidationResult -Category "Storage" -Check "Pool: $($pool.FriendlyName)" `
-                    -Status "PASSED" -Message "Health: $($pool.HealthStatus)" `
-                    -Details @{ Name = $pool.FriendlyName; Health = $pool.HealthStatus.ToString() }
-            }
-            else {
-                Add-ValidationResult -Category "Storage" -Check "Pool: $($pool.FriendlyName)" `
-                    -Status "FAILED" -Message "Health: $($pool.HealthStatus)" `
-                    -Details @{ Name = $pool.FriendlyName; Health = $pool.HealthStatus.ToString() }
-            }
-        }
-        
-        # Check virtual disks
-        $vDisks = Get-VirtualDisk -CimSession $ClusterName | Where-Object { $_.HealthStatus -ne "Healthy" }
-        
-        if (@($vDisks).Count -eq 0) {
+
+        $vDisks = @($storage.BadDisks)
+        if ($vDisks.Count -eq 0) {
             Add-ValidationResult -Category "Storage" -Check "Virtual Disks" `
                 -Status "PASSED" -Message "All virtual disks are healthy"
         }
         else {
             Add-ValidationResult -Category "Storage" -Check "Virtual Disks" `
-                -Status "FAILED" -Message "$(@($vDisks).Count) unhealthy virtual disk(s)" `
-                -Details @($vDisks | Select-Object FriendlyName, HealthStatus)
+                -Status "FAILED" -Message "$($vDisks.Count) unhealthy virtual disk(s): $(@($vDisks | ForEach-Object { "$($_.FriendlyName) $($_.HealthStatus)" }) -join ', ')" `
+                -Details $vDisks
         }
     }
     catch {
@@ -208,21 +234,13 @@ function Test-StorageSpacesDirect {
 
 function Test-ClusterNetworks {
     Write-Line -Message "Checking cluster network health..." -Level "INFO"
-    
+
     try {
-        $networks = Get-ClusterNetwork -Cluster $ClusterName -ErrorAction Stop
-        
-        foreach ($network in $networks) {
-            if ($network.State -eq "Up") {
-                Add-ValidationResult -Category "Network" -Check "Network: $($network.Name)" `
-                    -Status "PASSED" -Message "State: $($network.State), Role: $($network.Role)" `
-                    -Details @{ Name = $network.Name; State = $network.State.ToString(); Role = $network.Role.ToString() }
-            }
-            else {
-                Add-ValidationResult -Category "Network" -Check "Network: $($network.Name)" `
-                    -Status "FAILED" -Message "State: $($network.State)" `
-                    -Details @{ Name = $network.Name; State = $network.State.ToString() }
-            }
+        foreach ($network in @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadNetworks)) {
+            $status = if ($network.State -eq "Up") { "PASSED" } else { "FAILED" }
+            Add-ValidationResult -Category "Network" -Check "Network: $($network.Name)" `
+                -Status $status -Message "State: $($network.State), Role: $($network.Role)" `
+                -Details @{ Name = $network.Name; State = $network.State; Role = $network.Role }
         }
     }
     catch {
@@ -233,13 +251,13 @@ function Test-ClusterNetworks {
 
 function Test-ClusterQuorum {
     Write-Line -Message "Checking cluster quorum..." -Level "INFO"
-    
+
     try {
-        $quorum = Get-ClusterQuorum -Cluster $ClusterName -ErrorAction Stop
-        
+        $quorum = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadQuorum
+
         Add-ValidationResult -Category "Quorum" -Check "Quorum Configuration" `
-            -Status "PASSED" -Message "Type: $($quorum.QuorumType)" `
-            -Details @{ Type = $quorum.QuorumType.ToString(); Resource = $quorum.QuorumResource.Name }
+            -Status "PASSED" -Message "Type: $($quorum.Type)$(if ($quorum.Resource) { ", witness: $($quorum.Resource)" })" `
+            -Details @{ Type = $quorum.Type; Resource = $quorum.Resource }
     }
     catch {
         Add-ValidationResult -Category "Quorum" -Check "Quorum Configuration" `
@@ -249,48 +267,30 @@ function Test-ClusterQuorum {
 
 function Test-ArcConnection {
     Write-Line -Message "Checking Azure Arc connection status..." -Level "INFO"
-    
-    try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName
-        
-        foreach ($node in $nodes) {
-            $arcStatus = Invoke-Command -ComputerName $node.Name -ScriptBlock {
-                $agentPath = "$env:ProgramFiles\AzureConnectedMachineAgent\azcmagent.exe"
-                if (Test-Path $agentPath) {
-                    $status = & $agentPath show --json 2>$null | ConvertFrom-Json
-                    return @{
-                        Installed = $true
-                        Status    = $status.status
-                        LastHeartbeat = $status.lastHeartbeat
-                    }
-                }
-                else {
-                    return @{ Installed = $false }
-                }
-            } -ErrorAction SilentlyContinue
-            
-            if ($null -eq $arcStatus) {
-                Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" -Status "FAILED" -Message "The Arc agent status could not be read from the node"
-            }
-            elseif ($arcStatus.Installed -and $arcStatus.Status -eq "Connected") {
-                Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
-                    -Status "PASSED" -Message "Arc agent connected" `
-                    -Details $arcStatus
-            }
-            elseif ($arcStatus.Installed) {
-                Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
-                    -Status "WARNING" -Message "Arc agent status: $($arcStatus.Status)" `
-                    -Details $arcStatus
-            }
-            else {
-                Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
-                    -Status "FAILED" -Message "Arc agent not installed"
-            }
+
+    # Every node is asked from this host, at its management address of the file: a second hop from one node to another does not work.
+    foreach ($node in @($script:Nodes | Where-Object { $_.State -eq 'Up' })) {
+        $arcStatus = $null; $readError = ''
+        try { $arcStatus = Invoke-AzlClusterCommand -Connection $connection -Node $node.Name -ScriptBlock $ReadArc }
+        catch { $readError = $_.Exception.Message }
+
+        if ($null -eq $arcStatus) {
+            Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" -Status "FAILED" -Message "The Arc agent status could not be read from the node$(if ($readError) { ": $readError" })"
         }
-    }
-    catch {
-        Add-ValidationResult -Category "Azure Arc" -Check "Arc Connection" `
-            -Status "FAILED" -Message "Cannot check Arc status: $($_.Exception.Message)"
+        elseif ($arcStatus.Installed -and $arcStatus.Status -eq "Connected") {
+            Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
+                -Status "PASSED" -Message "Arc agent connected" `
+                -Details $arcStatus
+        }
+        elseif ($arcStatus.Installed) {
+            Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
+                -Status "WARNING" -Message "Arc agent status: $($arcStatus.Status)" `
+                -Details $arcStatus
+        }
+        else {
+            Add-ValidationResult -Category "Azure Arc" -Check "Node: $($node.Name)" `
+                -Status "FAILED" -Message "Arc agent not installed"
+        }
     }
 }
 
@@ -298,7 +298,7 @@ function Export-Results {
     # Calculate overall status
     $failedCount = @($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
     $warningCount = @($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
-    
+
     if ($failedCount -gt 0) {
         $ValidationResults.OverallStatus = "FAILED"
     }
@@ -308,33 +308,28 @@ function Export-Results {
     else {
         $ValidationResults.OverallStatus = "PASSED"
     }
-    
+
+    if ($OutputFormat -eq 'Console') { return }
+    if ($OutputPath -and -not (Test-Path -LiteralPath $OutputPath)) { $null = New-Item -ItemType Directory -Path $OutputPath -Force }
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+
     switch ($OutputFormat) {
         "JSON" {
-            $jsonPath = if ($OutputPath) { 
-                Join-Path $OutputPath "cluster-health-$(Get-Date -Format 'yyyyMMdd-HHmmss').json" 
-            } else { 
-                "cluster-health-$(Get-Date -Format 'yyyyMMdd-HHmmss').json" 
-            }
+            $jsonPath = if ($OutputPath) { Join-Path $OutputPath "cluster-health-$stamp.json" } else { "cluster-health-$stamp.json" }
             $ValidationResults | ConvertTo-Json -Depth 10 | Set-Content -Path $jsonPath
             Write-Line -Message "Report saved to: $jsonPath" -Level "INFO"
         }
         "HTML" {
-            # Generate HTML report
-            $htmlPath = if ($OutputPath) { 
-                Join-Path $OutputPath "cluster-health-$(Get-Date -Format 'yyyyMMdd-HHmmss').html" 
-            } else { 
-                "cluster-health-$(Get-Date -Format 'yyyyMMdd-HHmmss').html" 
-            }
-            # Simplified HTML generation
+            $htmlPath = if ($OutputPath) { Join-Path $OutputPath "cluster-health-$stamp.html" } else { "cluster-health-$stamp.html" }
+            $encode = { param($Text) [System.Net.WebUtility]::HtmlEncode([string]$Text) }
             $html = "<html><head><title>Cluster Health Report</title></head><body>"
-            $html += "<h1>Cluster Health Report: $ClusterName</h1>"
+            $html += "<h1>Cluster Health Report: $(& $encode $ClusterName)</h1>"
             $html += "<p>Generated: $($ValidationResults.Timestamp)</p>"
             $html += "<p>Overall Status: <strong>$($ValidationResults.OverallStatus)</strong></p>"
             $html += "<table border='1'><tr><th>Category</th><th>Check</th><th>Status</th><th>Message</th></tr>"
             foreach ($check in $ValidationResults.Checks) {
                 $color = switch ($check.Status) { "PASSED" { "green" }; "FAILED" { "red" }; default { "orange" } }
-                $html += "<tr><td>$($check.Category)</td><td>$($check.Check)</td><td style='color:$color'>$($check.Status)</td><td>$($check.Message)</td></tr>"
+                $html += "<tr><td>$(& $encode $check.Category)</td><td>$(& $encode $check.Check)</td><td style='color:$color'>$($check.Status)</td><td>$(& $encode $check.Message)</td></tr>"
             }
             $html += "</table></body></html>"
             $html | Set-Content -Path $htmlPath
@@ -347,11 +342,13 @@ function Export-Results {
 try {
     Write-Line -Message "Starting Cluster Health Validation" -Level "INFO"
     Write-Line -Message "Cluster: $ClusterName" -Level "INFO"
+    Write-Line -Message (Format-AzlClusterConnection -Connection $connection) -Level "INFO"
+    foreach ($note in $connection.Notes) { Write-Line -Message $note -Level "WARN" }
     Write-Line -Message "========================================" -Level "INFO"
-    
+
     # Run all validation checks
     $clusterOk = Test-ClusterService
-    
+
     if ($clusterOk) {
         Test-ClusterNodes
         Test-StorageSpacesDirect
@@ -359,23 +356,23 @@ try {
         Test-ClusterQuorum
         Test-ArcConnection
     }
-    
+
     # Export results
     Export-Results
-    
+
     # Summary
     Write-Host ""
     Write-Line -Message "========================================" -Level "INFO"
-    
+
     $passed = @($ValidationResults.Checks | Where-Object { $_.Status -eq "PASSED" }).Count
     $failed = @($ValidationResults.Checks | Where-Object { $_.Status -eq "FAILED" }).Count
     $warnings = @($ValidationResults.Checks | Where-Object { $_.Status -eq "WARNING" }).Count
-    
+
     Write-Line -Message "Validation Complete" -Level "INFO"
     Write-Host "  Passed:   $passed" -ForegroundColor Green
     Write-Host "  Warnings: $warnings" -ForegroundColor Yellow
     Write-Host "  Failed:   $failed" -ForegroundColor Red
-    
+
     if ($failed -gt 0) {
         Write-Line -Message "Overall Status: FAILED" -Level "ERROR"
         exit 1

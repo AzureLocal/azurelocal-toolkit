@@ -414,13 +414,33 @@ Describe 'Invoke-ClusterOperations.ps1' {
         It 'Alerts exits 1 with a Health Service fault, a storage health action or a cluster event' {
             $global:AzlOpFaults = @{
                 Faults  = @(@{ Severity = 'Critical'; Reason = 'The physical disk failed'; Target = 'Disk 3' })
-                Actions = @(@{ State = 'Running'; Description = 'Disk 3'; Reason = 'Retire' })
+                Actions = @(@{ State = 'Running'; Percent = '40'; Reason = 'Retiring the physical disk.'; Error = '' })
                 Events  = @(@{ Time = '2026-01-01T00:00:00'; Level = 2; Message = 'Cluster node was removed' })
             }
             $r = Invoke-Operation (New-InfraFile) @{ Action = 'Alerts' }
             $r.ExitCode | Should -Be 1 -Because $r.Text
             @($r.Rows).Count | Should -Be 3
             $r.Rows[0].Action | Should -Be 'Critical'
+            (@($r.Rows | Where-Object Item -EQ 'Storage health action'))[0].Detail | Should -Be 'Running (40 percent), Retiring the physical disk.'
+        }
+
+        It 'Alerts does not report the history of storage health actions (Succeeded, Canceled), only one that still runs or Failed' {
+            # Seen on a healthy instance: twelve finished actions of the deployment were twelve warnings and exit code 1, with empty fields (the properties are State,
+            # PercentComplete, Reason and ErrorDescription).
+            $global:AzlOpFaults = @{
+                Faults  = @()
+                Actions = @(@{ State = 'Succeeded'; Percent = '100'; Reason = 'Optimizing drive usage.'; Error = '' }, @{ State = 'Canceled'; Percent = '0'; Reason = 'Retiring the physical disk.'; Error = '' })
+                Events  = @()
+            }
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Alerts' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'Healthy'
+
+            $global:AzlOpFaults.Actions = @(@{ State = 'Failed'; Percent = '100'; Reason = 'Retiring the physical disk.'; Error = 'The disk did not answer.' })
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'Alerts' }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Rows[0].Detail | Should -Be 'Failed, Retiring the physical disk. (The disk did not answer.)'
+            (Get-Content -LiteralPath $script:Script -Raw) | Should -Not -Match 'ActionState|DeviceDescription'
         }
     }
 

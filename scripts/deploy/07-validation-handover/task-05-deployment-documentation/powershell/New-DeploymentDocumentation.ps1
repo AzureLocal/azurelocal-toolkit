@@ -17,11 +17,14 @@
 
     The script changes nothing on the cluster or in Azure. With -WhatIf it collects and writes no file.
 
-    The script does not sign in anywhere and asks nothing. It uses the account that runs it for the cluster cmdlets (FailoverClusters, Storage, Hyper-V).
+    The script asks nothing. It runs on the management host, which needs neither the cluster tools nor the cluster's domain or DNS: the questions go to the first
+    node of nodes[] that answers on WinRM at its management address (or -ComputerName), as the deployment (LCM) user of the file, its secret read through the
+    toolkit's secret resolver (or -Credential; the account that runs the script when the file has none).
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         cluster.name, site.customer
         azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location
+        nodes[] (the management addresses), identity.active_directory (the deployment user and its secret reference)
         and, with -IncludeCredentialLocations, every secret reference of the file
 
     Exit codes: 0 the documentation is written (or planned under -WhatIf); 1 the files could not be written; 2 a value in the file is missing
@@ -32,6 +35,12 @@
 
 .PARAMETER OutputPath
     The folder for the documentation package. It is created when it does not exist.
+
+.PARAMETER ComputerName
+    Optional. The machine to ask. Default: the first node of nodes[] that answers on WinRM; cluster.name when the file has no node address.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Default: the deployment user of the file; the account that runs the script when the file has none.
 
 .PARAMETER IncludeCredentialLocations
     Also list the secret references of the file (where the secrets are kept), never their values.
@@ -49,6 +58,8 @@
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
     [Parameter(Mandatory)][string]$OutputPath,
+    [string]$ComputerName,
+    [pscredential]$Credential,
     [switch]$IncludeCredentialLocations,
     [string]$LogPath
 )
@@ -57,6 +68,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -101,28 +113,55 @@ $secretLocations = @(if ($IncludeCredentialLocations) { Get-SecretReference $inf
 $package = [ordered]@{ GeneratedAt = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); CustomerName = $customer; ClusterName = $clusterName; Azure = $azure; Sections = [ordered]@{} }
 $sections = $package.Sections
 
-# ---- the cluster as it is (read only); a part that fails is left out with a warning
+# ---- the cluster as it is (read only); a part that fails is left out with a warning.
+# Every question is asked on a node over PowerShell remoting (AzlClusterConnection.psm1): this host needs neither the cluster tools nor the cluster's domain or DNS.
+$ReadClusterBlock = {
+    $cluster = Get-Cluster -ErrorAction Stop
+    @{
+        Name = [string]$cluster.Name; Domain = [string]$cluster.Domain
+        Nodes = @(Get-ClusterNode -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } })
+        QuorumType = [string](Get-ClusterQuorum -ErrorAction Stop).QuorumType
+    }
+}
+$ReadNetworkBlock = {
+    @{
+        Networks = @(Get-ClusterNetwork -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; Address = [string]$_.Address; Role = [string]$_.Role; State = [string]$_.State } })
+        Switches = @(Get-VMSwitch -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; Type = [string]$_.SwitchType; SetEnabled = [string]$_.EmbeddedTeamingEnabled } })
+    }
+}
+$ReadStorageBlock = {
+    @{
+        Pools   = @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.FriendlyName; Size = [double]$_.Size; HealthStatus = [string]$_.HealthStatus } })
+        Disks   = @(Get-VirtualDisk -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.FriendlyName; Size = [double]$_.Size; ResiliencySetting = [string]$_.ResiliencySettingName; HealthStatus = [string]$_.HealthStatus } })
+        Volumes = @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; Path = [string]@($_.SharedVolumeInfo)[0].FriendlyVolumeName; State = [string]$_.State } })
+    }
+}
+$ReadArcBlock = {
+    $agent = Join-Path $env:ProgramFiles 'AzureConnectedMachineAgent\azcmagent.exe'
+    if (Test-Path -LiteralPath $agent) { $status = & $agent show --json 2>&1 | ConvertFrom-Json; return @{ Status = [string]$status.status } }
+    $null
+}
 function Get-ClusterConfiguration {
     try {
-        $cluster = Get-Cluster -Name $clusterName -ErrorAction Stop
-        $nodes = @(Get-ClusterNode -Cluster $clusterName -ErrorAction Stop)
+        $cluster = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadClusterBlock
+        if ([string]$cluster.Name -ne $clusterName) { throw "the machine asked ($($connection.Target)) is a node of cluster '$($cluster.Name)', not of '$clusterName'" }
+        $nodes = @($cluster.Nodes)
         $sections.ClusterConfig = [ordered]@{
             Name = [string]$cluster.Name; Domain = [string]$cluster.Domain; NodeCount = $nodes.Count
             Nodes = @($nodes | ForEach-Object { [ordered]@{ Name = [string]$_.Name; State = [string]$_.State } })
-            QuorumType = [string](Get-ClusterQuorum -Cluster $clusterName -ErrorAction Stop).QuorumType
+            QuorumType = [string]$cluster.QuorumType
         }
         Write-Line "[done]    Cluster: $($cluster.Name) with $($nodes.Count) node(s)."
     }
     catch { Write-Warning "The cluster configuration could not be read: $($_.Exception.Message)" }
 }
-function Get-UpNode { (@(Get-ClusterNode -Cluster $clusterName -ErrorAction Stop) | Where-Object { [string]$_.State -eq 'Up' } | Select-Object -First 1).Name }
 function Get-NetworkConfiguration {
     try {
-        $networks = @(Get-ClusterNetwork -Cluster $clusterName -ErrorAction Stop)
-        $switches = @(Invoke-Command -ComputerName (Get-UpNode) -ScriptBlock { Get-VMSwitch | Select-Object Name, SwitchType, EmbeddedTeamingEnabled } -ErrorAction Stop)
+        $network = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadNetworkBlock
+        $networks = @($network.Networks); $switches = @($network.Switches)
         $sections.NetworkConfig = [ordered]@{
             ClusterNetworks = @($networks | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Address = [string]$_.Address; Role = [string]$_.Role; State = [string]$_.State } })
-            VirtualSwitches = @($switches | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Type = [string]$_.SwitchType; SetEnabled = [string]$_.EmbeddedTeamingEnabled } })
+            VirtualSwitches = @($switches | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Type = [string]$_.Type; SetEnabled = [string]$_.SetEnabled } })
         }
         Write-Line "[done]    Networks: $($networks.Count), virtual switches: $($switches.Count)."
     }
@@ -130,13 +169,12 @@ function Get-NetworkConfiguration {
 }
 function Get-StorageConfiguration {
     try {
-        $pools = @(Get-StoragePool -CimSession $clusterName -ErrorAction Stop | Where-Object { $_.IsPrimordial -eq $false })
-        $disks = @(Get-VirtualDisk -CimSession $clusterName -ErrorAction Stop)
-        $volumes = @(Get-ClusterSharedVolume -Cluster $clusterName -ErrorAction Stop)
+        $storage = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadStorageBlock
+        $pools = @($storage.Pools); $disks = @($storage.Disks); $volumes = @($storage.Volumes)
         $sections.StorageConfig = [ordered]@{
-            StoragePools = @($pools | ForEach-Object { [ordered]@{ Name = [string]$_.FriendlyName; SizeGB = [math]::Round($_.Size / 1GB, 0); HealthStatus = [string]$_.HealthStatus } })
-            VirtualDisks = @($disks | ForEach-Object { [ordered]@{ Name = [string]$_.FriendlyName; SizeTB = [math]::Round($_.Size / 1TB, 2); ResiliencySetting = [string]$_.ResiliencySettingName; HealthStatus = [string]$_.HealthStatus } })
-            CSVs         = @($volumes | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Path = [string]@($_.SharedVolumeInfo)[0].FriendlyVolumeName; State = [string]$_.State } })
+            StoragePools = @($pools | ForEach-Object { [ordered]@{ Name = [string]$_.Name; SizeGB = [math]::Round($_.Size / 1GB, 0); HealthStatus = [string]$_.HealthStatus } })
+            VirtualDisks = @($disks | ForEach-Object { [ordered]@{ Name = [string]$_.Name; SizeTB = [math]::Round($_.Size / 1TB, 2); ResiliencySetting = [string]$_.ResiliencySetting; HealthStatus = [string]$_.HealthStatus } })
+            CSVs         = @($volumes | ForEach-Object { [ordered]@{ Name = [string]$_.Name; Path = [string]$_.Path; State = [string]$_.State } })
         }
         Write-Line "[done]    Storage: $($pools.Count) pool(s), $($disks.Count) virtual disk(s), $($volumes.Count) cluster shared volume(s)."
     }
@@ -145,19 +183,17 @@ function Get-StorageConfiguration {
 function Get-AzureIntegrationDetail {
     $sections.AzureIntegration = [ordered]@{ ArcStatus = 'not reported'; SubscriptionId = $azure.SubscriptionId; ResourceGroup = $azure.ResourceGroup; TenantId = $azure.TenantId; Location = $azure.Location }
     try {
-        $arc = Invoke-Command -ComputerName (Get-UpNode) -ScriptBlock {
-            $agent = Join-Path $env:ProgramFiles 'AzureConnectedMachineAgent\azcmagent.exe'
-            if (Test-Path -LiteralPath $agent) { $status = & $agent show --json 2>&1 | ConvertFrom-Json; return @{ Status = [string]$status.status } }
-            $null
-        } -ErrorAction Stop
+        $arc = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadArcBlock
         if ($arc) { $sections.AzureIntegration.ArcStatus = [string]$arc.Status; Write-Line "[done]    Azure Arc agent: $($arc.Status)." }
     }
     catch { Write-Warning "The Azure Arc agent status could not be read: $($_.Exception.Message)" }
 }
-
 function Get-Row([object]$Items, [scriptblock]$Format) { (@($Items) | Where-Object { $null -ne $_ } | ForEach-Object { & $Format $_ }) -join "`n" }
 
 Write-Line "Documentation of '$clusterName' for $customer"
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+Write-Line (Format-AzlClusterConnection -Connection $connection)
+foreach ($note in $connection.Notes) { Write-Warning $note }
 Get-ClusterConfiguration
 Get-NetworkConfiguration
 Get-StorageConfiguration

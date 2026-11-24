@@ -80,6 +80,7 @@ param(
     [string]$NodeName,
     [switch]$Enable,
     [switch]$RequireNodeInFile,
+    [string]$ComputerName,
     [pscredential]$Credential,
     [string]$OutputPath,
     [string]$LogPath
@@ -87,10 +88,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
-$remoteCredential = $Credential
 $enterMaintenance = $Enable.IsPresent
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -107,10 +108,10 @@ function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
 
 # One remote call. Every block runs in the remote session: Windows PowerShell on the node, so no PowerShell 7 syntax inside.
 function Invoke-Remote([string]$Computer, [scriptblock]$Block, [object[]]$Arguments = @()) {
-    $call = @{ ComputerName = $Computer; ScriptBlock = $Block; ErrorAction = 'Stop' }
-    if ($Arguments.Count -gt 0) { $call.ArgumentList = $Arguments }
-    if ($remoteCredential) { $call.Credential = $remoteCredential }
-    Invoke-Command @call
+    # The cluster name means the cluster target of the connection (a node of the file at its management address; the next one when it cannot be
+    # reached). Any other name is a node: it is asked at its management address of the file.
+    $node = if ($Computer -eq $script:clusterName) { '' } else { $Computer }
+    Invoke-AzlClusterCommand -Connection $script:connection -Node $node -ScriptBlock $Block -ArgumentList $Arguments
 }
 
 # ---- the values, from infrastructure.yml only
@@ -118,6 +119,8 @@ try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidatio
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 $clusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
 if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing in the infrastructure file. It is the name of the cluster to operate on.' }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+foreach ($note in $connection.Notes) { Write-Warning $note }
 if ($Action -in 'MaintenanceMode', 'LiveMigrate' -and -not $NodeName) { Exit-InputProblem "The action $Action needs -NodeName." }
 
 $node = $null
@@ -163,7 +166,7 @@ $ReadCapacity = {
 $ReadFaults = {
     @{
         Faults  = @(Get-StorageSubSystem -FriendlyName 'Clustered*' | Debug-StorageSubSystem | ForEach-Object { @{ Severity = [string]$_.PerceivedSeverity; Reason = [string]$_.Reason; Target = [string]$_.FaultingObjectDescription } })
-        Actions = @(Get-StorageSubSystem -FriendlyName 'Clustered*' | Get-StorageHealthAction | ForEach-Object { @{ State = [string]$_.ActionState; Description = [string]$_.DeviceDescription; Reason = [string]$_.Reason } })
+        Actions = @(Get-StorageSubSystem -FriendlyName 'Clustered*' | Get-StorageHealthAction | ForEach-Object { @{ State = [string]$_.State; Percent = [string]$_.PercentComplete; Reason = [string]$_.Reason; Error = [string]$_.ErrorDescription } })
         Events  = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-FailoverClustering/Operational'; Level = 1, 2, 3; StartTime = (Get-Date).AddHours(-24) } -MaxEvents 20 -ErrorAction SilentlyContinue | ForEach-Object { @{ Time = $_.TimeCreated.ToString('s'); Level = [int]$_.Level; Message = ([string]$_.Message).Substring(0, [Math]::Min(120, ([string]$_.Message).Length)) } })
     }
 }
@@ -334,7 +337,11 @@ function Get-CapacityReport {
 function Get-ClusterAlert {
     $r = Invoke-Remote $clusterName $ReadFaults
     foreach ($f in @($r.Faults)) { Add-Row 'Health Service fault' $(if ($f.Severity -match 'Critical|Major|Fatal') { 'Critical' } else { 'Warning' }) "$($f.Severity): $($f.Reason) ($($f.Target))" }
-    foreach ($a in @($r.Actions)) { Add-Row 'Storage health action' 'Warning' "$($a.State): $($a.Description): $($a.Reason)" }
+    # The health actions are a history (the properties of MSFT_HealthAction: State, PercentComplete, Reason, ErrorDescription). An action that Succeeded or
+    # was Canceled is not a finding; one that still runs, or Failed, is reported.
+    foreach ($a in @(@($r.Actions) | Where-Object { [string]$_.State -notin 'Succeeded', 'Canceled' })) {
+        Add-Row 'Storage health action' 'Warning' "$($a.State)$(if ($a.Percent -and [string]$a.State -ne 'Failed') { " ($($a.Percent) percent)" }), $($a.Reason)$(if ($a.Error) { " ($($a.Error))" })"
+    }
     foreach ($e in @($r.Events)) { Add-Row "Cluster event $($e.Time)" $(if ($e.Level -le 2) { 'Critical' } else { 'Warning' }) $e.Message }
     if ($rows.Count -eq 0) { Add-Row 'Alerts' 'Healthy' 'no Health Service fault, no storage health action and no Critical, Error or Warning cluster event in the last 24 hours' }
     else { $script:failed = $true }

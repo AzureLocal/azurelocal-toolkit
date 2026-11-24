@@ -31,11 +31,13 @@ BeforeAll {
         Set-Content -LiteralPath $infraFile -Value (ConvertTo-Yaml ([ordered]@{ cluster = [ordered]@{ name = 'iic-azl-01' } }))
         $text = @"
 `$ErrorActionPreference = 'Stop'
-function Get-StoragePool { [CmdletBinding()] param([string]`$CimSession) [pscustomobject]@{ IsPrimordial = `$false; FriendlyName = 'iic-pool'; HealthStatus = '$PoolHealth'; OperationalStatus = 'OK'; Size = 20TB; AllocatedSize = 5TB } }
-function Get-VirtualDisk { [CmdletBinding()] param([string]`$CimSession) [pscustomobject]@{ FriendlyName = 'iic-vd'; HealthStatus = 'Healthy'; OperationalStatus = 'OK'; ResiliencySettingName = 'Mirror'; FaultDomainAwareness = 'StorageScaleUnit'; Size = 1TB; FootprintOnPool = 2TB } }
-function Get-PhysicalDisk { [CmdletBinding()] param([string]`$CimSession) [pscustomobject]@{ FriendlyName = 'iic-pd'; Usage = 'Auto-Select'; CanPool = `$false; MediaType = 'SSD'; HealthStatus = 'Healthy'; OperationalStatus = 'OK' } }
-function Get-ClusterNode { [CmdletBinding()] param([string]`$Cluster) [pscustomobject]@{ Name = 'iic-n01'; State = 'Up' }; [pscustomobject]@{ Name = 'iic-n02'; State = 'Up' } }
-function Get-ClusterSharedVolume { [CmdletBinding()] param([string]`$Cluster) [pscustomobject]@{ Name = 'iic-csv'; State = 'Online'; OwnerNode = [pscustomobject]@{ Name = 'iic-n01' }; SharedVolumeInfo = @([pscustomobject]@{ FriendlyVolumeName = 'C:\ClusterStorage\iic-csv'; Partition = [pscustomobject]@{ Size = [int64]$size; FreeSpace = [int64]$free } }) } }
+# The script asks the cluster over PowerShell remoting. Here the remote call runs its block in this process, against the stub cmdlets below.
+function Invoke-Command { param([string]`$ComputerName, [scriptblock]`$ScriptBlock, [object[]]`$ArgumentList, [pscredential]`$Credential, [switch]`$UseSSL) if (`$ArgumentList) { & `$ScriptBlock @ArgumentList } else { & `$ScriptBlock } }
+function Get-StoragePool { [CmdletBinding()] param([bool]`$IsPrimordial) [pscustomobject]@{ IsPrimordial = `$false; FriendlyName = 'iic-pool'; HealthStatus = '$PoolHealth'; OperationalStatus = 'OK'; Size = 20TB; AllocatedSize = 5TB } }
+function Get-VirtualDisk { [CmdletBinding()] param() [pscustomobject]@{ FriendlyName = 'iic-vd'; HealthStatus = 'Healthy'; OperationalStatus = 'OK'; ResiliencySettingName = 'Mirror'; FaultDomainAwareness = 'StorageScaleUnit'; Size = 1TB; FootprintOnPool = 2TB } }
+function Get-PhysicalDisk { [CmdletBinding()] param([Parameter(ValueFromPipeline)]`$InputObject) process { [pscustomobject]@{ FriendlyName = 'iic-pd'; SerialNumber = 'S1'; MediaType = 'SSD'; BusType = 'NVMe'; HealthStatus = 'Healthy'; OperationalStatus = 'OK' } } }
+function Get-ClusterNode { [CmdletBinding()] param() [pscustomobject]@{ Name = 'iic-n01'; State = 'Up' }; [pscustomobject]@{ Name = 'iic-n02'; State = 'Up' } }
+function Get-ClusterSharedVolume { [CmdletBinding()] param() [pscustomobject]@{ Name = 'iic-csv'; State = 'Online'; OwnerNode = [pscustomobject]@{ Name = 'iic-n01' }; SharedVolumeInfo = @([pscustomobject]@{ FriendlyVolumeName = 'C:\ClusterStorage\iic-csv'; Partition = [pscustomobject]@{ Size = [int64]$size; FreeSpace = [int64]$free } }) } }
 & '$($script:Script.Replace("'", "''"))' -InfrastructureFile '$($infraFile.Replace("'", "''"))' $($Argument -join ' ')
 exit `$LASTEXITCODE
 "@

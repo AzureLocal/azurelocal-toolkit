@@ -85,6 +85,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 # Microsoft Learn (Connect an external storage array to Azure Local, step 8): a SAN volume is GPT and NTFS, with a 64 KB allocation unit for a CSV.
 $AllocationUnitBytes = 65536
@@ -188,10 +189,9 @@ $Remote = @{
         @{ Path = [string]@($csv.SharedVolumeInfo)[0].FriendlyVolumeName }
     }
 }
-function Invoke-Cluster([string]$Step, [object[]]$Arguments = @(), [string]$Target = $script:target) {
-    $call = @{ ComputerName = $Target; ScriptBlock = $Remote[$Step]; ArgumentList = (, $Step + $Arguments); ErrorAction = 'Stop' }
-    if ($Credential) { $call.Credential = $Credential }
-    Invoke-Command @call
+function Invoke-Cluster([string]$Step, [object[]]$Arguments = @(), [string]$Target = '') {
+    # $Target empty: the cluster target of the connection (a node of the file; the next one when it cannot be reached). Otherwise that machine.
+    Invoke-AzlClusterCommand -Connection $script:connection -Node $Target -ScriptBlock $Remote[$Step] -ArgumentList (, $Step + $Arguments)
 }
 
 # ---- the values, from infrastructure.yml only
@@ -214,7 +214,9 @@ if (-not $BusName.ContainsKey($sanType)) { Exit-InputProblem "storage.san.type m
 $busType = $BusName[$sanType]
 $deploymentOwned = @(foreach ($key in 'infra_volume_lun_id', 'performance_history_lun_id') { $owned = ([string](Get-Field $san $key '')).Trim().ToLowerInvariant(); if ($owned) { $owned } })
 
-$target = if ($ComputerName) { $ComputerName.Trim() } else { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim() }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+foreach ($note in $connection.Notes) { Write-Warning $note }
+$target = [string]$connection.Target
 if (-not $target) { Exit-InputProblem 'cluster.name is missing. It is the cluster the script connects to (or give -ComputerName).' }
 
 $plans = [System.Collections.Generic.List[object]]::new()

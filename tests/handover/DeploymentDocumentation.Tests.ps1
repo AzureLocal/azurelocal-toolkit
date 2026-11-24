@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # Handover: New-DeploymentDocumentation.ps1 reads cluster.name, site.customer and the azure keys from infrastructure.yml, collects the cluster read only,
-# and writes a Markdown page and a JSON file. The cluster cmdlets and Invoke-Command are mocked: no cluster, no node, no credential is used.
+# and writes a Markdown page and a JSON file. Every question is asked on a node over PowerShell remoting, so Invoke-Command is mocked: no cluster, no node, no credential is used.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/handover/DeploymentDocumentation.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'A Pester mock body runs in the scope of the script under test; a global is how the test hands it the cluster state.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
@@ -14,13 +14,6 @@ BeforeAll {
     $script:Script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '07-validation-handover', 'task-05-deployment-documentation', 'powershell', 'New-DeploymentDocumentation.ps1')
     Import-Module powershell-yaml
 
-    function Get-Cluster { [CmdletBinding()] param([string]$Name) }
-    function Get-ClusterNode { [CmdletBinding()] param([string]$Cluster) }
-    function Get-ClusterQuorum { [CmdletBinding()] param([string]$Cluster) }
-    function Get-ClusterNetwork { [CmdletBinding()] param([string]$Cluster) }
-    function Get-ClusterSharedVolume { [CmdletBinding()] param([string]$Cluster) }
-    function Get-StoragePool { [CmdletBinding()] param([string]$CimSession) }
-    function Get-VirtualDisk { [CmdletBinding()] param([string]$CimSession) }
 
     function New-InfraFile {
         param([hashtable]$Cluster = @{}, [hashtable]$Site = @{}, [hashtable]$Extra = @{})
@@ -53,30 +46,40 @@ BeforeAll {
 }
 
 Describe 'New-DeploymentDocumentation.ps1' {
-    AfterAll { Remove-Variable -Name AzlDdTenant, AzlDdSub -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-Variable -Name AzlDdTenant, AzlDdSub, AzlDdCalls, AzlDdStorageFails, AzlDdClusterName -Scope Global -ErrorAction SilentlyContinue }
 
     BeforeEach {
-        Mock Get-Cluster { [pscustomobject]@{ Name = $Name; Domain = 'improbability.cloud' } }
-        Mock Get-ClusterNode { @([pscustomobject]@{ Name = 'iic-node01'; State = 'Up' }, [pscustomobject]@{ Name = 'iic-node02'; State = 'Up' }) }
-        Mock Get-ClusterQuorum { [pscustomobject]@{ QuorumType = 'NodeAndCloudMajority' } }
-        Mock Get-ClusterNetwork { @([pscustomobject]@{ Name = 'Management'; Address = '192.0.2.0'; Role = 'ClusterAndClient'; State = 'Up' }) }
-        Mock Get-ClusterSharedVolume { @([pscustomobject]@{ Name = 'Cluster Virtual Disk (vol-01)'; State = 'Online'; SharedVolumeInfo = @([pscustomobject]@{ FriendlyVolumeName = 'C:\ClusterStorage\vol-01' }) }) }
-        Mock Get-StoragePool { @([pscustomobject]@{ FriendlyName = 'SU1_Pool'; Size = 8TB; HealthStatus = 'Healthy'; IsPrimordial = $false }, [pscustomobject]@{ FriendlyName = 'Primordial'; Size = 1TB; HealthStatus = 'Healthy'; IsPrimordial = $true }) }
-        Mock Get-VirtualDisk { @([pscustomobject]@{ FriendlyName = 'vol-01'; Size = 2TB; ResiliencySettingName = 'Mirror'; HealthStatus = 'Healthy' }) }
+        $global:AzlDdCalls = [System.Collections.Generic.List[object]]::new()
+        $global:AzlDdStorageFails = $false
+        $global:AzlDdClusterName = 'iic-azl-01'
+        # What the node answers: the plain values the remote blocks of the script return.
         Mock Invoke-Command {
-            if ($ScriptBlock.ToString() -match 'Get-VMSwitch') { @([pscustomobject]@{ Name = 'ConvergedSwitch(mgmt_compute)'; SwitchType = 'External'; EmbeddedTeamingEnabled = $true }) }
-            else { @{ Status = 'Connected' } }
+            $text = $ScriptBlock.ToString()
+            $global:AzlDdCalls.Add([pscustomobject]@{ Text = $text; Computer = $ComputerName })
+            switch -Regex ($text) {
+                'Get-ClusterQuorum' { return @{ Name = $global:AzlDdClusterName; Domain = 'improbability.cloud'; Nodes = @(@{ Name = 'iic-node01'; State = 'Up' }, @{ Name = 'iic-node02'; State = 'Up' }); QuorumType = 'NodeAndCloudMajority' } }
+                'Get-VMSwitch' { return @{ Networks = @(@{ Name = 'Management'; Address = '192.0.2.0'; Role = 'ClusterAndClient'; State = 'Up' }); Switches = @(@{ Name = 'ConvergedSwitch(mgmt_compute)'; Type = 'External'; SetEnabled = 'True' }) } }
+                'Get-StoragePool' {
+                    if ($global:AzlDdStorageFails) { throw 'The storage could not be read.' }
+                    return @{
+                        Pools   = @(@{ Name = 'SU1_Pool'; Size = 8TB; HealthStatus = 'Healthy' })
+                        Disks   = @(@{ Name = 'vol-01'; Size = 2TB; ResiliencySetting = 'Mirror'; HealthStatus = 'Healthy' })
+                        Volumes = @(@{ Name = 'Cluster Virtual Disk (vol-01)'; Path = 'C:\ClusterStorage\vol-01'; State = 'Online' })
+                    }
+                }
+                'azcmagent' { return @{ Status = 'Connected' } }
+            }
         }
     }
-
     Context 'the package' {
         It 'collects the cluster named by cluster.name and writes a Markdown page and a JSON file named after the customer and the cluster' {
             $out = Join-Path $TestDrive 'pkg'
             $r = Invoke-Documentation (New-InfraFile) $out
             $r.ExitCode | Should -Be 0 -Because $r.Text
-            Should -Invoke Get-Cluster -Times 1 -Exactly -ParameterFilter { $Name -eq 'iic-azl-01' }
-            Should -Invoke Get-ClusterNode -Times 2 -ParameterFilter { $Cluster -eq 'iic-azl-01' }
-            Should -Invoke Invoke-Command -Times 2 -Exactly -ParameterFilter { $ComputerName -eq 'iic-node01' }
+            # the probe of the machine and four questions, all over remoting; with no credential in the file the cluster name is the machine asked
+            $global:AzlDdCalls.Count | Should -Be 5
+            @($global:AzlDdCalls | ForEach-Object { $_.Computer } | Sort-Object -Unique) | Should -Be @('iic-azl-01')
+            ($global:AzlDdCalls[3].Text) | Should -Match 'Get-StoragePool -IsPrimordial \$false'
             $md = Get-Content -LiteralPath (Join-Path $out 'Improbability-Inc-iic-azl-01-Documentation.md') -Raw
             $md | Should -Match '\*\*Customer:\*\* Improbability Inc'
             $md | Should -Match '\| Cluster name \| iic-azl-01 \|'
@@ -97,13 +100,30 @@ Describe 'New-DeploymentDocumentation.ps1' {
         }
 
         It 'leaves a part out with a warning when the cluster cannot report it, and still writes the page' {
-            Mock Get-StoragePool { throw 'The CIM session could not be created.' }
+            $global:AzlDdStorageFails = $true
             $out = Join-Path $TestDrive 'pkg2'
             $r = Invoke-Documentation (New-InfraFile) $out
             $r.ExitCode | Should -Be 0
             $r.Text | Should -Match 'storage configuration could not be read'
             (Test-Path -LiteralPath (Join-Path $out 'Improbability-Inc-iic-azl-01-Documentation.md')) | Should -BeTrue
             (Get-Content -LiteralPath (Join-Path $out 'Improbability-Inc-iic-azl-01-Config.json') -Raw | ConvertFrom-Json).Sections.PSObject.Properties.Name | Should -Not -Contain 'StorageConfig'
+        }
+
+        It 'asks a node of the file at its management address, and leaves the cluster part out when that machine belongs to another cluster' {
+            $env:AZL_TEST_DOC_SECRET = 'made-up-value'
+            $extra = @{
+                nodes    = @([ordered]@{ name = 'iic-node01'; management = [ordered]@{ ip_address = '192.0.2.21' } })
+                identity = [ordered]@{ active_directory = [ordered]@{ netbios_name = 'IIC'; lcm_user = [ordered]@{ username = 'lcm-iic-azl-01'; password = 'env://AZL_TEST_DOC_SECRET' } } }
+            }
+            $r = Invoke-Documentation (New-InfraFile -Extra $extra) (Join-Path $TestDrive 'pkg-node')
+            Remove-Item Env:AZL_TEST_DOC_SECRET
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            @($global:AzlDdCalls | ForEach-Object { $_.Computer } | Sort-Object -Unique) | Should -Be @('192.0.2.21')
+
+            $global:AzlDdClusterName = 'some-other-cluster'
+            $r = Invoke-Documentation (New-InfraFile) (Join-Path $TestDrive 'pkg-other')
+            $r.Text | Should -Match "is a node of cluster 'some-other-cluster'"
+            (Get-Content -LiteralPath (Join-Path $TestDrive 'pkg-other\Improbability-Inc-iic-azl-01-Config.json') -Raw | ConvertFrom-Json).Sections.PSObject.Properties.Name | Should -Not -Contain 'ClusterConfig'
         }
 
         It 'changes nothing on the cluster' {
@@ -149,7 +169,7 @@ Describe 'New-DeploymentDocumentation.ps1' {
                 $r = Invoke-Documentation $file (Join-Path $TestDrive 'pkg7')
                 $r.ExitCode | Should -Be 2 -Because $r.Text
             }
-            Should -Invoke Get-Cluster -Times 0 -Exactly
+            $global:AzlDdCalls.Count | Should -Be 0
         }
 
         It 'refuses a file it cannot read' {
@@ -182,7 +202,7 @@ Describe 'New-DeploymentDocumentation.ps1' {
             $script:Text | Should -Match 'Import-AzlInfrastructure'
             $script:Text | Should -Not -Match 'logging\.ps1|support@'
             $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Script, [ref]$null, [ref]$null)
-            @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) | Should -Be @('InfrastructureFile', 'OutputPath', 'IncludeCredentialLocations', 'LogPath')
+            @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) | Should -Be @('InfrastructureFile', 'OutputPath', 'ComputerName', 'Credential', 'IncludeCredentialLocations', 'LogPath')
         }
 
         It 'has every parameter in the master registry (tools.arm_deployment.parameters)' {

@@ -11,19 +11,31 @@
     - CSV ownership, state and usage
     - Disk I/O latency measurements (only with -RunPerformanceTest)
 
-    Run it from a machine that can reach the cluster with PowerShell remoting. It asks for nothing: the cluster name is cluster.name of
-    infrastructure.yml, and every limit it applies is a parameter.
+    Run it from the management host. Every question is asked over PowerShell remoting on a node (the performance test on the node that
+    owns the volume, at its management address of the file), so this host needs neither the failover clustering tools nor membership of
+    the cluster's domain, and the cluster name need not resolve from it. It asks for nothing: the cluster is cluster.name of
+    infrastructure.yml, and every limit it applies is a parameter. Without -RunPerformanceTest it changes nothing.
 
     Exit codes: 0 when no check logged an error, 1 when a check or the run failed, 2 when cluster.name is missing or the file cannot be read.
 
 .PARAMETER InfrastructureFile
-    The master infrastructure.yml (schema 5). Reads cluster.name, the cluster to test; the whole file is not validated here.
+    The master infrastructure.yml (schema 5). Reads cluster.name (the cluster to test), nodes[] (the management addresses to connect to) and
+    identity.active_directory (the deployment user and its secret reference); the whole file is not validated here.
+
+.PARAMETER ComputerName
+    Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers on WinRM at its management
+    address; cluster.name when the file has no node address.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, its secret read through the
+    toolkit's secret resolver; the account that runs the script when the file has none or the secret cannot be read.
 
 .PARAMETER VolumeNames
     Optional. Specific CSV volume names to test. If not specified, tests all CSVs.
 
 .PARAMETER RunPerformanceTest
-    Switch to run disk performance tests (I/O benchmark).
+    Switch to run disk performance tests (I/O benchmark) on every online CSV, or on those of -VolumeNames. The infrastructure volume of the
+    instance (Infrastructure_1) is only tested when -VolumeNames names it.
 
 .PARAMETER DurationSeconds
     Duration of performance test in seconds, split evenly between the write test and the read test. At least 2. Default: 60
@@ -64,6 +76,12 @@ param(
     [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
+    [string]$ComputerName,
+
+    [Parameter(Mandatory = $false)]
+    [pscredential]$Credential,
+
+    [Parameter(Mandatory = $false)]
     [string[]]$VolumeNames,
 
     [Parameter(Mandatory = $false)]
@@ -93,12 +111,27 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 $ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
 if (-not $ClusterName) { Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to test.' -ErrorAction Continue; exit 2 }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+
+# The blocks that run on a node (Windows PowerShell): read only, plain values back, so nothing depends on the storage or failover clustering tools of this host.
+$ReadPools = { @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | ForEach-Object { @{ FriendlyName = [string]$_.FriendlyName; HealthStatus = [string]$_.HealthStatus; OperationalStatus = [string]$_.OperationalStatus; Size = [double]$_.Size; AllocatedSize = [double]$_.AllocatedSize } }) }
+$ReadVirtualDisks = { @(Get-VirtualDisk -ErrorAction Stop | ForEach-Object { @{ FriendlyName = [string]$_.FriendlyName; HealthStatus = [string]$_.HealthStatus; OperationalStatus = [string]$_.OperationalStatus; ResiliencySettingName = [string]$_.ResiliencySettingName; FaultDomainAwareness = [string]$_.FaultDomainAwareness; Size = [double]$_.Size; FootprintOnPool = [double]$_.FootprintOnPool } }) }
+# The disks of the pool (Get-StoragePool | Get-PhysicalDisk): the boot device and the SAN LUNs of a node are not pool disks.
+$ReadPhysicalDisks = { @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | Get-PhysicalDisk -ErrorAction Stop | ForEach-Object { @{ FriendlyName = [string]$_.FriendlyName; SerialNumber = [string]$_.SerialNumber; MediaType = [string]$_.MediaType; BusType = [string]$_.BusType; HealthStatus = [string]$_.HealthStatus; OperationalStatus = [string]$_.OperationalStatus } }) }
+$ReadCsv = {
+    @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object {
+            $info = @($_.SharedVolumeInfo)[0]
+            @{ Name = [string]$_.Name; State = [string]$_.State; OwnerNode = [string]$_.OwnerNode.Name; FriendlyVolumeName = [string]$info.FriendlyVolumeName; Size = [double]$info.Partition.Size; FreeSpace = [double]$info.Partition.FreeSpace }
+        })
+}
+$ReadNodeCount = { @(Get-ClusterNode -ErrorAction Stop).Count }
 
 # These define the benchmark itself, not a deployment: the size of one I/O, the share of latencies the 99th percentile
 # is read at, and the scratch folder and file the benchmark creates on the volume and removes again.
@@ -138,12 +171,12 @@ function Test-StoragePoolHealth {
 
     try {
         # Get all non-primordial storage pools
-        $pools = @(Get-StoragePool -CimSession $ClusterName | Where-Object { $_.IsPrimordial -eq $false })
+        $pools = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadPools)
 
         $poolResults = @()
         foreach ($pool in $pools) {
-            $healthStatus = $pool.HealthStatus.ToString()
-            $operationalStatus = $pool.OperationalStatus.ToString()
+            $healthStatus = [string]$pool.HealthStatus
+            $operationalStatus = [string]$pool.OperationalStatus
 
             $result = @{
                 Name              = $pool.FriendlyName
@@ -179,14 +212,14 @@ function Test-VirtualDiskHealth {
     Write-StorageLog -Message 'Checking virtual disk health...' -Level 'INFO'
 
     try {
-        $vDisks = @(Get-VirtualDisk -CimSession $ClusterName)
+        $vDisks = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadVirtualDisks)
 
         $vDiskResults = @()
         foreach ($vDisk in $vDisks) {
             $result = @{
                 Name                  = $vDisk.FriendlyName
-                HealthStatus          = $vDisk.HealthStatus.ToString()
-                OperationalStatus     = $vDisk.OperationalStatus.ToString()
+                HealthStatus          = [string]$vDisk.HealthStatus
+                OperationalStatus     = [string]$vDisk.OperationalStatus
                 ResiliencySettingName = $vDisk.ResiliencySettingName
                 Size                  = [math]::Round($vDisk.Size / 1TB, 2)
                 FootprintOnPool       = [math]::Round($vDisk.FootprintOnPool / 1TB, 2)
@@ -213,14 +246,15 @@ function Test-PhysicalDiskHealth {
     Write-StorageLog -Message 'Checking physical disk health...' -Level 'INFO'
 
     try {
-        $pDisks = @(Get-PhysicalDisk -CimSession $ClusterName | Where-Object { $_.Usage -ne 'AutoSelect' -or $_.CanPool -eq $false })
+        $pDisks = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadPhysicalDisks)
 
         $healthySSD = @($pDisks | Where-Object { $_.MediaType -eq 'SSD' -and $_.HealthStatus -eq 'Healthy' }).Count
         $healthyHDD = @($pDisks | Where-Object { $_.MediaType -eq 'HDD' -and $_.HealthStatus -eq 'Healthy' }).Count
         $unhealthyDisks = @($pDisks | Where-Object { $_.HealthStatus -ne 'Healthy' })
         $unhealthy = $unhealthyDisks.Count
 
-        Write-StorageLog -Message "  Physical Disks: $($pDisks.Count) total ($healthySSD SSD, $healthyHDD HDD)" -Level 'INFO'
+        Write-StorageLog -Message "  Physical disks of the pool: $($pDisks.Count) total ($healthySSD healthy SSD, $healthyHDD healthy HDD)" -Level 'INFO'
+        if ($pDisks.Count -eq 0) { Write-StorageLog -Message '  The storage pool has no physical disk' -Level 'ERROR' }
 
         if ($unhealthy -gt 0) {
             Write-StorageLog -Message "  WARNING: $unhealthy disk(s) not healthy!" -Level 'WARN'
@@ -248,25 +282,23 @@ function Test-ClusterSharedVolumes {
     Write-StorageLog -Message 'Checking Cluster Shared Volumes...' -Level 'INFO'
 
     try {
-        $csvs = @(Get-ClusterSharedVolume -Cluster $ClusterName)
+        $csvs = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadCsv)
 
         if ($VolumeNames) {
             $csvs = @($csvs | Where-Object { $VolumeNames -contains $_.Name })
+            foreach ($missing in @($VolumeNames | Where-Object { $_ -notin @($csvs | ForEach-Object { $_.Name }) })) { Write-StorageLog -Message "  CSV: '$missing' (-VolumeNames) is not a Cluster Shared Volume of the cluster" -Level 'ERROR' }
         }
 
         $csvResults = @()
         foreach ($csv in $csvs) {
-            $csvInfo = $csv.SharedVolumeInfo[0]
-            $partition = $csvInfo.Partition
-
             $result = @{
                 Name               = $csv.Name
-                State              = $csv.State.ToString()
-                OwnerNode          = $csv.OwnerNode.Name
-                FriendlyVolumeName = $csvInfo.FriendlyVolumeName
-                Size               = [math]::Round($partition.Size / 1TB, 2)
-                FreeSpace          = [math]::Round($partition.FreeSpace / 1GB, 2)
-                UsagePercent       = [math]::Round((($partition.Size - $partition.FreeSpace) / $partition.Size) * 100, 1)
+                State              = $csv.State
+                OwnerNode          = $csv.OwnerNode
+                FriendlyVolumeName = $csv.FriendlyVolumeName
+                Size               = [math]::Round($csv.Size / 1TB, 2)
+                FreeSpace          = [math]::Round($csv.FreeSpace / 1GB, 2)
+                UsagePercent       = $(if ($csv.Size -gt 0) { [math]::Round((($csv.Size - $csv.FreeSpace) / $csv.Size) * 100, 1) } else { 0 })
             }
 
             $csvResults += $result
@@ -276,7 +308,7 @@ function Test-ClusterSharedVolumes {
                     Write-StorageLog -Message "  CSV: $($csv.Name) - Online (WARNING: $($result.UsagePercent)% used, limit $CsvUsageWarningPercent%)" -Level 'WARN'
                 }
                 else {
-                    Write-StorageLog -Message "  CSV: $($csv.Name) - Online ($($result.UsagePercent)% used, Owner: $($csv.OwnerNode.Name))" -Level 'SUCCESS'
+                    Write-StorageLog -Message "  CSV: $($csv.Name) - Online ($($result.UsagePercent)% used, Owner: $($csv.OwnerNode))" -Level 'SUCCESS'
                 }
             }
             else {
@@ -301,20 +333,26 @@ function Test-StoragePerformanceIO {
     Write-StorageLog -Message 'This will generate I/O on the cluster' -Level 'WARN'
 
     try {
-        $csvs = @(Get-ClusterSharedVolume -Cluster $ClusterName)
+        $csvs = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadCsv | Where-Object { $_.State -eq 'Online' })
 
         if ($VolumeNames) {
             $csvs = @($csvs | Where-Object { $VolumeNames -contains $_.Name })
         }
+        else {
+            # The infrastructure volume of the instance is not a workload volume: it is only tested when -VolumeNames names it.
+            foreach ($skipped in @($csvs | Where-Object { (Split-Path -Leaf $_.FriendlyVolumeName) -like 'Infrastructure_*' })) { Write-StorageLog -Message "  Skipping the infrastructure volume $($skipped.Name) (name it in -VolumeNames to test it)" -Level 'INFO' }
+            $csvs = @($csvs | Where-Object { (Split-Path -Leaf $_.FriendlyVolumeName) -notlike 'Infrastructure_*' })
+        }
+        if ($csvs.Count -eq 0) { Write-StorageLog -Message '  No online Cluster Shared Volume to test' -Level 'ERROR' }
 
         foreach ($csv in $csvs) {
-            $testPath = Join-Path $csv.SharedVolumeInfo[0].FriendlyVolumeName $ScratchFolderName
-            $ownerNode = $csv.OwnerNode.Name
+            $testPath = Join-Path $csv.FriendlyVolumeName $ScratchFolderName
+            $ownerNode = $csv.OwnerNode
 
             Write-StorageLog -Message "  Testing: $($csv.Name) on $ownerNode" -Level 'INFO'
 
             # Run performance test on owner node
-            $perfResults = Invoke-Command -ComputerName $ownerNode -ScriptBlock {
+            $perfResults = Invoke-AzlClusterCommand -Connection $connection -Node $ownerNode -ScriptBlock {
                 param($testPath, $duration, $fileName, $ioSize, $percentile)
 
                 # Create test directory
@@ -390,7 +428,7 @@ function Test-StoragePerformanceIO {
                     P99WriteLatencyMs = $p99Write
                     P99ReadLatencyMs  = $p99Read
                 }
-            } -ArgumentList $testPath, $DurationSeconds, $ScratchFileName, $IoSizeBytes, $PercentileFraction -ErrorAction Stop
+            } -ArgumentList $testPath, $DurationSeconds, $ScratchFileName, $IoSizeBytes, $PercentileFraction
 
             $perfResult = @{
                 Volume            = $csv.Name
@@ -427,8 +465,8 @@ function Test-StorageResiliency {
     Write-StorageLog -Message 'Checking storage resiliency configuration...' -Level 'INFO'
 
     try {
-        $vDisks = @(Get-VirtualDisk -CimSession $ClusterName)
-        $nodes = @(Get-ClusterNode -Cluster $ClusterName).Count
+        $vDisks = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadVirtualDisks)
+        $nodes = [int](Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $ReadNodeCount)
 
         foreach ($vDisk in $vDisks) {
             $resiliency = $vDisk.ResiliencySettingName
@@ -467,6 +505,8 @@ try {
     Write-StorageLog -Message '========================================' -Level 'INFO'
     Write-StorageLog -Message 'Storage Performance and Health Validation' -Level 'INFO'
     Write-StorageLog -Message "Cluster: $ClusterName" -Level 'INFO'
+    Write-StorageLog -Message (Format-AzlClusterConnection -Connection $connection) -Level 'INFO'
+    foreach ($note in $connection.Notes) { Write-StorageLog -Message $note -Level 'WARN' }
     Write-StorageLog -Message '========================================' -Level 'INFO'
     Write-Host ''
 
@@ -498,6 +538,7 @@ try {
         exit 1
     }
     Write-StorageLog -Message 'Storage validation complete' -Level 'SUCCESS'
+    exit 0
 }
 catch {
     Write-StorageLog -Message "Storage validation failed: $_" -Level 'ERROR'

@@ -98,6 +98,23 @@ Describe 'New-StoragePath.ps1' {
             Should -Invoke New-AzStackHCIVMStoragePath -Times 0 -Exactly
         }
 
+        It 'takes the folder Azure Local makes inside the folder asked for as the same path (seen on a deployed instance: <path>\<generated id>)' {
+            Mock Get-AzStackHCIVMStoragePath { [pscustomobject]@{ Name = $Name; Path = 'c:\ClusterStorage\vol-workloads-01\VMS\e81719aea135c35' } }
+            $r = Invoke-Path (New-InfraFile)
+            $r.ExitCode | Should -Be 0
+            $r.Rows[0].Action | Should -Be 'AlreadyExists'
+            $r.Rows[0].Detail | Should -BeNullOrEmpty
+        }
+
+        It 'still reports a folder two levels down, or next to the one asked for' -ForEach @(
+            @{ Existing = 'C:\ClusterStorage\vol-workloads-01\vms\a\b' }, @{ Existing = 'C:\ClusterStorage\vol-workloads-01\vms2' }
+        ) {
+            $global:AzlSpTestExisting = $Existing
+            Mock Get-AzStackHCIVMStoragePath { [pscustomobject]@{ Name = $Name; Path = $global:AzlSpTestExisting } }
+            try { (Invoke-Path (New-InfraFile)).Rows[0].Detail | Should -Match 'cannot be moved' }
+            finally { Remove-Variable -Name AzlSpTestExisting -Scope Global -ErrorAction SilentlyContinue }
+        }
+
         It 'reports a storage path that points somewhere else, and changes nothing' {
             Mock Get-AzStackHCIVMStoragePath { [pscustomobject]@{ Name = $Name; Path = 'C:\ClusterStorage\other' } }
             $r = Invoke-Path (New-InfraFile)

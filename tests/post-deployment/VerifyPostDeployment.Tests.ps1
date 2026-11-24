@@ -19,7 +19,7 @@ BeforeAll {
     $env:AZL_TEST_VERIFY_SECRET = 'Canary-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 
     function New-InfraFile {
-        param([object[]]$VmImages, [switch]$OldKey, [string]$Identity = 'active_directory', [object[]]$LogicalNetworks = @(), [switch]$NoLogin)
+        param([object[]]$VmImages, [switch]$OldKey, [string]$Identity = 'active_directory', [object[]]$LogicalNetworks = @(), [switch]$NoLogin, [string]$Witness = '', [string[]]$LocalGroups = @())
         $doc = [ordered]@{
             scenario   = [ordered]@{ identity = $Identity }
             cluster    = [ordered]@{ name = 'iic-azl-01' }
@@ -31,6 +31,8 @@ BeforeAll {
         if ($Identity -eq 'active_directory') {
             $doc.identity.active_directory = [ordered]@{ domain_fqdn = 'iic.improbability.cloud'; netbios_name = 'IIC'; lcm_user = [ordered]@{ username = 'iic-lcm'; password = 'env://AZL_TEST_VERIFY_SECRET' } }
         }
+        if ($Witness) { $doc.cluster.witness = [ordered]@{ type = $Witness } }
+        if ($LocalGroups.Count -gt 0 -and $Identity -eq 'active_directory') { $doc.identity.active_directory.security_groups = @([ordered]@{ name = 'sg-iic-azl-01-admins'; local_groups = @($LocalGroups) }) }
         if ($NoLogin) { $doc.identity = [ordered]@{}; if ($Identity -eq 'active_directory') { $doc.identity.active_directory = [ordered]@{ domain_fqdn = 'iic.improbability.cloud' } } }
         if ($PSBoundParameters.ContainsKey('VmImages')) { $doc.storage = [ordered]@{ vm_images = @($VmImages) } }
         # The old key: it must be ignored, not read.
@@ -42,7 +44,7 @@ BeforeAll {
     function Get-Image([string]$Name) { [ordered]@{ name = $Name; os_type = 'Windows'; publisher = 'iic-publisher'; offer = 'iic-offer'; sku = 'iic-sku'; version = 'latest'; storage_path = 'iic-path' } }
     function Invoke-Verify {
         param([string]$File, [int]$Succeeded = 5, [switch]$NoCredential, [switch]$WhatIf, [hashtable]$World = @{})
-        $global:VerifyTest = @{ Succeeded = $Succeeded; World = $World }
+        $global:VerifyTest = @{ Succeeded = $Succeeded; World = $World; Calls = @() }
         $log = Join-Path $TestDrive "verify-$([guid]::NewGuid().ToString('N').Substring(0, 6)).log"
         $arguments = @{ InfrastructureFile = $File; LogPath = $log }
         if (-not $NoCredential) { $arguments.Credential = [pscredential]::new('iic\lcm', (ConvertTo-SecureString 'x' -AsPlainText -Force)) }
@@ -51,30 +53,31 @@ BeforeAll {
         $null = & $script:Script @arguments 6>&1
         [pscustomobject]@{ Code = $global:LASTEXITCODE; Log = $(if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Raw } else { '' }) }
     }
-    # The cluster, node and Azure side, as stubs.
-    function Get-ClusterNode { param($Cluster, $ErrorAction) @(
-            [pscustomobject]@{ Name = 'iic-azl-n01'; State = 'Up' }
-            [pscustomobject]@{ Name = 'iic-azl-n02'; State = $(if ($global:VerifyTest.World['NodeDown']) { 'Down' } else { 'Up' }) }) }
-    function Get-ClusterQuorum { param($Cluster, $ErrorAction) [pscustomobject]@{ QuorumType = 'NodeAndCloudWitness' } }
-    function Get-Cluster { param($Name) [pscustomobject]@{ QuorumState = 'Normal' } }
-    function Get-ClusterResource { param($Cluster, $Name, $ErrorAction) [pscustomobject]@{ Name = $Name } }
-    function Get-ClusterParameter { param([Parameter(ValueFromPipeline)]$InputObject, $Name) process { [pscustomobject]@{ Name = $Name; Value = $(if ($global:VerifyTest.World['AdAware']) { $global:VerifyTest.World['AdAware'] } else { 2 }) } } }
-    function Get-StoragePool { param($CimSession) [pscustomobject]@{ IsPrimordial = $false; HealthStatus = 'Healthy' } }
-    function Get-ClusterSharedVolume { param($Cluster) @([pscustomobject]@{ Name = 'csv1'; State = 'Online' }) }
-    function Test-NetConnection { param($ComputerName, $Port, $WarningAction) [pscustomobject]@{ TcpTestSucceeded = $true } }
+    # The cluster, node and Azure side, as stubs. Every cluster question is a block that runs on a node (Invoke-Command): the host that runs the script has no
+    # cluster tools. $World changes what the node answers.
     function Invoke-Command {
-        param($ComputerName, $ScriptBlock, $Credential, $ErrorAction)
+        param($ComputerName, $ScriptBlock, $Credential, $ErrorAction, $ArgumentList)
         $world = $global:VerifyTest.World
         $text = "$ScriptBlock"
+        $global:VerifyTest.Calls += @([pscustomobject]@{ Computer = $ComputerName; Text = $text })
         if ($text -match 'Win32_ComputerSystem') {
             if ($world['Workgroup']) { return [pscustomobject]@{ Domain = 'WORKGROUP'; PartOfDomain = $false; SecureChannel = $null } }
             return [pscustomobject]@{ Domain = $(if ($world['WrongDomain']) { 'other.example.test' } else { 'iic.improbability.cloud' }); PartOfDomain = $true; SecureChannel = $true }
         }
-        if ($text -match 'Get-LocalGroupMember') { return @{ AdminGroups = 1; RmGroups = 1 } }
-        if ($text -match 'sshd') { return [pscustomobject]@{ Status = 'Running' } }
+        if ($text -match 'Get-ClusterQuorum') {
+            $witness = [string]$world['Witness']
+            return @{
+                QuorumType = 'Majority'; WitnessName = $(if ($witness) { $witness }); WitnessType = $witness
+                WitnessState = $(if ($witness) { $(if ($world['WitnessOffline']) { 'Offline' } else { 'Online' }) }); NonVotingNodes = @($world['NoVote'] | Where-Object { $_ })
+            }
+        }
+        if ($text -match 'ADAware') { return [string]$(if ($world['AdAware']) { $world['AdAware'] } else { 2 }) }
+        if ($text -match 'Get-ClusterSharedVolume') { return @{ Pools = @('Healthy'); Csv = @(@{ Name = 'csv1'; State = 'Online' }) } }
+        if ($text -match 'Get-ClusterNode') { return @(@{ Name = 'iic-azl-n01'; State = 'Up' }, @{ Name = 'iic-azl-n02'; State = $(if ($world['NodeDown']) { 'Down' } else { 'Up' }) }) }
+        if ($text -match 'Get-LocalGroupMember') { $counts = @{}; foreach ($group in $ArgumentList[0]) { $counts[[string]$group] = $(if ($world['EmptyGroup'] -eq $group) { 0 } else { 1 }) }; return $counts }
+        if ($text -match 'sshd') { return [string]$(if ($world['Sshd']) { $world['Sshd'] } else { 'Stopped' }) }
         throw "unexpected remote call: $text"
-    }
-    function az {
+    }    function az {
         $global:LASTEXITCODE = 0
         $text = "$args"
         if ($text -like '*image list*') { return (1..5 | ForEach-Object { [ordered]@{ name = "img-$_"; provisioningState = $(if ($_ -le $global:VerifyTest.Succeeded) { 'Succeeded' } else { 'Failed' }) } } | ConvertTo-Json -AsArray) }
@@ -88,17 +91,19 @@ Describe 'Invoke-VerifyPostDeployment.ps1 compares the Azure VM images with stor
     It 'passes when every registered image Succeeded in Azure' {
         $r = Invoke-Verify (New-InfraFile -VmImages @((Get-Image 'iic-img-1'), (Get-Image 'iic-img-2'))) -Succeeded 5
         $r.Code | Should -Be 0 -Because $r.Log
-        $r.Log | Should -Match 'All expected images Succeeded - 5/2'
+        $r.Log | Should -Match 'All expected images Succeeded - 5 Succeeded of 5 in rg-iic-azl-01, the file lists 2'
     }
     It 'fails (exit 1) when fewer images Succeeded than the file lists' {
         $r = Invoke-Verify (New-InfraFile -VmImages @((Get-Image 'iic-img-1'), (Get-Image 'iic-img-2'), (Get-Image 'iic-img-3'))) -Succeeded 2
         $r.Code | Should -Be 1
-        $r.Log | Should -Match '\[FAIL\].*All expected images Succeeded - 2/3'
+        $r.Log | Should -Match '\[FAIL\].*All expected images Succeeded - 2 Succeeded of 5 in rg-iic-azl-01, the file lists 3'
     }
-    It 'makes no comparison when the file lists no VM images, and does not fail on the missing key' {
+    It 'makes no comparison when the file lists no VM images, does not fail on the missing key, and does not need az for it' {
         $r = Invoke-Verify (New-InfraFile) -Succeeded 5
         $r.Code | Should -Be 0 -Because $r.Log
         $r.Log | Should -Not -Match 'All expected images'
+        $r.Log | Should -Match '\[SKIP\] VM images - the file lists none'
+        $r.Log | Should -Match '\[SKIP\] Logical networks - the file lists none'
     }
     It 'does not read the old key marketplace_images.images' {
         $r = Invoke-Verify (New-InfraFile -OldKey) -Succeeded 0
@@ -108,7 +113,7 @@ Describe 'Invoke-VerifyPostDeployment.ps1 compares the Azure VM images with stor
     It 'reads one image given as a single item' {
         $r = Invoke-Verify (New-InfraFile -VmImages @(, (Get-Image 'iic-img-1'))) -Succeeded 1
         $r.Code | Should -Be 0 -Because $r.Log
-        $r.Log | Should -Match 'All expected images Succeeded - 1/1'
+        $r.Log | Should -Match 'All expected images Succeeded - 1 Succeeded of 5 in rg-iic-azl-01, the file lists 1'
     }
 }
 
@@ -116,7 +121,7 @@ Describe 'Invoke-VerifyPostDeployment.ps1 counts one logical network correctly' 
     It 'compares 1 of 1 for a file with one logical network, whatever az returns for it' {
         $r = Invoke-Verify (New-InfraFile -VmImages @(, (Get-Image 'iic-img-1')) -LogicalNetworks @([ordered]@{ name = 'iic-lnet-1' })) -Succeeded 1
         $r.Code | Should -Be 0 -Because $r.Log
-        $r.Log | Should -Match 'All expected networks Succeeded - 1/1'
+        $r.Log | Should -Match 'All expected networks Succeeded - 1 Succeeded of 1 in rg-iic-azl-01, the file lists 1'
     }
 }
 
@@ -149,6 +154,58 @@ Describe 'Invoke-VerifyPostDeployment.ps1 checks the cluster nodes and the ident
         $r = Invoke-Verify (New-InfraFile -Identity local_identity) -World @{ Workgroup = $true; AdAware = 1 }
         $r.Code | Should -Be 1
         $r.Log | Should -Match '\[FAIL\].*Cluster name ADAware is 2'
+    }
+}
+
+Describe 'Invoke-VerifyPostDeployment.ps1 asks the cluster on a node, and checks what the file asks for (found on the first run on a deployed instance)' {
+    It 'sends the cluster questions to the first node of the file at its management address, not to the cluster name' {
+        $r = Invoke-Verify (New-InfraFile)
+        $r.Code | Should -Be 0 -Because $r.Log
+        @($global:VerifyTest.Calls | Where-Object { $_.Text -match 'Get-ClusterNode|Get-ClusterQuorum|Get-ClusterSharedVolume' } | ForEach-Object { $_.Computer } | Sort-Object -Unique) | Should -Be @('192.0.2.11')
+        (Get-Content -LiteralPath $script:Script -Raw) | Should -Not -Match '-Cluster \$clusterName|-CimSession \$clusterName|QuorumState'
+    }
+    It 'passes the quorum check without a witness when the file names none, and reads no quorum state from the cluster object' {
+        $r = Invoke-Verify (New-InfraFile)
+        $r.Code | Should -Be 0 -Because $r.Log
+        $r.Log | Should -Match 'Quorum type configured - Majority'
+        $r.Log | Should -Match 'Every node that is Up has a vote'
+        $r.Log | Should -Match 'No witness: the file names none'
+    }
+    It 'fails when the file asks for a witness (<Type>) and the cluster has none' -ForEach @(@{ Type = 'cloud' }, @{ Type = 'file_share' }) {
+        $r = Invoke-Verify (New-InfraFile -Witness $Type)
+        $r.Code | Should -Be 1
+        $r.Log | Should -Match "\[FAIL\].*Witness \($Type, cluster\.witness\.type\) - the cluster has no witness"
+    }
+    It 'passes with the witness of the file Online, and fails for another type or a witness that is not Online' {
+        (Invoke-Verify (New-InfraFile -Witness cloud) -World @{ Witness = 'Cloud Witness' }).Code | Should -Be 0
+        $r = Invoke-Verify (New-InfraFile -Witness cloud) -World @{ Witness = 'File Share Witness' }
+        $r.Code | Should -Be 1
+        $r.Log | Should -Match '\[FAIL\].*Witness is a Cloud Witness'
+        $r = Invoke-Verify (New-InfraFile -Witness cloud) -World @{ Witness = 'Cloud Witness'; WitnessOffline = $true }
+        $r.Code | Should -Be 1
+        $r.Log | Should -Match '\[FAIL\].*Witness is Online - Offline'
+    }
+    It 'fails when a node that is Up has no vote' {
+        $r = Invoke-Verify (New-InfraFile) -World @{ NoVote = @('iic-azl-n02') }
+        $r.Code | Should -Be 1
+        $r.Log | Should -Match '\[FAIL\].*Every node that is Up has a vote - no vote: iic-azl-n02'
+    }
+    It 'skips the security groups when the file puts no group in a local group, and checks exactly the local groups it names' {
+        $r = Invoke-Verify (New-InfraFile)
+        $r.Log | Should -Match '\[SKIP\] Security groups - the file puts no Active Directory group in a local group'
+        $r = Invoke-Verify (New-InfraFile -LocalGroups 'Administrators', 'Remote Management Users') -World @{ EmptyGroup = 'Remote Management Users' }
+        $r.Code | Should -Be 1
+        $r.Log | Should -Match '\[PASS\] iic-azl-n01 - Administrators AD group\(s\) - 1'
+        $r.Log | Should -Match '\[FAIL\] iic-azl-n01 - Remote Management Users AD group\(s\) - 0'
+    }
+    It 'skips SSH on a node where sshd does not run (an optional task), and checks the port where it does' {
+        $r = Invoke-Verify (New-InfraFile)
+        $r.Code | Should -Be 0 -Because $r.Log
+        $r.Log | Should -Match '\[SKIP\] iic-azl-n01 - SSH - sshd is Stopped'
+        $r = Invoke-Verify (New-InfraFile) -World @{ Sshd = 'Running' }
+        $r.Code | Should -Be 1 -Because 'no machine answers on port 22 at the documentation address of the test'
+        $r.Log | Should -Match '\[PASS\] iic-azl-n01 - sshd service - Running'
+        $r.Log | Should -Match '\[FAIL\] iic-azl-n01 - port 22 reachable'
     }
 }
 

@@ -79,6 +79,8 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'azure-cli', 'AzlAzureCliArgument.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
@@ -129,7 +131,11 @@ function Invoke-AzCli([string[]]$Arguments) {
     foreach ($argument in $Arguments) {
         if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
     }
-    $all = @(& az @Arguments 2>&1)
+    # Not az.cmd: a virtual switch that Network ATC named has parentheses (ComputeSwitch(compute)), and cmd.exe ends the batch file at the closing one.
+    $launcher = Get-AzlAzureCliLauncher
+    $parenthesis = Get-AzlAzureCliParenthesisProblem -Launcher $launcher -Argument $Arguments
+    if ($parenthesis) { Exit-InputProblem $parenthesis }
+    $all = @(& $launcher.Command @($launcher.Prefix + $Arguments) 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
     $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -140,9 +146,8 @@ function ConvertFrom-AzJson([string]$Text) { if ($Text -and $Text.Trim()) { $Tex
 # The command that runs on the cluster: the external virtual switches, the command Microsoft Learn gives.
 $ReadSwitch = { @(Get-VMSwitch -SwitchType External -ErrorAction Stop | ForEach-Object { [string]$_.Name }) }
 function Get-ExternalSwitch([string]$Target) {
-    $call = @{ ComputerName = $Target; ScriptBlock = $ReadSwitch; ErrorAction = 'Stop' }
-    if ($Credential) { $call.Credential = $Credential }
-    @(Invoke-Command @call | Where-Object { $_ })
+    # $Target is the cluster target of the connection: a node of the file at its management address (the next node when it cannot be reached).
+    @(Invoke-AzlClusterCommand -Connection $script:connection -ScriptBlock $ReadSwitch | Where-Object { $_ })
 }
 
 # ---- the values, from infrastructure.yml only
@@ -259,7 +264,9 @@ for ($i = 0; $i -lt $active.Count; $i++) {
     }
 }
 
-$target = if ($ComputerName) { $ComputerName.Trim() } else { Get-Text 'cluster.name' }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+foreach ($note in $connection.Notes) { Write-Warning $note }
+$target = [string]$connection.Target
 if (-not $target -and $active.Count -gt 0) {
     Exit-InputProblem 'cluster.name is missing. It is the cluster the script asks for its external virtual switches (or give -ComputerName).'
 }

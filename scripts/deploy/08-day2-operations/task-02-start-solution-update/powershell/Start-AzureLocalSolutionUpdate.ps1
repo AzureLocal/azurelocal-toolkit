@@ -101,9 +101,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
-$remoteCredential = $Credential
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 # The states of an update that Learn names (Update Azure Local by using PowerShell; Understand update phases of Azure Local).
 $StartableState = 'Ready', 'ReadyToInstall', 'HealthCheckExpired'
@@ -163,9 +163,7 @@ $Remote = @{
     }
 }
 function Invoke-Cluster([string]$Step, [object[]]$Arguments = @()) {
-    $call = @{ ComputerName = $script:target; ScriptBlock = $Remote[$Step]; ArgumentList = (, $Step + $Arguments); ErrorAction = 'Stop' }
-    if ($remoteCredential) { $call.Credential = $remoteCredential }
-    Invoke-Command @call
+    Invoke-AzlClusterCommand -Connection $script:connection -ScriptBlock $Remote[$Step] -ArgumentList (, $Step + $Arguments)
 }
 function ConvertTo-UpdateVersion([string]$Text) {
     $parsed = $null
@@ -196,7 +194,9 @@ if (-not $wantLatest) {
     if (-not $targetVersion) { Exit-InputProblem "operations.updates.target_version '$targetRaw' is not a version number." }
 }
 
-$target = if ($ComputerName) { $ComputerName.Trim() } else { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim() }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+foreach ($note in $connection.Notes) { Write-Warning $note }
+$target = [string]$connection.Target
 if (-not $target) { Exit-InputProblem 'cluster.name is missing. It is the cluster the script connects to (or give -ComputerName).' }
 
 # ---- the cluster as it is (read only)

@@ -127,7 +127,11 @@ function Test-InSubnet([string]$Address, [string]$Subnet) {
 function Invoke-AzCli([string[]]$Arguments) {
     $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
     if ($unsafe) { Exit-InputProblem $unsafe }
-    $all = @(& az @Arguments 2>&1)
+    # Not az.cmd: a virtual switch that Network ATC named has parentheses (ComputeSwitch(compute)), and cmd.exe ends the batch file at the closing one.
+    $launcher = Get-AzlAzureCliLauncher
+    $parenthesis = Get-AzlAzureCliParenthesisProblem -Launcher $launcher -Argument $Arguments
+    if ($parenthesis) { Exit-InputProblem $parenthesis }
+    $all = @(& $launcher.Command @($launcher.Prefix + $Arguments) 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
     $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"

@@ -12,13 +12,21 @@
       1. Cluster: every node of nodes[] is a cluster node and its state is Up.
       2. Identity: with scenario.identity active_directory every node is joined to identity.active_directory.domain_fqdn and its secure channel
          works. With local_identity every node is in a workgroup and the cluster name resource has ADAware 2 (no Active Directory).
-      3. Quorum: a quorum type is set and the quorum state is Normal. (The witness is created by the deployment from cluster.witness.)
-      4. Security groups: each node has at least one group in Administrators and in Remote Management Users (the groups
-         identity.active_directory.security_groups[].local_groups put there). Active Directory only.
-      5. SSH: sshd runs on each node and TCP 22 answers (the WindowsOpenSSH extension of Phase 06 task 04 puts it there).
+      3. Quorum: a quorum type is set, every node that is Up has a vote, and the cluster has the witness the file asks for (cluster.witness.type
+         cloud or file_share: a witness resource of that type that is Online; none or not set: no witness is expected).
+      4. Security groups: each node has at least one group in every local group the file puts an Active Directory group in
+         (identity.active_directory.security_groups[].local_groups, for example Administrators and Remote Management Users). Active Directory
+         only. Skipped when the file names no such group: then the task (Phase 06 task 03) has nothing to apply.
+      5. SSH: sshd runs on each node and TCP 22 answers (the WindowsOpenSSH extension of Phase 06 task 04 puts it there). A node where sshd is
+         not installed or not running is reported as skipped (SSH is an optional task and the file has no key for it); a node where sshd runs
+         but TCP 22 does not answer fails.
       6. Storage: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online.
-      7. VM images in Azure: the number of images that Succeeded is not below the number in storage.vm_images[].
-      8. Logical networks in Azure: the number that Succeeded is not below the number in networking.logical_networks[].
+      7. VM images in Azure: the number of images that Succeeded is not below the number in storage.vm_images[]. Skipped when the file lists none.
+      8. Logical networks in Azure: the number that Succeeded is not below the number in networking.logical_networks[]. Skipped when the file
+         lists none.
+
+    The cluster questions (checks 1, 3 and 6) are asked on a node over PowerShell remoting, at the node's management address of the file: the host
+    that runs the script needs neither the failover clustering tools nor the cluster's domain or DNS.
 
     -WhatIf lists the checks and runs none.
 
@@ -27,11 +35,11 @@
     secret reference read through scripts/common/secrets/AzlSecret.psm1. The script never asks. With neither it stops with exit code 2.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        cluster.name, nodes[].name, nodes[].management.ip_address
+        cluster.name, cluster.witness.type, nodes[].name, nodes[].management.ip_address
         scenario.identity, identity.active_directory.domain_fqdn, .netbios_name, .lcm_user (username, password)
         identity.local_admin (username, password)
         azure.subscription_id, azure.resource_group
-        storage.vm_images[], networking.logical_networks[]
+        storage.vm_images[], networking.logical_networks[], identity.active_directory.security_groups[].local_groups
 
     Exit codes: 0 every check passed (or planned under -WhatIf); 1 a check failed; 2 a value in the file is missing or unusable, or there is no
     login (nothing was checked).
@@ -55,7 +63,7 @@
     ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 
 .NOTES
-    Needs the FailoverClusters and Storage modules and az (signed in) for checks 7 and 8.
+    Needs az (signed in, with the stack-hci-vm extension) for checks 7 and 8, and only when the file lists VM images or logical networks.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -76,6 +84,8 @@ $MinimumAdGroupsPerLocalGroup = 1
 $MinimumCsvVolumes = 1
 # The cluster name resource of a cluster without Active Directory has ADAware 2 (Microsoft Learn, Deploy Azure Local with local identity and Azure Key Vault).
 $LocalIdentityAdAware = 2
+# cluster.witness.type of the file and the cluster resource type of that witness (Microsoft Learn, Deploy a quorum witness). none: no witness is expected.
+$WitnessResourceType = @{ cloud = 'Cloud Witness'; file_share = 'File Share Witness'; none = '' }
 # TCP port of the SSH service of the node. Fixed by the SSH protocol.
 $SshPort = 22
 
@@ -106,6 +116,7 @@ $identityMode = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Pat
 if ($identityMode -notin 'active_directory', 'local_identity') { Exit-InputProblem "scenario.identity must be active_directory or local_identity; found '$identityMode'." }
 $domainFqdn = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_fqdn')).Trim()
 if ($identityMode -eq 'active_directory' -and -not $domainFqdn) { Exit-InputProblem 'identity.active_directory.domain_fqdn is missing in the infrastructure file.' }
+$witnessTypeOfFile = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.witness.type')).Trim().ToLowerInvariant()
 $subscriptionId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id')).Trim()
 $resourceGroup = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.resource_group')).Trim()
 
@@ -144,6 +155,32 @@ if (-not $Credential -and -not $WhatIfPreference) {
 }
 $credParam = if ($Credential) { @{ Credential = $Credential } } else { @{} }
 
+# The cluster questions are asked on a node of the file (the first with a management address), over PowerShell remoting. Plain values come back.
+$clusterTarget = [string](@($allNodes | Where-Object { $_.Ip } | Select-Object -First 1 | ForEach-Object { $_.Ip }) + @($clusterName))[0]
+function Invoke-ClusterRead([scriptblock]$Block) { Invoke-Command -ComputerName $clusterTarget @credParam -ErrorAction Stop -ScriptBlock $Block }
+$ReadClusterNodes = { @(Get-ClusterNode -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } }) }
+$ReadAdAware = { [string](Get-ClusterResource -Name 'Cluster Name' -ErrorAction Stop | Get-ClusterParameter -Name ADAware -ErrorAction Stop).Value }
+$ReadQuorum = {
+    $quorum = Get-ClusterQuorum -ErrorAction Stop
+    $witness = $quorum.QuorumResource
+    @{
+        QuorumType      = [string]$quorum.QuorumType
+        WitnessName     = [string]$(if ($witness) { $witness.Name })
+        WitnessType     = [string]$(if ($witness) { $witness.ResourceType })
+        WitnessState    = [string]$(if ($witness) { $witness.State })
+        NonVotingNodes  = @(Get-ClusterNode -ErrorAction Stop | Where-Object { [string]$_.State -eq 'Up' -and [int]$_.NodeWeight -ne 1 } | ForEach-Object { [string]$_.Name })
+    }
+}
+$ReadStorage = {
+    @{
+        Pools = @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | ForEach-Object { [string]$_.HealthStatus })
+        Csv   = @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } })
+    }
+}
+# The local groups the file puts an Active Directory group in (identity.active_directory.security_groups[].local_groups).
+$localGroupsOfFile = @(@(Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.security_groups') | ForEach-Object { $_ } | Where-Object { $_ -is [System.Collections.IDictionary] } |
+        ForEach-Object { @($_['local_groups']) } | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+
 # ---- the checks
 $passCount = 0; $failCount = 0; $skipCount = 0
 function Write-Check {
@@ -161,7 +198,7 @@ Write-Log ''; Write-Log 'Check 1 - Cluster nodes'
 if ($WhatIfPreference) { Write-Plan "Would read the nodes of $clusterName and check that each node of the file is Up" }
 else {
     try {
-        $clusterNodes = @(Get-ClusterNode -Cluster $clusterName -ErrorAction Stop)
+        $clusterNodes = @(Invoke-ClusterRead $ReadClusterNodes)
         foreach ($node in $nodesToCheck) {
             $member = $clusterNodes | Where-Object { [string]$_.Name -eq $node.Hostname } | Select-Object -First 1
             if (-not $member) { Write-Check -Pass $false -Check "$($node.Hostname) is a cluster node" -Detail 'not found in the cluster'; continue }
@@ -194,8 +231,8 @@ if ($identityMode -eq 'local_identity') {
     if ($WhatIfPreference) { Write-Plan "Would read ADAware of the cluster name resource of $clusterName" }
     else {
         try {
-            $adAware = Get-ClusterResource -Cluster $clusterName -Name 'Cluster Name' -ErrorAction Stop | Get-ClusterParameter -Name ADAware -ErrorAction Stop
-            Write-Check -Pass ([int]$adAware.Value -eq $LocalIdentityAdAware) -Check "Cluster name ADAware is $LocalIdentityAdAware (no Active Directory)" -Detail ([string]$adAware.Value)
+            $adAware = [string](Invoke-ClusterRead $ReadAdAware)
+            Write-Check -Pass ($adAware -eq [string]$LocalIdentityAdAware) -Check "Cluster name ADAware is $LocalIdentityAdAware (no Active Directory)" -Detail $adAware
         }
         catch { Write-Failure "ADAware could not be read: $($_.Exception.Message)" }
     }
@@ -206,10 +243,21 @@ Write-Log ''; Write-Log 'Check 3 - Cluster quorum'
 if ($WhatIfPreference) { Write-Plan "Would query the quorum of $clusterName" }
 else {
     try {
-        $quorum = Get-ClusterQuorum -Cluster $clusterName -ErrorAction Stop
-        $quorumState = [string](Get-Cluster -Name $clusterName).QuorumState
-        Write-Check -Pass ($null -ne $quorum.QuorumType) -Check 'Quorum type configured' -Detail ([string]$quorum.QuorumType)
-        Write-Check -Pass ($quorumState -eq 'Normal') -Check 'Quorum state Normal' -Detail $quorumState
+        $quorum = Invoke-ClusterRead $ReadQuorum
+        Write-Check -Pass ([bool]$quorum.QuorumType) -Check 'Quorum type configured' -Detail ([string]$quorum.QuorumType)
+        Write-Check -Pass (@($quorum.NonVotingNodes).Count -eq 0) -Check 'Every node that is Up has a vote' -Detail $(if (@($quorum.NonVotingNodes).Count -gt 0) { "no vote: $(@($quorum.NonVotingNodes) -join ', ')" } else { '' })
+        # The witness the file asks for (cluster.witness.type): cloud, file_share or none. The cluster object has no quorum state property; the witness resource has a state.
+        $expected = $WitnessResourceType[$witnessTypeOfFile]
+        if ($witnessTypeOfFile -and -not $WitnessResourceType.ContainsKey($witnessTypeOfFile)) { Write-Failure "cluster.witness.type '$witnessTypeOfFile' is not cloud, file_share or none" }
+        elseif ($expected) {
+            if (-not $quorum.WitnessName) { Write-Check -Pass $false -Check "Witness ($witnessTypeOfFile, cluster.witness.type)" -Detail 'the cluster has no witness' }
+            else {
+                Write-Check -Pass ([string]$quorum.WitnessType -eq $expected) -Check "Witness is a $expected" -Detail "$($quorum.WitnessName) ($($quorum.WitnessType))"
+                Write-Check -Pass ([string]$quorum.WitnessState -eq 'Online') -Check 'Witness is Online' -Detail ([string]$quorum.WitnessState)
+            }
+        }
+        elseif ($quorum.WitnessName) { Write-Log "  The cluster has the witness $($quorum.WitnessName) ($($quorum.WitnessType), $($quorum.WitnessState)); the file names none (cluster.witness.type)." 'WARN' }
+        else { Write-Log '  No witness: the file names none (cluster.witness.type).' }
     }
     catch { Write-Failure "Cluster quorum query failed: $($_.Exception.Message)" }
 }
@@ -217,18 +265,25 @@ else {
 # 4. Security groups
 Write-Log ''; Write-Log 'Check 4 - Security groups'
 if ($identityMode -ne 'active_directory') { Write-Skip 'Security groups' 'the instance has no Active Directory' }
+elseif ($localGroupsOfFile.Count -eq 0) { Write-Skip 'Security groups' 'the file puts no Active Directory group in a local group (identity.active_directory.security_groups[].local_groups)' }
 else {
     foreach ($node in $nodesToCheck) {
-        if ($WhatIfPreference) { Write-Plan "Would check the local group membership on $($node.Hostname) ($($node.Ip))"; continue }
+        if ($WhatIfPreference) { Write-Plan "Would check the local group membership on $($node.Hostname) ($($node.Ip)): $($localGroupsOfFile -join ', ')"; continue }
         try {
-            $groups = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock {
-                @{
-                    AdminGroups = @(Get-LocalGroupMember -Group 'Administrators' | Where-Object ObjectClass -EQ 'Group').Count
-                    RmGroups    = @(Get-LocalGroupMember -Group 'Remote Management Users' | Where-Object ObjectClass -EQ 'Group').Count
+            $groups = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ArgumentList @(, $localGroupsOfFile) -ScriptBlock {
+                param($LocalGroups)
+                $counts = @{}
+                foreach ($group in $LocalGroups) {
+                    try { $counts[[string]$group] = @(Get-LocalGroupMember -Group $group -ErrorAction Stop | Where-Object ObjectClass -EQ 'Group').Count }
+                    catch { $counts[[string]$group] = -1 }
                 }
+                $counts
             }
-            Write-Check -Pass ($groups.AdminGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) - Administrators AD group(s)" -Detail "$($groups.AdminGroups)"
-            Write-Check -Pass ($groups.RmGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) - Remote Management Users AD group(s)" -Detail "$($groups.RmGroups)"
+            foreach ($group in $localGroupsOfFile) {
+                $count = [int]$groups[$group]
+                if ($count -lt 0) { Write-Failure "$($node.Hostname) - the local group '$group' could not be read"; continue }
+                Write-Check -Pass ($count -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) - $group AD group(s)" -Detail "$count"
+            }
         }
         catch { Write-Failure "$($node.Hostname) group check failed: $($_.Exception.Message)" }
     }
@@ -239,12 +294,14 @@ Write-Log ''; Write-Log 'Check 5 - SSH'
 foreach ($node in $nodesToCheck) {
     if ($WhatIfPreference) { Write-Plan "Would check the sshd service and port $SshPort on $($node.Hostname) ($($node.Ip))"; continue }
     try {
-        $sshd = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock { Get-Service sshd -ErrorAction SilentlyContinue }
-        Write-Check -Pass ($null -ne $sshd -and [string]$sshd.Status -eq 'Running') -Check "$($node.Hostname) - sshd service" -Detail $(if ($sshd) { [string]$sshd.Status } else { 'not installed' })
+        $sshd = [string](Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock { $service = Get-Service sshd -ErrorAction SilentlyContinue; if ($service) { [string]$service.Status } else { 'not installed' } })
     }
-    catch { Write-Failure "$($node.Hostname) sshd check failed: $($_.Exception.Message)" }
-    $port = Test-NetConnection -ComputerName $node.Ip -Port $SshPort -WarningAction SilentlyContinue
-    Write-Check -Pass ([bool]$port.TcpTestSucceeded) -Check "$($node.Hostname) - port $SshPort reachable"
+    catch { Write-Failure "$($node.Hostname) sshd check failed: $($_.Exception.Message)"; continue }
+    if ($sshd -ne 'Running') { Write-Skip "$($node.Hostname) - SSH" "sshd is ${sshd}: SSH connectivity (Phase 06 task 04, optional) is not set up on this node"; continue }
+    Write-Check -Pass $true -Check "$($node.Hostname) - sshd service" -Detail $sshd
+    $tcp = [System.Net.Sockets.TcpClient]::new()
+    $open = try { $attempt = $tcp.ConnectAsync($node.Ip, $SshPort); $attempt.Wait(5000) -and $tcp.Connected } catch { $false } finally { $tcp.Dispose() }
+    Write-Check -Pass ([bool]$open) -Check "$($node.Hostname) - port $SshPort reachable"
 }
 
 # 6. Storage
@@ -252,10 +309,11 @@ Write-Log ''; Write-Log 'Check 6 - Storage'
 if ($WhatIfPreference) { Write-Plan "Would query the storage pool and the cluster shared volumes of $clusterName" }
 else {
     try {
-        $pool = @(Get-StoragePool -CimSession $clusterName | Where-Object IsPrimordial -EQ $false)
-        if ($pool.Count -gt 0) { Write-Check -Pass (@($pool | Where-Object { [string]$_.HealthStatus -ne 'Healthy' }).Count -eq 0) -Check 'Storage pool health' -Detail (($pool | ForEach-Object { [string]$_.HealthStatus }) -join ', ') }
+        $storage = Invoke-ClusterRead $ReadStorage
+        $pool = @($storage.Pools)
+        if ($pool.Count -gt 0) { Write-Check -Pass (@($pool | Where-Object { $_ -ne 'Healthy' }).Count -eq 0) -Check 'Storage pool health' -Detail ($pool -join ', ') }
         else { Write-Failure "No storage pool found on $clusterName" }
-        $csvVolumes = @(Get-ClusterSharedVolume -Cluster $clusterName)
+        $csvVolumes = @($storage.Csv)
         Write-Check -Pass ($csvVolumes.Count -ge $MinimumCsvVolumes) -Check 'CSV volumes mounted' -Detail "$($csvVolumes.Count) volume(s)"
         foreach ($csv in $csvVolumes) { Write-Check -Pass ([string]$csv.State -eq 'Online') -Check "  $($csv.Name)" -Detail ([string]$csv.State) }
     }
@@ -264,32 +322,32 @@ else {
 
 # 7. VM images in Azure
 Write-Log ''; Write-Log 'Check 7 - VM images (Azure)'
-if (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'VM images' 'azure.subscription_id or azure.resource_group is not in the file' }
+if ($vmImages.Count -eq 0) { Write-Skip 'VM images' 'the file lists none (storage.vm_images)' }
+elseif (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'VM images' 'azure.subscription_id or azure.resource_group is not in the file' }
 elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm image list --resource-group $resourceGroup" }
 else {
-    $imagesJson = az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
-    if ($LASTEXITCODE -eq 0 -and $imagesJson) {
-        $images = @($imagesJson | ConvertFrom-Json)
+    $imagesText = (az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0) {
+        $images = @(if ($imagesText) { $imagesText | ConvertFrom-Json })
         $succeeded = @($images | Where-Object { $_.provisioningState -eq 'Succeeded' })
-        Write-Check -Pass ($images.Count -gt 0) -Check "VM images in $resourceGroup" -Detail "$($images.Count) found"
-        if ($vmImages.Count -gt 0) { Write-Check -Pass ($succeeded.Count -ge $vmImages.Count) -Check 'All expected images Succeeded' -Detail "$($succeeded.Count)/$($vmImages.Count)" }
+        Write-Check -Pass ($succeeded.Count -ge $vmImages.Count) -Check 'All expected images Succeeded' -Detail "$($succeeded.Count) Succeeded of $($images.Count) in $resourceGroup, the file lists $($vmImages.Count)"
     }
-    else { Write-Failure 'Could not query VM images: check the az sign-in' }
+    else { Write-Failure "Could not query VM images (az sign-in, or the stack-hci-vm extension): $(($imagesText -split "`n")[0])" }
 }
 
 # 8. Logical networks in Azure
 Write-Log ''; Write-Log 'Check 8 - Logical networks (Azure)'
-if (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'Logical networks' 'azure.subscription_id or azure.resource_group is not in the file' }
+if ($logicalNetworks.Count -eq 0) { Write-Skip 'Logical networks' 'the file lists none (networking.logical_networks)' }
+elseif (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'Logical networks' 'azure.subscription_id or azure.resource_group is not in the file' }
 elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm network lnet list --resource-group $resourceGroup" }
 else {
-    $lnetsJson = az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
-    if ($LASTEXITCODE -eq 0 -and $lnetsJson) {
-        $lnets = @($lnetsJson | ConvertFrom-Json)
+    $lnetsText = (az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0) {
+        $lnets = @(if ($lnetsText) { $lnetsText | ConvertFrom-Json })
         $succeeded = @($lnets | Where-Object { $_.provisioningState -eq 'Succeeded' })
-        Write-Check -Pass ($lnets.Count -gt 0) -Check "Logical networks in $resourceGroup" -Detail "$($lnets.Count) found"
-        if ($logicalNetworks.Count -gt 0) { Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check 'All expected networks Succeeded' -Detail "$($succeeded.Count)/$($logicalNetworks.Count)" }
+        Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check 'All expected networks Succeeded' -Detail "$($succeeded.Count) Succeeded of $($lnets.Count) in $resourceGroup, the file lists $($logicalNetworks.Count)"
     }
-    else { Write-Failure 'Could not query logical networks: check the az sign-in' }
+    else { Write-Failure "Could not query logical networks (az sign-in, or the stack-hci-vm extension): $(($lnetsText -split "`n")[0])" }
 }
 
 # ---- summary

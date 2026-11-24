@@ -78,6 +78,7 @@ $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 # What each resiliency value means for New-Volume. Tiers: the name is completed with the media type (MirrorOnSSD, ParityOnHDD).
 $ResiliencyRule = @{
@@ -167,10 +168,9 @@ $Remote = @{
     SetCache    = { param($Step, $SizeMib) (Get-Cluster).BlockCacheSize = $SizeMib }
     SetThreshold = { param($Step, $PoolName, $Percent) Set-StoragePool -FriendlyName $PoolName -ThinProvisioningAlertThresholds $Percent -ErrorAction Stop }
 }
-function Invoke-Cluster([string]$Step, [object[]]$Arguments = @(), [string]$Target = $script:target) {
-    $call = @{ ComputerName = $Target; ScriptBlock = $Remote[$Step]; ArgumentList = (, $Step + $Arguments); ErrorAction = 'Stop' }
-    if ($Credential) { $call.Credential = $Credential }
-    Invoke-Command @call
+function Invoke-Cluster([string]$Step, [object[]]$Arguments = @(), [string]$Target = '') {
+    # $Target empty: the cluster target of the connection (a node of the file; the next one when it cannot be reached). Otherwise that machine.
+    Invoke-AzlClusterCommand -Connection $script:connection -Node $Target -ScriptBlock $Remote[$Step] -ArgumentList (, $Step + $Arguments)
 }
 
 # ---- the values, from infrastructure.yml only
@@ -193,7 +193,9 @@ if ($volumeList.Count -eq 0 -and $null -eq $thresholdRaw -and $null -eq $cacheRa
     exit 0
 }
 
-$target = if ($ComputerName) { $ComputerName.Trim() } else { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim() }
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+foreach ($note in $connection.Notes) { Write-Warning $note }
+$target = [string]$connection.Target
 if (-not $target) { Exit-InputProblem 'cluster.name is missing. It is the cluster the script connects to (or give -ComputerName).' }
 $nodeList = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'nodes'
 $nodeCount = @(@($nodeList) | Where-Object { $null -ne $_ }).Count

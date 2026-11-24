@@ -136,7 +136,9 @@ try {
                 $row.Action = 'AlreadyExists'
                 Write-Line "[exists]  '$($plan.Name)' is already there, nothing changed."
                 $existingPath = if ($existing.PSObject.Properties['Path'] -and $existing.Path) { ([string]$existing.Path).TrimEnd('\') } else { '' }
-                if ($existingPath -and $existingPath -ne $plan.Path) {
+                # Azure Local keeps the files of a storage path in a folder it makes inside the folder asked for (<path>\<generated id>, seen on 2610), and reports that folder.
+                $existingParent = if ($existingPath -match '\\') { $existingPath.Substring(0, $existingPath.LastIndexOf('\')) } else { '' }
+                if ($existingPath -and $existingPath -ine $plan.Path -and $existingParent -ine $plan.Path) {
                     $row.Detail = "Differs from the file (the storage path points to $existingPath); left unchanged. A storage path cannot be moved: create one with another name."
                     Write-Warning "$($plan.Name): $($row.Detail)"
                 }

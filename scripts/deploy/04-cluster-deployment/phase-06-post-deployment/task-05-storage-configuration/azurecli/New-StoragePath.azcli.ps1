@@ -176,7 +176,9 @@ foreach ($plan in $plans) {
         $show = Invoke-AzCli (@('stack-hci-vm', 'storagepath', 'show') + $common + @('--name', $plan.Name, '--output', 'json', '--only-show-errors'))
         if ($show.ExitCode -eq 0) {
             $existingPath = ([string](Get-Prop (ConvertFrom-AzJson $show.Output) @('properties', 'path'))).TrimEnd('\')
-            if ($existingPath -and $existingPath -ne $plan.Path) {
+            # Azure Local keeps the files of a storage path in a folder it makes inside the folder asked for (<path>\<generated id>, seen on 2610), and reports that folder.
+            $existingParent = if ($existingPath -match '\\') { $existingPath.Substring(0, $existingPath.LastIndexOf('\')) } else { '' }
+            if ($existingPath -and $existingPath -ine $plan.Path -and $existingParent -ine $plan.Path) {
                 Add-Row $item 'AlreadyExists' "differs from the file (the storage path points to $existingPath); left unchanged. A storage path cannot be moved: create one with another name."
             }
             else { Add-Row $item 'AlreadyExists' 'nothing changed' }

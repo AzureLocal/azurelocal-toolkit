@@ -25,6 +25,7 @@
         Get-AzlAzureCliArgumentProblem     argument list -> the message for the first unsafe argument (position and option only), or $null
         Get-AzlAzureCliValueProblem        name-to-value table (values may be text, lists or maps) -> the message for the first unsafe value, or $null
         Assert-AzlAzureCliSecret           name + secret text -> throws (AzlExit 2) when the text is unsafe; the message never holds the text
+        Get-AzlAzureCliLauncher            how to start az so that a value with a parenthesis survives az.cmd (the Python of the Azure CLI on Windows)
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -139,4 +140,56 @@ function Assert-AzlAzureCliSecret {
     }
 }
 
-Export-ModuleMember -Function Test-AzlAzureCliSafeValue, Get-AzlAzureCliArgumentProblem, Get-AzlAzureCliValueProblem, Assert-AzlAzureCliSecret
+function Get-AzlAzureCliLauncher {
+    <#
+    .SYNOPSIS
+        How to start the Azure CLI so that a value with a parenthesis survives: the Python of the Azure CLI itself on Windows, az everywhere else.
+    .DESCRIPTION
+        On Windows az is the batch file az.cmd, and it starts Python inside a parenthesised IF block (IF EXIST python.exe ( python.exe -IBm azure.cli %* ) ELSE ...).
+        cmd.exe reads a closing parenthesis in an argument as the end of that block, so an argument such as the virtual switch name Network ATC gives
+        (ComputeSwitch(compute)) ends the call with "... was unexpected at this time." before the Azure CLI starts. Seen on a live instance: no logical
+        network could be created on a switch that Network ATC named. A script that must hand such a value to az starts the same Python the batch file starts,
+        with the same arguments (-IBm azure.cli), and cmd.exe is not involved.
+
+        Command is what to start and Prefix the arguments that come before the az arguments:
+            & $launcher.Command @($launcher.Prefix + $azArguments)
+        When az is not the batch file of the Windows installer (Linux, macOS, a function or an alias named az, as in the tests), Command is 'az' and Prefix is empty.
+        The rule for & | < > ^ % and the double quote (Get-AzlAzureCliArgumentProblem) stays as it is: it does not depend on how az is started.
+    .PARAMETER Command
+        For tests: the command object to decide from, instead of Get-Command az.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([object]$Command = (Get-Command -Name az -ErrorAction SilentlyContinue | Select-Object -First 1))
+    if ($Command -and [string]$Command.CommandType -eq 'Application' -and [string]$Command.Source -match '\.(cmd|bat)$') {
+        $python = [IO.Path]::GetFullPath([IO.Path]::Combine((Split-Path -Parent ([string]$Command.Source)), '..', 'python.exe'))
+        if (Test-Path -LiteralPath $python -PathType Leaf) { return [pscustomobject]@{ Command = $python; Prefix = @('-IBm', 'azure.cli'); Direct = $true; BatchFile = $false } }
+        # A batch file without the Python of the Windows installer next to it: az is started as it is, and a parenthesis cannot be carried.
+        return [pscustomobject]@{ Command = 'az'; Prefix = @(); Direct = $false; BatchFile = $true }
+    }
+    [pscustomobject]@{ Command = 'az'; Prefix = @(); Direct = $false; BatchFile = $false }
+}
+
+function Get-AzlAzureCliParenthesisProblem {
+    <#
+    .SYNOPSIS
+        The message when an argument holds a parenthesis and az can only be started as a batch file, or $null. The value is not shown.
+    .DESCRIPTION
+        Get-AzlAzureCliLauncher starts the Python of the Azure CLI when it finds it. When az is a batch file and that Python is not where the
+        Windows installer puts it, the batch file is all there is, and cmd.exe would end it at a closing parenthesis. A script that may hand
+        such a value to az calls this before the call and stops with the message.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][object]$Launcher, [AllowNull()][AllowEmptyCollection()][object]$Argument)
+    if (-not $Launcher.BatchFile) { return $null }
+    $items = @($Argument | ForEach-Object { $_ } | ForEach-Object { if ($null -eq $_) { '' } else { [string]$_ } })
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        if ($items[$i] -match '[()]') {
+            return "Argument $($i + 1) of an az call holds a parenthesis. Here az is a batch file (az.cmd) and the Python of the Azure CLI was not found next to it, so cmd.exe would end the call at the parenthesis and the call was not made. Install the Azure CLI with the Windows installer (MSI), or run the script where az is not a batch file. The value is not shown."
+        }
+    }
+    return $null
+}
+
+Export-ModuleMember -Function Test-AzlAzureCliSafeValue, Get-AzlAzureCliArgumentProblem, Get-AzlAzureCliValueProblem, Assert-AzlAzureCliSecret, Get-AzlAzureCliLauncher, Get-AzlAzureCliParenthesisProblem
