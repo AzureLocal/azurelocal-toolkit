@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.73 (2026-11-24):
+#     - Post-deployment automation (owner directive D150; infrastructure schema 5.6.36; every new key is optional, so a file of any 5.6 version stays valid). New keys: operations.post_cluster.enabled, operations.post_cluster.skip_steps and operations.post_cluster.allow_node_restarts, read by Invoke-AzureLocalPostDeployment.ps1, which runs the tasks of phase 06 of the Implementation guide in page order (or one task, or a range) from the step table PostDeploymentSteps.psd1.
 #   v5.0.72 (2026-11-24):
 #     - Hardware discovery writes what it finds (owner decision O7; infrastructure schema 5.6.35; every new key is optional, so a file of any 5.6 version stays valid). New keys: nodes[].bmc.mac_address (the MAC of the BMC port, for its DHCP reservation), hardware.drives.capacity.model and hardware.drives.cache.model, hardware.boot_drives (type boss, raid, single or other; count, size_gb, model). hardware.discovery.output_directory (schema 5.6.34) is the folder Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1 use when -OutputPath is not given. Update-InfrastructureYml-FromDiscovery.ps1 now also reads a Get-HardwareInventory.ps1 inventory (any maker), edits flow-style entries ({ name: ..., mac_address: ... }), matches an adapter by MAC, then name, then slot and port_index, then the only free port of its slot, writes the adapter facts (port_index, vendor, model, speed_gbps, pci_location, rdma; slot when missing), the BMC MAC and type, and the hardware keys every machine agrees on, and exits 1 when a value cannot be placed or a MAC in the file is on no port of the machine. Evidence, never keys: firmware, BIOS and BMC versions, the TPM and Secure Boot state, and the serial number, firmware and bay of each drive.
 #   v5.0.71 (2026-11-24):
@@ -259,15 +261,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.72"
+  version: "5.0.73"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.35"
+  infrastructure_schema_version: "5.6.36"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.73"
+      change: "Post-deployment automation (owner directive D150; infrastructure schema 5.6.36; every new key is optional). New keys: operations.post_cluster.enabled, skip_steps and allow_node_restarts. Invoke-AzureLocalPostDeployment.ps1 runs the tasks of phase 06 of the Implementation guide in page order, one task or a range, from the step table PostDeploymentSteps.psd1 (plan or apply, skip with a reason when the file does not enable a step, stop at the first failure, SDN only with its acknowledgement keys, events for Sonar)."
+      reason: "Owner directive D150: the post-deployment tasks run together as one automated sequence and each one also runs alone, with no state passed between them."
     - date: "2026-11-24"
       version: "5.0.72"
       change: "Hardware discovery writes what it finds (owner decision O7; infrastructure schema 5.6.35; every new key is optional, so a file of any 5.6 version stays valid). New keys: nodes[].bmc.mac_address (the MAC of the BMC port, for its DHCP reservation), hardware.drives.capacity.model and hardware.drives.cache.model, hardware.boot_drives (type boss, raid, single or other; count, size_gb, model). hardware.discovery.output_directory (schema 5.6.34) is the folder Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1 use when -OutputPath is not given. Update-InfrastructureYml-FromDiscovery.ps1 now also reads a Get-HardwareInventory.ps1 inventory (any maker), edits flow-style entries ({ name: ..., mac_address: ... }), matches an adapter by MAC, then name, then slot and port_index, then the only free port of its slot, writes the adapter facts (port_index, vendor, model, speed_gbps, pci_location, rdma; slot when missing), the BMC MAC and type, and the hardware keys every machine agrees on, and exits 1 when a value cannot be placed or a MAC in the file is on no port of the machine. Evidence, never keys: firmware, BIOS and BMC versions, the TPM and Secure Boot state, and the serial number, firmware and bay of each drive."
@@ -13969,6 +13975,35 @@ operations:
             {"type":"string","enum":["critical","error","warning","information","verbose"]}
           default: ["critical", "error", "warning"]
           example: ["critical", "error", "warning"]
+    post_cluster:
+      description: "Schema 5.6.36. How Invoke-AzureLocalPostDeployment.ps1 (scripts/deploy/04-cluster-deployment/phase-06-post-deployment) runs the tasks of phase 06 of the Implementation guide (SDN, quorum, security groups, SSH, storage, VM images, network security groups, logical networks, verification, external storage, SBE import) in page order. Which steps apply is decided from the keys the tasks read (sdn.enabled, storage.volumes, storage.paths, storage.vm_images, networking.network_security_groups, networking.logical_networks, scenario.storage_architecture, cluster.witness, hardware.sbe); the keys here only turn a step off or approve a step that restarts machines."
+      type: object
+      since: "5.6.36"
+      required: false
+      additionalProperties: false
+      properties:
+        enabled:
+          description: "Schema 5.6.36. false to make Invoke-AzureLocalPostDeployment.ps1 do nothing and exit 0 (the post-deployment tasks are run by hand, or by another route). Default true."
+          type: boolean
+          since: "5.6.36"
+          required: false
+          default: true
+          example: true
+        skip_steps:
+          description: "Schema 5.6.36. Steps of Invoke-AzureLocalPostDeployment.ps1 to leave out even though the file enables them: sdn, quorum, security-groups, ssh, storage-volumes, storage-paths, vm-images, nsgs, logical-networks, verification, external-storage, sbe-import-plan. The step order and what enables each step are in PostDeploymentSteps.psd1 next to the script. A skipped step is reported with this key as the reason."
+          type: array
+          since: "5.6.36"
+          required: false
+          items:
+            {"type":"string","enum":["sdn","quorum","security-groups","ssh","storage-volumes","storage-paths","vm-images","nsgs","logical-networks","verification","external-storage","sbe-import-plan"]}
+          example: [["ssh"]]
+        allow_node_restarts:
+          description: "Schema 5.6.36. true to let the external storage step (task 10, hybrid S2D plus SAN) restart the nodes one at a time (drain, restart, resume) after the MPIO step, as the page's step 6 asks: Invoke-ExternalStorageHybrid-Orchestrated.ps1 -RollingRestart. false or absent: the step stops with exit code 1 when a node needs a restart, and says what to run. This is the approval of the restarts."
+          type: boolean
+          since: "5.6.36"
+          required: false
+          default: false
+          example: false
 devops:
   description: "The CI/CD infrastructure of the environment: the platform and its project, the runner machines with their network and roles, the Azure sign-in, the environments and the secrets. Read by the toolkit's CI/CD infrastructure tasks (scripts/deploy/01-cicd-infra). (since 5.5)"
   used_by: [cicd_infra]
@@ -22420,6 +22455,23 @@ tools:
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1","description":"Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1. Target node (no help text for this parameter)."}
                 SkipAzure: {"name":"SkipAzure","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1","description":"Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1. Skip azure switch (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1","description":"Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1. Log path (no help text for this parameter)."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_Invoke_AzureLocalPostDeployment_ps1_generated:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Infrastructure file (no help text for this parameter)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Log path (no help text for this parameter)."}
+                Mode: {"name":"Mode","type":"string","declared_type":"string","default":"Plan","enum":["Plan","Apply"],"required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Mode (no help text for this parameter)."}
+                From: {"name":"From","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. From (no help text for this parameter)."}
+                To: {"name":"To","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. To (no help text for this parameter)."}
+                Only: {"name":"Only","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Only (no help text for this parameter)."}
+                ContinueOnWarning: {"name":"ContinueOnWarning","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Continue on warning switch (no help text for this parameter)."}
+                Route: {"name":"Route","type":"string","declared_type":"string","default":"PowerShell","enum":["PowerShell","AzureCli"],"required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Route (no help text for this parameter)."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Computer name (no help text for this parameter)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Credential (no help text for this parameter)."}
+                EventLogPath: {"name":"EventLogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Event log path (no help text for this parameter)."}
+                SkipClusterProbe: {"name":"SkipClusterProbe","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Skip cluster probe switch (no help text for this parameter)."}
+                SkipValidation: {"name":"SkipValidation","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1","description":"Invoke-AzureLocalPostDeployment.ps1. Skip validation switch (no help text for this parameter)."}
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_01_deploy_sdn_powershell_Test_ArcSdn_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Test-ArcSdn.ps1"

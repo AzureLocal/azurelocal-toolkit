@@ -3518,6 +3518,44 @@
             }
           }
         },
+        "post_cluster": {
+          "description": "Schema 5.6.36. How Invoke-AzureLocalPostDeployment.ps1 (scripts/deploy/04-cluster-deployment/phase-06-post-deployment) runs the tasks of phase 06 of the Implementation guide (SDN, quorum, security groups, SSH, storage, VM images, network security groups, logical networks, verification, external storage, SBE import) in page order. Which steps apply is decided from the keys the tasks read (sdn.enabled, storage.volumes, storage.paths, storage.vm_images, networking.network_security_groups, networking.logical_networks, scenario.storage_architecture, cluster.witness, hardware.sbe); the keys here only turn a step off or approve a step that restarts machines.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "Schema 5.6.36. false to make Invoke-AzureLocalPostDeployment.ps1 do nothing and exit 0 (the post-deployment tasks are run by hand, or by another route). Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "skip_steps": {
+              "description": "Schema 5.6.36. Steps of Invoke-AzureLocalPostDeployment.ps1 to leave out even though the file enables them: sdn, quorum, security-groups, ssh, storage-volumes, storage-paths, vm-images, nsgs, logical-networks, verification, external-storage, sbe-import-plan. The step order and what enables each step are in PostDeploymentSteps.psd1 next to the script. A skipped step is reported with this key as the reason.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "sdn",
+                  "quorum",
+                  "security-groups",
+                  "ssh",
+                  "storage-volumes",
+                  "storage-paths",
+                  "vm-images",
+                  "nsgs",
+                  "logical-networks",
+                  "verification",
+                  "external-storage",
+                  "sbe-import-plan"
+                ]
+              }
+            },
+            "allow_node_restarts": {
+              "description": "Schema 5.6.36. true to let the external storage step (task 10, hybrid S2D plus SAN) restart the nodes one at a time (drain, restart, resume) after the MPIO step, as the page's step 6 asks: Invoke-ExternalStorageHybrid-Orchestrated.ps1 -RollingRestart. false or absent: the step stops with exit code 1 when a node needs a restart, and says what to run. This is the approval of the restarts.",
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
         "monitoring": {
           "description": "Azure Monitor for the instance. Only Azure Monitor (monitoring) and the notification addresses are read by the tools so far (the monitoring scripts of phase 02, operational foundations); the rest is not read yet. Sonar reads its own settings.",
           "type": "object",

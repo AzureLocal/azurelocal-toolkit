@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.72. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.73. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 782 | 528 | 87 | 5 | 160 | 2 |
-| Owned by a tool (`tools.*`) | 4964 | 4761 | 0 | 0 | 203 | 0 |
+| Keys of infrastructure.yml | 785 | 530 | 87 | 5 | 161 | 2 |
+| Owned by a tool (`tools.*`) | 4977 | 4774 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7119 | 5291 | 98 | 5 | 1713 | 12 |
+| All registry leaves | 7135 | 5306 | 98 | 5 | 1714 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 378 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 380 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -57,7 +57,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `identity` | 11 | 3 |  | 14 | 14 | 9 | 4 | 20 |
 | `networking` | 22 |  | 9 | 12 | 24 | 20 |  | 36 |
 | `security` | 1 |  |  |  |  | 11 |  | 11 |
-| `operations` | 13 |  |  |  |  |  |  | 18 |
+| `operations` | 13 |  |  |  |  |  |  | 20 |
 | `devops` | 4 |  |  |  |  |  |  | 75 |
 | `scenario` | 9 | 1 | 2 | 6 | 5 | 6 | 2 | 8 |
 | `azure` | 8 | 1 | 5 | 4 | 5 | 6 | 3 | 10 |
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 844 |
 | os-configuration | OS configuration | 79 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1075 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1088 |
 | sonar | Sonar | 19 | 0 | 267 |
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 253 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 255 | 0 | 0 |
 
 ### trailwright
 
@@ -307,7 +307,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (253):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (255):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 3 keys
@@ -317,7 +317,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `network_devices`: 16 keys
 - `networking`: 26 keys
 - `nodes`: 3 keys
-- `operations`: 18 keys
+- `operations`: 20 keys
 - `provisioning`: 4 keys
 - `scenario`: 6 keys
 - `sdn`: 5 keys
@@ -327,7 +327,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 148 places, the first 12):
+Where in the code (file, function, keys read by name; 149 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -469,7 +469,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (160)
+### Placeholder: documented, not read by any tool in the scan (161)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -513,6 +513,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `operations.disaster_recovery.target_rto_minutes` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.disaster_recovery.target_rpo_minutes` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.azure_verification_for_vms` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `operations.post_cluster.allow_node_restarts` |  | operator by hand; default | documented in the registry; no tool in the scan reads it |
 | `devops.runners[].identity_client_id` | cicd_infra; ansible | operator by hand | documented in the registry; no tool in the scan reads it |
 | `devops.runner_network.vnet_name` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `devops.runner_network.dns_servers` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -1683,6 +1684,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `operations.security_logging.data_collection_rule` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `operations.security_logging.security_audit` | string, default `success_and_failure`, one of `success_and_failure`, `failure` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `operations.security_logging.event_levels` | array, default `[critical, error, warning]`, one of `critical`, `error`, `warning`, `information`, `verbose` | operator; default |  | toolkit-legacy-scripts |  | read |
+| `operations.post_cluster.enabled` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
+| `operations.post_cluster.skip_steps` | array, one of `sdn`, `quorum`, `security-groups`, `ssh`, `storage-volumes`, `storage-paths`, ... (12) | operator |  | toolkit-legacy-scripts |  | read |
+| `operations.post_cluster.allow_node_restarts` | boolean, default `false` | operator; default |  |  |  | placeholder |
 
 ### os_configuration
 
@@ -1903,7 +1907,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 962 | 962 | 0 |
+| arm_deployment | parameters | 975 | 975 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
