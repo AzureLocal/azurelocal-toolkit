@@ -192,7 +192,7 @@ $results = foreach ($tag in $tags) {
         }
         elseif ($PSCmdlet.ShouldProcess($id, "Assign '$definitionDisplayName' for tag '$tag' in audit mode")) {
             # A PUT of the assignment through az rest, not az policy assignment create: at a management group scope, Azure CLI 2.90 looks the
-            # built-in definition up in that management group, gets PolicyDefinitionNotFound and fails (tplabs, 2026-11-23). az rest puts the ARM
+            # built-in definition up in that management group, gets PolicyDefinitionNotFound and fails (lab run, 2026-11-23). az rest puts the ARM
             # endpoint of the current cloud in front of the resource id. The body (tag, display name, description) goes in a temporary file.
             # A PUT replaces: an assignment of this name made between the show above and this call would be overwritten. Microsoft.Authorization
             # ignores If-None-Match on policy assignments (tried 2026-11-23), so the show is the guard, as with New-AzPolicyAssignment in the twin.

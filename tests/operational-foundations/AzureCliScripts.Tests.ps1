@@ -836,7 +836,7 @@ Describe 'the security and licensing scripts' {
             ($global:K6Params[1] | ConvertFrom-Json).properties.parameters.tagName.value | Should -Be 'owner'
             Test-Path -LiteralPath (([string]$creates[0].Options['--body'][0]).TrimStart('@')) | Should -BeFalse
         }
-        It 'never uses az policy assignment create, which fails for a built-in definition at a management group scope (Azure CLI 2.90, tplabs 2026-11-23)' {
+        It 'never uses az policy assignment create, which fails for a built-in definition at a management group scope (Azure CLI 2.90, lab run 2026-11-23)' {
             $global:K6Handlers['policy assignment create'] = { param($o, $a) New-K6Error "(PolicyDefinitionNotFound) The policy definition '871b6d14-10aa-478d-b590-94f262ecfa99' could not be found." 1 }
             $r = Invoke-K6 $script:Policy (New-K6Infra)
             $r.ExitCode | Should -Be 0 -Because $r.Text

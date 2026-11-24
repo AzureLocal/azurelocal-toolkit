@@ -95,7 +95,7 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $r.Result.Moved | Should -Be 1
         }
 
-        It 'treats the "is not under the group" answer of Az.Resources 10 as "not under that group yet" and moves (tplabs 2026-11-23)' {
+        It 'treats the "is not under the group" answer of Az.Resources 10 as "not under that group yet" and moves (lab run 2026-11-23)' {
             Mock Get-AzManagementGroupSubscription { throw "'/subscriptions/$SubscriptionId' is not under the group '$GroupName." }
             $r = Invoke-Move (New-InfraFile @(, (New-Sub 'sub-a' $global:AzlMoveTestSubA 'mg-platform')))
             $r.ExitCode | Should -Be 0
@@ -147,7 +147,7 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $r.Text | Should -Match 'would be moved'
         }
 
-        It 'reports a subscription already under its group as in place, not as a planned move (tplabs 2026-11-23)' {
+        It 'reports a subscription already under its group as in place, not as a planned move (lab run 2026-11-23)' {
             # Like Az.Resources 10.2: under -WhatIf the Get cmdlet asks ShouldProcess and returns nothing, unless it is told -WhatIf:$false.
             Mock Get-AzManagementGroupSubscription {
                 if ($WhatIfPreference -and -not ($PesterBoundParameters.ContainsKey('WhatIf') -and -not $PesterBoundParameters['WhatIf'])) { return }
@@ -286,7 +286,7 @@ Describe 'Invoke-SubscriptionMove-Orchestrated.ps1' {
             $script:Text | Should -Not -Match 'Read-Host|Get-Credential|\$Host\.UI\.Prompt'
         }
 
-        It 'reads where a subscription is with -WhatIf:$false -Confirm:$false, so neither a dry run nor a declined prompt hides it (tplabs 2026-11-23)' {
+        It 'reads where a subscription is with -WhatIf:$false -Confirm:$false, so neither a dry run nor a declined prompt hides it (lab run 2026-11-23)' {
             $script:Text | Should -Match 'Get-AzManagementGroupSubscription [^\r\n]*-WhatIf:\$false -Confirm:\$false'
             $script:Text | Should -Match 'Get-AzManagementGroup -GroupName [^\r\n]*-WhatIf:\$false -Confirm:\$false'
         }
