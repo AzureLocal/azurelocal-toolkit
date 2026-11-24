@@ -93,7 +93,8 @@ function Test-RdmaConfiguration {
                 $ok = [bool]$adapter.Enabled -and $up
                 # Network ATC turns RDMA on for the adapters of a storage intent only; an adapter of a management or compute intent with RDMA off
                 # is the intended state, not a failure (seen on a live instance: the compute ports and vManagement were reported as failures).
-                $expected = ($script:StorageAdapters.Count -eq 0) -or ([string]$adapter.Name -in $script:StorageAdapters)
+                # a host vNIC of a storage intent counts too: Network ATC names it vSMB(<intent>#<port>)
+                $expected = ($script:StorageAdapters.Count -eq 0) -or ([string]$adapter.Name -in $script:StorageAdapters) -or (@($script:StorageAdapters | Where-Object { ([string]$adapter.Name).EndsWith("#$_)", [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0)
                 $status = if ($ok) { "PASS" } elseif ($expected) { "FAIL" } else { "INFO" }
                 $level = switch ($status) { 'PASS' { 'SUCCESS' } 'FAIL' { 'WARN' } default { 'INFO' } }
                 $note = if ($status -eq 'INFO') { ' (not a storage intent adapter: RDMA not expected)' } else { '' }
