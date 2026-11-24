@@ -43,6 +43,9 @@
     Failed with exit code 1, also when no update is ready (latest mode): it is never reported as AlreadyAtTarget. The same holds when the update environment state is
     UpdateFailed, NeedsAttention or PreparationFailed and no update is ready.
     -WhatIf reads the cluster and prints what would be started; it starts nothing.
+    Event feed (K9): the run appends update-events.jsonl to the toolkit's events folder (deployment.events_directory, else
+    <ProgramData>\AzureLocalToolkit\<cluster.name>\events), mode WhatIf under -WhatIf and Install otherwise, so azurelocal-sonar shows the run, also a -WhatIf plan
+    that installs nothing, without Azure. RunStarted, one event for the environment, one for each result row, and RunCompleted (or RunFailed with the exit code).
 
     The script does not sign in anywhere and reads no secret. It connects as the account that runs it, or as -Credential. Learn: use the deployment user account.
 
@@ -136,8 +139,16 @@ function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
     if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
 }
-function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
-function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+# The event feed Sonar follows (update-events.jsonl in the events folder). Nothing is written before the file is read: the folder comes from it.
+$script:eventPath = ''
+$script:eventCluster = ''
+$script:runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+$script:runMode = if ($WhatIfPreference) { 'WhatIf' } else { 'Install' }
+function Send-UpdateEvent([string]$State, [string]$Step = 'Update', [string]$Evidence = '', [string]$Level = 'Info', [string]$NextAction = '', [System.Collections.IDictionary]$Data) {
+    $null = Write-AzlToolkitEvent -Path $script:eventPath -Stage SolutionUpdate -Step $Step -State $State -Evidence $Evidence -Level $Level -NextAction $NextAction -RunId $script:runId -Mode $script:runMode -Cluster $script:eventCluster -Data $Data
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; Send-UpdateEvent -State RunFailed -Step Run -Evidence $Message -Level Error -Data @{ exitCode = 2; result = 'Failed' }; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; Send-UpdateEvent -State RunFailed -Step Run -Evidence $Message -Level Error -Data @{ exitCode = 1; result = 'Failed' }; exit 1 }
 
 # The commands that run on the cluster. Each takes the step name first, so one remoting call shape serves both of them.
 $Remote = @{
@@ -174,12 +185,15 @@ function ConvertTo-UpdateVersion([string]$Text) {
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
-
+$script:eventPath = Join-Path (Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile $InfrastructureFile) 'update-events.jsonl'
+$script:eventCluster = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')
+Send-UpdateEvent -State RunStarted -Step Run -Evidence "Solution update ($Mode$(if ($PrepareOnly) { ', prepare only' }))$(if ($WhatIfPreference) { ': -WhatIf, nothing is started' })." -Data @{ result = 'Running' }
 if ($Mode -eq 'AfterDeployment') {
     $switchRaw = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.updates.install_after_deployment'
     if ($null -ne $switchRaw -and $switchRaw -isnot [bool]) { Exit-InputProblem "operations.updates.install_after_deployment must be true or false; found '$switchRaw'." }
     if (-not $switchRaw) {
         Write-Line 'operations.updates.install_after_deployment is not true: no update is started. (Use -Mode OnDemand to start the monthly update.)'
+        Send-UpdateEvent -State RunCompleted -Step Run -Evidence 'operations.updates.install_after_deployment is not true: no update is started.' -NextAction 'Use -Mode OnDemand to start the monthly update.' -Data @{ exitCode = 0; result = 'Skipped' }
         exit 0
     }
 }
@@ -198,6 +212,7 @@ $connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName 
 foreach ($note in $connection.Notes) { Write-Warning $note }
 $target = [string]$connection.Target
 if (-not $target) { Exit-InputProblem 'cluster.name is missing. It is the cluster the script connects to (or give -ComputerName).' }
+$script:eventCluster = $target
 
 # ---- the cluster as it is (read only)
 Write-Line "Cluster '$target': reading the update environment and the discovered updates"
@@ -205,12 +220,17 @@ try { $state = Invoke-Cluster 'ReadState' }
 catch { Exit-Failed "The cluster '$target' could not be read: $($_.Exception.Message)" }
 $current = ConvertTo-UpdateVersion ([string]$state.CurrentVersion)
 Write-Line "Installed solution version $($state.CurrentVersion), update environment state $($state.State), health $($state.HealthState)"
+Send-UpdateEvent -State EnvironmentRead -Step Environment -Evidence "Installed solution version $($state.CurrentVersion), update environment state $($state.State), health $($state.HealthState)." -Data @{ result = 'Passed'; version = [string]$state.CurrentVersion }
 
 $rows = [System.Collections.Generic.List[object]]::new()
 function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
     $rows.Add([pscustomobject][ordered]@{ Item = $Item; Action = $Action; Detail = $Detail })
     $tag = switch ($Action) { 'Failed' { '[failed] ' } { $_ -like 'Already*' } { '[exists] ' } { $_ -like 'Would*' } { '[plan]    ' } default { '[done]   ' } }
     Write-Line ("{0}{1}: {2}{3}" -f $tag, $Item, $Action, $(if ($Detail) { " ($Detail)" } else { '' }))
+    $version = if ($Item -match '(\d+\.\d+\.\d+\.\d+)') { $Matches[1] } else { '' }
+    $data = @{ result = $(if ($Action -eq 'Failed') { 'Failed' } else { 'Passed' }); action = $Action }
+    if ($version) { $data.updateName = $version; $data.version = $version }
+    Send-UpdateEvent -State "Update$Action" -Step Update -Evidence "${Item}: $Action$(if ($Detail) { " ($Detail)" })" -Level $(if ($Action -eq 'Failed') { 'Error' } else { 'Info' }) -Data $data
 }
 $follow = 'Follow it with task 01 (Get-AvailableSolutionUpdate.ps1), or Get-SolutionUpdate -Id <ResourceId> | ft Version,State,UpdateStateProperties,HealthState on a machine, or in Update Manager in the Azure portal; Sonar watches the progress.'
 
@@ -280,5 +300,10 @@ try {
 catch { Add-Row 'solution update' 'Failed' $_.Exception.Message }
 
 $rows
-if (@($rows | Where-Object Action -EQ 'Failed')) { exit 1 }
+$failedRows = @($rows | Where-Object Action -EQ 'Failed')
+$lastVersion = @($rows | Where-Object { $_.Item -match '\d+\.\d+\.\d+\.\d+' } | ForEach-Object { [regex]::Match($_.Item, '\d+\.\d+\.\d+\.\d+').Value }) | Select-Object -Last 1
+$finalData = @{ exitCode = $(if ($failedRows) { 1 } else { 0 }); result = $(if ($failedRows) { 'Failed' } else { 'Passed' }) }
+if ($lastVersion) { $finalData.updateName = $lastVersion; $finalData.version = $lastVersion }
+Send-UpdateEvent -State $(if ($failedRows) { 'RunFailed' } else { 'RunCompleted' }) -Step Run -Evidence $(if ($failedRows) { "The update run failed: $($failedRows[0].Detail)" } elseif ($WhatIfPreference) { 'Plan complete (-WhatIf): nothing was started.' } else { 'Run complete.' }) -Level $(if ($failedRows) { 'Error' } else { 'Info' }) -Data $finalData
+if ($failedRows) { exit 1 }
 exit 0

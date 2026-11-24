@@ -53,6 +53,21 @@ Describe 'Mode Plan' {
         Test-Path (Join-Path $dir 'report.json') | Should -BeFalse
         Test-Path (Join-Path $dir 'precluster-verification-events.jsonl') | Should -BeFalse
     }
+    It 'K9: writes the Plan as events (precluster-plan-events.jsonl, mode Plan, no verdict) beside the reports and never into the Verify feed' {
+        $r = Invoke-PclRun -Mode Plan
+        $r.PlanEventPath | Should -Not -BeNullOrEmpty
+        (Split-Path $r.PlanEventPath -Leaf) | Should -Be 'precluster-plan-events.jsonl'
+        Test-Path -LiteralPath $r.PlanEventPath | Should -BeTrue
+        $events = @(Get-Content -LiteralPath $r.PlanEventPath | ForEach-Object { $_ | ConvertFrom-Json })
+        $events[0].state | Should -Be 'RunStarted'
+        $events[-1].state | Should -Be 'RunCompleted'
+        $events[-1].exitCode | Should -Be 0
+        @($events.mode | Select-Object -Unique) | Should -Be @('Plan')
+        @($events.stage | Select-Object -Unique) | Should -Be @('PreClusterVerification')
+        @($events | Where-Object { $_.state -eq 'CategoryPlanned' }).Count | Should -BeGreaterThan 0
+        @($events | Where-Object { $_.PSObject.Properties['verdict'] }).Count | Should -Be 0
+        Test-Path -LiteralPath (Join-Path (Split-Path $r.PlanEventPath -Parent) 'precluster-verification-events.jsonl') | Should -BeFalse
+    }
     It 'does not replace the result of an earlier Verify' {
         $v = Invoke-PclRun -Dir (Join-Path $TestDrive 'keep')
         $v.Verdict | Should -Be 'Pass'
@@ -507,6 +522,15 @@ Describe 'The result contract with the ARM run' {
     It 'defaults the directory to arm-report\verification\live next to the file' {
         (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml') | Should -Be 'D:\Data\site\arm-report\verification\live'
         (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml' -Configured 'E:\x') | Should -Be 'E:\x'
+    }
+    It 'K8: -Configured expands environment variables and a relative path is anchored to the folder of the infrastructure file' {
+        $env:AZL_TEST_PCL_DIR = (Join-Path ([IO.Path]::GetTempPath()) 'azl-pcl-k8')
+        try {
+            (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml' -Configured '%AZL_TEST_PCL_DIR%\gate') | Should -Be ([IO.Path]::GetFullPath((Join-Path $env:AZL_TEST_PCL_DIR 'gate')))
+            (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml' -Configured 'gate-out') | Should -Be ([IO.Path]::GetFullPath('D:\Data\site\gate-out'))
+            (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml' -Configured '..\shared\gate') | Should -Be ([IO.Path]::GetFullPath('D:\Data\shared\gate'))
+        }
+        finally { Remove-Item Env:\AZL_TEST_PCL_DIR -ErrorAction SilentlyContinue }
     }
 }
 

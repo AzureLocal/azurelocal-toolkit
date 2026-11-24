@@ -35,7 +35,9 @@
     Get-AzlSiteIpRange        The site's management address range for simplified provisioning: site_ip_range, else the
                               lowest to the highest static management address.
     Resolve-AzlEventsDirectory  The folder of the event feeds the runs write and azurelocal-sonar reads (deployment.events_directory,
-                              default <ProgramData>\AzureLocalToolkit\<cluster.name>\events).
+                              default <ProgramData>\AzureLocalToolkit\<cluster.name>\events). Warns when a -ReportDirectory moves the
+                              feed away from the folder Sonar reads by default.
+    Write-AzlToolkitEvent     Appends one line to a toolkit event feed (the envelope every feed shares); never throws.
 
     Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/variables/schema (generated from the master registry).
 #>
@@ -406,6 +408,9 @@ function Get-AzlArcMachineName {
     return $null
 }
 
+# The report directories already warned about (Resolve-AzlEventsDirectory says it once per folder).
+$script:EventsDirectoryWarned = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+
 function Resolve-AzlEventsDirectory {
     <#
     .SYNOPSIS
@@ -436,7 +441,13 @@ function Resolve-AzlEventsDirectory {
         }
         return [IO.Path]::GetFullPath($path)
     }
-    if ($ReportDirectory) { return $ReportDirectory }
+    if ($ReportDirectory) {
+        # The feed stays with the run's reports, but Sonar reads deployment.events_directory (else the stable default folder): say so once per folder (K9).
+        if ($script:EventsDirectoryWarned.Add($ReportDirectory)) {
+            Write-Warning "-ReportDirectory is given and deployment.events_directory is not set in the infrastructure file, so the event feed is written to '$ReportDirectory' with the reports. azurelocal-sonar reads deployment.events_directory (else the default events folder under ProgramData), so it will not see this feed. Set deployment.events_directory to follow the run in Sonar."
+        }
+        return $ReportDirectory
+    }
     $cluster = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'cluster.name'
     $clusterName = if ($cluster -is [string] -and $cluster.Trim()) { $cluster.Trim() } else { 'cluster' }
     $root = if ($IsWindows -and $env:ProgramData) { $env:ProgramData } else { [IO.Path]::GetTempPath() }
@@ -483,6 +494,56 @@ function Resolve-AzlDiscoveryDirectory {
         return [IO.Path]::Combine($root, 'AzureLocalZtp', $site.Trim(), 'evidence', 'discovery')
     }
     return (Join-Path $here 'discovery')
+}
+
+function Write-AzlToolkitEvent {
+    <#
+    .SYNOPSIS
+        Appends one line to a toolkit event feed (JSON Lines, UTF-8 without BOM, one object per line). Never throws.
+    .DESCRIPTION
+        The envelope every feed of the toolkit shares and azurelocal-sonar reads: timestamp (UTC round trip), node ('*' for the run), stage, step, state, evidence,
+        level, nextAction, runId, mode, cluster, then the fields of -Data (for example result, status, exitCode, updateName, version, progressPercentage). The folder
+        is created when it is missing. Returns $true when the line was written. It writes with .NET, so -WhatIf runs write their feed too (the feed is how Sonar
+        shows a plan).
+    .PARAMETER Path
+        The feed file, for example Join-Path (Resolve-AzlEventsDirectory ...) 'update-events.jsonl'. Empty: nothing is written.
+    .EXAMPLE
+        $null = Write-AzlToolkitEvent -Path $feed -Stage SolutionUpdate -Step Check -State RunStarted -RunId $id -Mode Check -Cluster clus01
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [string]$Path,
+        [Parameter(Mandatory)][string]$Stage,
+        [Parameter(Mandatory)][string]$State,
+        [string]$Step = '',
+        [string]$Node = '*',
+        [string]$Evidence = '',
+        [ValidateSet('Info', 'Warning', 'Error')][string]$Level = 'Info',
+        [string]$NextAction = '',
+        [string]$RunId = '',
+        [string]$Mode = '',
+        [string]$Cluster = '',
+        [System.Collections.IDictionary]$Data
+    )
+    if (-not $Path) { return $false }
+    try {
+        $limit = { param([string]$Text) if ($Text.Length -gt 4000) { $Text.Substring(0, 4000) } else { $Text } }
+        $entry = [ordered]@{
+            timestamp = [datetime]::UtcNow.ToString('o', [cultureinfo]::InvariantCulture)
+            node = $Node; stage = $Stage; step = $Step; state = $State
+            evidence = (& $limit $Evidence); level = $Level; nextAction = (& $limit $NextAction)
+            runId = $RunId; mode = $Mode; cluster = $Cluster
+        }
+        if ($Data) { foreach ($key in $Data.Keys) { if (-not $entry.Contains([string]$key)) { $entry[[string]$key] = $Data[$key] } } }
+        $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n")
+        $directory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path))
+        if ($directory -and -not (Test-Path -LiteralPath $directory -PathType Container)) { $null = New-Item -ItemType Directory -Force -Path $directory }
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Append, [IO.FileAccess]::Write, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush() } finally { $stream.Dispose() }
+        return $true
+    }
+    catch { Write-Verbose "The event could not be written: $($_.Exception.Message)"; return $false }
 }
 
 function Get-AzlInfrastructureNode {
@@ -1999,4 +2060,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange, Resolve-AzlEventsDirectory, Resolve-AzlDiscoveryDirectory
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange, Resolve-AzlEventsDirectory, Resolve-AzlDiscoveryDirectory, Write-AzlToolkitEvent

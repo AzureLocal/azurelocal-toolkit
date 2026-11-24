@@ -16,7 +16,7 @@ BeforeAll {
 
     function New-InfraFile {
         param([object]$Switch = $true, [string]$Target = '', [string]$Cluster = 'azl-cluster-01', [switch]$NoUpdates)
-        $doc = [ordered]@{ cluster = [ordered]@{}; operations = [ordered]@{} }
+        $doc = [ordered]@{ cluster = [ordered]@{}; operations = [ordered]@{}; deployment = [ordered]@{ events_directory = (Join-Path $TestDrive 'events') } }
         if ($Cluster) { $doc.cluster.name = $Cluster }
         if (-not $NoUpdates) {
             $doc.operations.updates = [ordered]@{}
@@ -109,6 +109,38 @@ Describe 'Start-AzureLocalSolutionUpdate.ps1' {
             Reset-Cluster
             (Invoke-Update (New-InfraFile -Switch $false -Target '12.2699.1.1') -Extra @{ Mode = 'OnDemand' }).ExitCode | Should -Be 1
             (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'K9: -WhatIf writes update-events.jsonl (mode WhatIf) with the planned update and RunCompleted' {
+            $feed = Join-Path $TestDrive 'events\update-events.jsonl'
+            Remove-Item -LiteralPath $feed -ErrorAction SilentlyContinue
+            $r = Invoke-Update (New-InfraFile -Switch $false) -DryRun -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Test-Path -LiteralPath $feed | Should -BeTrue
+            $events = @(Get-Content -LiteralPath $feed | ForEach-Object { $_ | ConvertFrom-Json })
+            @($events.mode | Select-Object -Unique) | Should -Be @('WhatIf')
+            $events[0].state | Should -Be 'RunStarted'
+            @($events | Where-Object { $_.state -eq 'UpdateWouldStart' }).Count | Should -Be 1
+            $events[-1].state | Should -Be 'RunCompleted'
+            $events[-1].exitCode | Should -Be 0
+            $events[-1].evidence | Should -Match 'nothing was started'
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'K9: a started update writes mode Install and a failed one ends with RunFailed' {
+            $feed = Join-Path $TestDrive 'events\update-events.jsonl'
+            Remove-Item -LiteralPath $feed -ErrorAction SilentlyContinue
+            $null = Invoke-Update (New-InfraFile -Switch $false) -Extra @{ Mode = 'OnDemand' }
+            $events = @(Get-Content -LiteralPath $feed | ForEach-Object { $_ | ConvertFrom-Json })
+            @($events.mode | Select-Object -Unique) | Should -Be @('Install')
+            @($events | Where-Object { $_.state -eq 'UpdateStarted' }).Count | Should -Be 1
+            Remove-Item -LiteralPath $feed
+            $global:AzlUpdFail = 'ReadState'
+            $r = Invoke-Update (New-InfraFile -Switch $false) -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 1
+            $failed = @(Get-Content -LiteralPath $feed | ForEach-Object { $_ | ConvertFrom-Json })
+            $failed[-1].state | Should -Be 'RunFailed'
+            $failed[-1].exitCode | Should -Be 1
         }
 
         It 'plans under -WhatIf and still starts nothing' {

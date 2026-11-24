@@ -25,6 +25,10 @@
     Output: one table row per update that is not Installed, Obsolete, Invalid or Recalled, and a summary line. With -OutputPath the whole report (cluster,
     versions, health, every update, the verdict) is also written as JSON, for a schedule or a monitor.
 
+    Event feed (K9): the run also appends update-events.jsonl to the toolkit's events folder (deployment.events_directory, else
+    <ProgramData>\AzureLocalToolkit\<cluster.name>\events), mode Check, so azurelocal-sonar shows the check in its Update view without Azure. RunStarted, one event for
+    the environment and one for discovery per read, one for each update that is not finished, and RunCompleted (or RunFailed with the exit code). It holds no secret.
+
     Verdict:
       UpToDate                   no update is offered and none is running
       UpdateAvailable            at least one update is Ready or ReadyToInstall
@@ -110,8 +114,15 @@ function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
     if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
 }
-function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
-function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+# The event feed Sonar follows (update-events.jsonl in the events folder). Nothing is written before the file is read: the folder comes from it.
+$script:eventPath = ''
+$script:eventCluster = ''
+$script:runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+function Send-UpdateEvent([string]$State, [string]$Step = 'Check', [string]$Evidence = '', [string]$Level = 'Info', [string]$NextAction = '', [System.Collections.IDictionary]$Data) {
+    $null = Write-AzlToolkitEvent -Path $script:eventPath -Stage SolutionUpdate -Step $Step -State $State -Evidence $Evidence -Level $Level -NextAction $NextAction -RunId $script:runId -Mode Check -Cluster $script:eventCluster -Data $Data
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; Send-UpdateEvent -State RunFailed -Step Run -Evidence $Message -Level Error -Data @{ exitCode = 2; result = 'Failed' }; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; Send-UpdateEvent -State RunFailed -Step Run -Evidence $Message -Level Error -Data @{ exitCode = 1; result = 'Failed' }; exit 1 }
 function ConvertTo-UpdateVersion([string]$Text) {
     $parsed = $null
     if ([version]::TryParse($Text, [ref]$parsed)) { return $parsed }
@@ -157,6 +168,8 @@ function Get-Next($Update) {
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+$script:eventPath = Join-Path (Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile $InfrastructureFile) 'update-events.jsonl'
+$script:eventCluster = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')
 
 $targetRaw = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.updates.target_version')).Trim()
 if (-not $targetRaw) { $targetRaw = 'latest' }
@@ -170,6 +183,8 @@ $connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName 
 foreach ($note in $connection.Notes) { Write-Warning $note }
 $target = [string]$connection.Target
 if (-not $target) { Exit-InputProblem 'cluster.name is missing. It is the cluster the script connects to (or give -ComputerName).' }
+$script:eventCluster = $target
+Send-UpdateEvent -State RunStarted -Step Run -Evidence "Checking the update state of cluster '$target' (read only; nothing is started or changed)." -Data @{ result = 'Running' }
 
 # ---- the cluster as it is (read only), repeated while -WaitMinutes waits for the first update
 $deadline = (Get-Date).AddMinutes($WaitMinutes)
@@ -180,6 +195,8 @@ do {
     catch { Exit-Failed "The cluster '$target' could not be read: $($_.Exception.Message)" }
     $readCount++
     $updates = @(@($state.Updates) | Sort-Object { ConvertTo-UpdateVersion $_.Version } -Descending)
+    Send-UpdateEvent -State EnvironmentRead -Step Environment -Evidence "Installed solution version $($state.CurrentVersion) (SBE $($state.CurrentSbeVersion)), update environment state $($state.State), health $($state.HealthState)." -Level $(if ($BlockingHealth -contains [string]$state.HealthState -or $BadEnvironmentState -contains [string]$state.State) { 'Warning' } else { 'Info' }) -Data @{ result = $(if ($BlockingHealth -contains [string]$state.HealthState -or $BadEnvironmentState -contains [string]$state.State) { 'Warning' } else { 'Passed' }); version = [string]$state.CurrentVersion; read = $readCount }
+    Send-UpdateEvent -State DiscoveryPolled -Step Discovery -Evidence "$($updates.Count) update(s) discovered; the update service last checked: $(if ($state.LastChecked) { $state.LastChecked } else { 'not reported' })." -Data @{ result = 'Passed'; read = $readCount }
     $offered = @($updates | Where-Object { $StartableState -contains $_.State -or $_.State -eq 'AdditionalContentRequired' -or $RunningState -contains $_.State })
     # Something that waiting does not fix ends the wait at once: a failed update, a blocking health state, a failed update environment.
     $needsAttention = @($updates | Where-Object { (Get-Next $_)[0] -eq 'Attention' }).Count -gt 0 -or $BlockingHealth -contains [string]$state.HealthState -or $BadEnvironmentState -contains [string]$state.State
@@ -242,6 +259,15 @@ if ($targetNote) { Write-Line $targetNote }
 if ($rows.Count -eq 0) { Write-Line 'No update is offered or running.' }
 foreach ($item in $attention) { Write-Line "[attention] $item" }
 Write-Line "Verdict: $verdict"
+foreach ($row in $rows) {
+    $isAttention = $row.Next -eq 'Attention'
+    Send-UpdateEvent -State $(if ($isAttention) { 'UpdateAttention' } else { "Update$($row.Next)" }) -Step Update -Evidence "Update $($row.Update) ($($row.Type)) is $($row.State): $($row.Detail)" -Level $(if ($isAttention) { 'Error' } else { 'Info' }) -Data @{ result = $(if ($isAttention) { 'Failed' } else { 'Passed' }); updateName = [string]$row.Update; version = [string]$row.Update; updateState = [string]$row.State }
+}
+foreach ($item in $attention) { if ($item -notmatch '^\d') { Send-UpdateEvent -State EnvironmentAttention -Step Environment -Evidence $item -Level Error -Data @{ result = 'Failed' } } }
+$firstOffered = @($rows | Where-Object { $_.Next -in 'Start', 'Follow', 'ImportSbe' }) | Select-Object -First 1
+$finalData = @{ exitCode = $(if ($verdict -eq 'AttentionNeeded') { 1 } else { 0 }); verdict = $verdict; result = $(if ($verdict -eq 'AttentionNeeded') { 'Failed' } else { 'Passed' }); version = [string]$state.CurrentVersion }
+if ($firstOffered) { $finalData.updateName = [string]$firstOffered.Update; $finalData.version = [string]$firstOffered.Update }
+Send-UpdateEvent -State $(if ($verdict -eq 'AttentionNeeded') { 'RunFailed' } else { 'RunCompleted' }) -Step Run -Evidence "Verdict: $verdict. Nothing was started or changed." -Level $(if ($verdict -eq 'AttentionNeeded') { 'Error' } else { 'Info' }) -Data $finalData
 
 if ($OutputPath) {
     try {

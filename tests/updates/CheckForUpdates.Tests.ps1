@@ -25,7 +25,7 @@ BeforeAll {
 
     function New-InfraFile {
         param([string]$Cluster = 'azl-cluster-01', [string]$Target = '', [object]$Tenant = $global:AzlChkTenant, [object]$Subscription = $global:AzlChkSubscription, [string]$ResourceGroup = 'rg-azl-01')
-        $doc = [ordered]@{ cluster = [ordered]@{}; azure = [ordered]@{}; operations = [ordered]@{} }
+        $doc = [ordered]@{ cluster = [ordered]@{}; azure = [ordered]@{}; operations = [ordered]@{}; deployment = [ordered]@{ events_directory = (Join-Path $TestDrive 'events') } }
         if ($Cluster) { $doc.cluster.name = $Cluster }
         if ($null -ne $Tenant) { $doc.azure.tenant_id = $Tenant }
         if ($null -ne $Subscription) { $doc.azure.subscription_id = $Subscription }
@@ -99,6 +99,35 @@ Describe 'Get-AvailableSolutionUpdate.ps1 (the cluster)' {
             $r.Rows[0].Next | Should -Be 'Start'
             $r.Rows[0].Detail | Should -Match 'Start-AzureLocalSolutionUpdate'
             $r.Text | Should -Match 'Verdict: UpdateAvailable'
+        }
+
+        It 'K9: writes update-events.jsonl into deployment.events_directory (mode Check) that Sonar follows' {
+            $feed = Join-Path $TestDrive 'events\update-events.jsonl'
+            Remove-Item -LiteralPath $feed -ErrorAction SilentlyContinue
+            $r = Invoke-Check (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Test-Path -LiteralPath $feed | Should -BeTrue
+            $events = @(Get-Content -LiteralPath $feed | ForEach-Object { $_ | ConvertFrom-Json })
+            $events.Count | Should -BeGreaterThan 3
+            @($events.runId | Select-Object -Unique).Count | Should -Be 1
+            @($events.mode | Select-Object -Unique) | Should -Be @('Check')
+            @($events.stage | Select-Object -Unique) | Should -Be @('SolutionUpdate')
+            $events[0].state | Should -Be 'RunStarted'
+            $events[-1].state | Should -Be 'RunCompleted'
+            $events[-1].exitCode | Should -Be 0
+            $events[-1].cluster | Should -Be 'azl-cluster-01'
+            @($events | Where-Object { $_.state -eq 'UpdateStart' }).version | Should -Be '12.2610.1004.50'
+        }
+
+        It 'K9: a cluster that cannot be read ends the feed with RunFailed and exit code 1' {
+            $feed = Join-Path $TestDrive 'events\update-events.jsonl'
+            Remove-Item -LiteralPath $feed -ErrorAction SilentlyContinue
+            $global:AzlChkFail = $true
+            $r = Invoke-Check (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            $events = @(Get-Content -LiteralPath $feed | ForEach-Object { $_ | ConvertFrom-Json })
+            $events[-1].state | Should -Be 'RunFailed'
+            $events[-1].exitCode | Should -Be 1
         }
 
         It 'says UpToDate when only installed or obsolete updates exist' {

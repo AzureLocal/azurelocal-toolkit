@@ -1025,6 +1025,22 @@ function Invoke-AzlPreClusterVerification {
             $out.Message = "Plan: $(@($plan | Where-Object { $_.Applies }).Count) of $($plan.Count) checks apply to $cluster. Nothing was read and no result was written for the ARM run."
             $out.NextAction = "Run the checks: $(Get-AzlPclCommand -InfrastructureFile $InfrastructureFile -ReportDirectory $ReportDirectory -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' }))"
             $out.Checks = @($plan)
+            # The plan feed (K9): the Plan is also written as events into the events folder (deployment.events_directory, else -ReportDirectory, else the default folder), in the
+            # envelope every toolkit feed shares. It is a separate file from the Verify feed (precluster-verification-events.jsonl, which carries a verdict): a Plan reads nothing
+            # and has none. Never throws.
+            try {
+                $planFeed = Join-Path (Resolve-AzlEventsDirectory -Infrastructure $infra -InfrastructureFile $InfrastructureFile -ReportDirectory $ReportDirectory) 'precluster-plan-events.jsonl'
+                $planRunId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+                $out.PlanEventPath = $planFeed
+                $null = Write-AzlToolkitEvent -Path $planFeed -Stage PreClusterVerification -Step Run -State RunStarted -Evidence "Plan of the pre-cluster verification of ${cluster}: nothing is read." -RunId $planRunId -Mode Plan -Cluster $cluster
+                foreach ($group in @($plan | Group-Object -Property Category)) {
+                    $applies = @($group.Group | Where-Object { $_.Applies })
+                    $blockingCount = @($applies | Where-Object { $_.Blocking }).Count
+                    $null = Write-AzlToolkitEvent -Path $planFeed -Stage PreClusterVerification -Step ([string]$group.Name) -State CategoryPlanned -Evidence "$($applies.Count) of $($group.Count) checks apply ($blockingCount blocking)." -RunId $planRunId -Mode Plan -Cluster $cluster -Data @{ applies = $applies.Count; total = $group.Count; blocking = $blockingCount }
+                }
+                $null = Write-AzlToolkitEvent -Path $planFeed -Stage PreClusterVerification -Step Run -State RunCompleted -Evidence $out.Message -NextAction $out.NextAction -RunId $planRunId -Mode Plan -Cluster $cluster -Data @{ exitCode = 0; result = 'Planned' }
+            }
+            catch { Write-Verbose "The plan events could not be written: $($_.Exception.Message)" }
             return [pscustomobject]$out
         }
 

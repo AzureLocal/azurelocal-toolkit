@@ -383,7 +383,7 @@ From `New-AzlArmParameterSet` (`scripts/common/arm-deployment/AzlArmDeployment.p
 | `identityProvider` |  |  |  | `else of: $identity -eq 'active_directory'` | 2 |  |
 | `infraPerfLunId` | `storage.san.performance_history_lun_id` |  | OS configuration report, parameter -SanLunIdSource | `$template.Name -in 'create-cluster-san', 'create-cluster-adless-san', 'create-cluster-san-iscsi'` | 3 |  |
 | `infraVolLunId` | `storage.san.infra_volume_lun_id` |  | OS configuration report, parameter -SanLunIdSource | `$template.Name -in 'create-cluster-san', 'create-cluster-adless-san', 'create-cluster-san-iscsi'` | 3 |  |
-| `intentList` | `networking.intents` | `nodes[].name`, `nodes[].network_adapters[].name` | OS configuration report |  | 7 |  |
+| `intentList` | `networking.intents` | `nodes[].name`, `nodes[].network_adapters[].name` | OS configuration report, ZTP handoff |  | 7 |  |
 | `keyVaultName` | `cluster.key_vault.name` |  |  |  | 7 |  |
 | `localAdminPassword` | `identity.local_admin.password` |  |  |  | 7 | securestring |
 | `localAdminUserName` | `identity.local_admin.username` |  |  |  | 7 |  |
@@ -397,7 +397,7 @@ From `New-AzlArmParameterSet` (`scripts/common/arm-deployment/AzlArmDeployment.p
 | `partnerCredentiallist` |  |  |  | `$sbeConfigured` | 7 |  |
 | `partnerProperties` |  |  |  | `$sbeConfigured` | 7 |  |
 | `physicalNodesSettings` | `nodes[].name` | `networking.management`, `networking.management.dns_servers`, `networking.management.gateway`, `networking.management.subnet`, `networking.management.vlan_id`, `nodes[].network_adapters[].dns_servers`, ... (14) |  |  | 6 |  |
-| `sanNetworkList` | `networking.cluster_network_properties.bandwidth_percentage_smb`, `networking.cluster_network_properties.jumbo_packet`, `networking.cluster_network_properties.priority_cluster`, `networking.cluster_network_properties.priority_smb`, `networking.cluster_networks[].adapter`, `networking.cluster_networks[].name`, `networking.cluster_networks[].subnet`, `networking.cluster_networks[].vlan_id` | `nodes[].name`, `nodes[].network_adapters[].name` | OS configuration report | `$template.Name -in 'create-cluster-san', 'create-cluster-adless-san', 'create-cluster-san-iscsi'` | 3 |  |
+| `sanNetworkList` | `networking.cluster_network_properties.bandwidth_percentage_smb`, `networking.cluster_network_properties.jumbo_packet`, `networking.cluster_network_properties.priority_cluster`, `networking.cluster_network_properties.priority_smb`, `networking.cluster_networks[].adapter`, `networking.cluster_networks[].name`, `networking.cluster_networks[].subnet`, `networking.cluster_networks[].vlan_id` | `nodes[].name`, `nodes[].network_adapters[].name` | OS configuration report, ZTP handoff | `$template.Name -in 'create-cluster-san', 'create-cluster-adless-san', 'create-cluster-san-iscsi'` | 3 |  |
 | `sbeFamily` | `hardware.sbe.family` |  | SBE folder (Get-AzlSbeBundle) |  | 7 |  |
 | `sbeManifestCreationDate` | `hardware.sbe.manifest_creation_date` |  | SBE folder (Get-AzlSbeBundle) |  | 7 |  |
 | `sbeManifestSource` | `hardware.sbe.manifest_source` |  | SBE folder (Get-AzlSbeBundle) |  | 7 |  |

@@ -13,6 +13,8 @@ need is a key of `infrastructure.yml`, set on the platform by task 05 of the CI/
 | Stage 08 task 03 | `Invoke-NodeMaintenanceReboot.ps1` | drains, reboots and resumes one node | `day2-node-maintenance` |
 | Stage 08 task 04 | `Invoke-ClusterOperations.ps1` | `HealthCheck`, `Alerts` and `Capacity` read; `MaintenanceMode`, `LiveMigrate` and `Rebalance` change the cluster | `day2-cluster-operations` |
 
+Both PowerShell scripts of the update stage (`Get-AvailableSolutionUpdate.ps1`, `Start-AzureLocalSolutionUpdate.ps1`) also append their run to `update-events.jsonl` in the events folder: `deployment.events_directory` in the master file, else `%ProgramData%&AzureLocalToolkit&<cluster.name>&events`. Mode `Check` for the check, `WhatIf` for a `-WhatIf` plan and `Install` for a started or prepared update; `RunStarted`, one event per step (environment, discovery, update) and `RunCompleted` or `RunFailed` with the exit code. azurelocal-sonar follows that file in its Update view without Azure. The pre-cluster gate's Plan writes `precluster-plan-events.jsonl` (mode `Plan`, one event per category, no verdict) to the same folder; its Verify feed `precluster-verification-events.jsonl` stays in the gate's report directory. A run given `-ReportDirectory` while `deployment.events_directory` is not set keeps its feed with the reports and warns that Sonar will not see it.
+
 ## Run it
 
 ```powershell
