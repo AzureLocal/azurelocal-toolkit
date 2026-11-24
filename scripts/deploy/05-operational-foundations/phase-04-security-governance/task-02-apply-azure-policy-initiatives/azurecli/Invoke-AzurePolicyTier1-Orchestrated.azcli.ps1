@@ -6,7 +6,9 @@
     Phase 04 (security and governance), Task 02 (Azure Policy), Azure CLI variant of Invoke-AzurePolicyTier1-Orchestrated.ps1. Tier 1 is the lightest
     governance layer: for each tag name in landing_zone.policy.required_tags this script assigns Microsoft's built-in policy "Require a tag on resources"
     at the management group landing_zone.policy.management_group (empty: the tenant root management group, whose id is azure.tenant_id), so the
-    assignment cascades to every management group, subscription and resource group under it. It uses az policy assignment create.
+    assignment cascades to every management group, subscription and resource group under it. It reads with az policy assignment show and creates each
+    assignment with az rest (a PUT of the assignment resource): az policy assignment create (Azure CLI 2.90) looks a built-in definition up in the
+    management group of the scope, gets PolicyDefinitionNotFound and fails.
 
     Audit mode. The built-in definition has the fixed effect deny. Each assignment therefore sets the enforcement mode DoNotEnforce: Azure evaluates the
     resources and reports the ones without the tag as non-compliant, and denies nothing. Turning a tag into a hard requirement is a separate, deliberate
@@ -20,8 +22,9 @@
     the tag instead of only reporting it. When the name is used by an assignment of another definition or of another tag, the tag is not covered: it is
     reported as Conflict, nothing is changed and the script exits 1. A second run with the same file creates nothing. -WhatIf changes nothing.
 
-    The tag name goes to the policy in a parameter file that the script writes to a temporary file and deletes again: the Azure CLI is started through
-    a command file on Windows, which would misread the quotes of a JSON text on the command line. The file holds the tag name and nothing else.
+    The assignment (its display name, description, definition, the tag name and the enforcement mode) goes to Azure in a body file that the script
+    writes to a temporary file and deletes again: the Azure CLI is started through a command file on Windows, which would misread the quotes of a JSON
+    text on the command line. The file holds nothing secret.
 
     The script does not sign in: run az login to the tenant in azure.tenant_id first. Assigning at the tenant root management group needs a role that can
     write policy assignments there (for example Resource Policy Contributor or Owner at that scope; a Global Administrator first has to elevate access to
@@ -72,6 +75,7 @@ $RequireTagDefinitionId = '/providers/Microsoft.Authorization/policyDefinitions/
 $AssignmentPrefix = 'req-tag-'
 $MaxAssignmentNameLength = 24   # Microsoft.Authorization/policyAssignments at management group scope
 $MaxTagLength = 80              # the display name of the assignment holds the tag and is limited to 128 characters
+$AssignmentApiVersion = '2023-04-01'   # Microsoft.Authorization/policyAssignments, the version the assignment is written with
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|was not found|does not exist|\b404\b'
 
@@ -187,12 +191,23 @@ $results = foreach ($tag in $tags) {
             }
         }
         elseif ($PSCmdlet.ShouldProcess($id, "Assign '$definitionDisplayName' for tag '$tag' in audit mode")) {
+            # A PUT of the assignment through az rest, not az policy assignment create: at a management group scope, Azure CLI 2.90 looks the
+            # built-in definition up in that management group, gets PolicyDefinitionNotFound and fails (tplabs, 2026-11-23). az rest puts the ARM
+            # endpoint of the current cloud in front of the resource id. The body (tag, display name, description) goes in a temporary file.
+            # A PUT replaces: an assignment of this name made between the show above and this call would be overwritten. Microsoft.Authorization
+            # ignores If-None-Match on policy assignments (tried 2026-11-23), so the show is the guard, as with New-AzPolicyAssignment in the twin.
             $parameterFile = [IO.Path]::GetTempFileName()
-            Set-Content -LiteralPath $parameterFile -Value (@{ tagName = @{ value = $tag } } | ConvertTo-Json -Depth 4 -Compress) -Encoding utf8NoBOM
-            $null = Invoke-Az policy assignment create --name $name --scope $scope --policy $RequireTagDefinitionId `
-                --display-name "Require tag '$tag' on resources (audit)" `
-                --description "Tier 1: report resources without the tag '$tag'. Enforcement mode DoNotEnforce: non-compliance is reported and nothing is denied." `
-                --params "@$parameterFile" --enforcement-mode DoNotEnforce --output none
+            $body = [ordered]@{
+                properties = [ordered]@{
+                    displayName        = "Require tag '$tag' on resources (audit)"
+                    description        = "Tier 1: report resources without the tag '$tag'. Enforcement mode DoNotEnforce: non-compliance is reported and nothing is denied."
+                    policyDefinitionId = $RequireTagDefinitionId
+                    parameters         = [ordered]@{ tagName = [ordered]@{ value = $tag } }
+                    enforcementMode    = 'DoNotEnforce'
+                }
+            }
+            Set-Content -LiteralPath $parameterFile -Value ($body | ConvertTo-Json -Depth 6 -Compress) -Encoding utf8NoBOM
+            $null = Invoke-Az rest --method put --url "$id`?api-version=$AssignmentApiVersion" --body "@$parameterFile" --output none
             $row.Action = 'Created'
             Write-Line "[created] $name ($tag): assigned in audit mode."
         }

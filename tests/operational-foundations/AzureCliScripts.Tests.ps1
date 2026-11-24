@@ -33,7 +33,8 @@ BeforeDiscovery {
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Repo = $repo
-    $script:ChangeCommand = '(create|update|delete|register|extend-software-assurance-benefit)$'
+    # az rest is only ever a PUT in these scripts (the Tier 1 policy assignment), so it counts as a change.
+    $script:ChangeCommand = '(create|update|delete|register|extend-software-assurance-benefit)$|^rest$'
     Import-Module powershell-yaml
     # A stub with the name of the command, so the mock works whether or not the Azure CLI is installed.
     function az { }
@@ -179,7 +180,7 @@ BeforeAll {
             'Invoke-AzurePolicyTier1-Orchestrated' {
                 $h['policy definition show'] = { param($o, $a) '{"displayName":"Require a tag on resources"}' }
                 $h['policy assignment show'] = $none
-                $h['policy assignment create'] = { param($o, $a) $path = ([string]$o['--params'][0]).TrimStart('@'); $global:K6Params += , (Get-Content -LiteralPath $path -Raw); $null }
+                $h['rest'] = { param($o, $a) $path = ([string]$o['--body'][0]).TrimStart('@'); $global:K6Params += , (Get-Content -LiteralPath $path -Raw); $null }
                 $global:K6Params = @()
             }
             'Enable-AzureHybridBenefit' {
@@ -277,7 +278,7 @@ Describe 'every Azure CLI script of the batch: <Name>' -ForEach $script:Cases {
     It 'passes the subscription of the file to every az call that reads or changes a resource' {
         Set-K6Empty $Name
         $null = Invoke-K6 $Path (New-K6Infra)
-        $calls = @($global:K6Calls | Where-Object { $_.Command -notin 'extension show' -and $_.Command -ne 'account show' -and $_.Command -notlike 'monitor data-collection rule association*' -and $_.Command -ne 'policy definition show' -and $_.Command -ne 'policy assignment show' -and $_.Command -ne 'policy assignment create' })
+        $calls = @($global:K6Calls | Where-Object { $_.Command -notin 'extension show' -and $_.Command -ne 'account show' -and $_.Command -notlike 'monitor data-collection rule association*' -and $_.Command -ne 'policy definition show' -and $_.Command -ne 'policy assignment show' -and $_.Command -ne 'policy assignment create' -and $_.Command -ne 'rest' })
         foreach ($call in $calls) { $call.Options['--subscription'] | Should -Be $global:K6Sub -Because $call.Command }
     }
 }
@@ -756,21 +757,32 @@ Describe 'the security and licensing scripts' {
 
     Context 'Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1' {
         BeforeEach { Set-K6Empty 'Invoke-AzurePolicyTier1-Orchestrated' }
-        It 'assigns the built-in tag policy once per tag at the management group, in audit mode, with the tag in a parameter file that is deleted again' {
+        It 'assigns the built-in tag policy once per tag at the management group, in audit mode, with a body file that is deleted again' {
             $r = Invoke-K6 $script:Policy (New-K6Infra)
             $r.ExitCode | Should -Be 0 -Because $r.Text
-            $creates = Get-K6Call 'policy assignment create'
-            @($creates | ForEach-Object { $_.Options['--name'][0] }) | Should -Be @('req-tag-costcenter', 'req-tag-owner')
-            $creates[0].Options['--scope'] | Should -Be '/providers/Microsoft.Management/managementGroups/mg-example'
-            $creates[0].Options['--policy'] | Should -Be '/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99'
-            $creates[0].Options['--enforcement-mode'] | Should -Be 'DoNotEnforce'
-            ($global:K6Params[0] | ConvertFrom-Json).tagName.value | Should -Be 'costcenter'
-            ($global:K6Params[1] | ConvertFrom-Json).tagName.value | Should -Be 'owner'
-            Test-Path -LiteralPath (([string]$creates[0].Options['--params'][0]).TrimStart('@')) | Should -BeFalse
+            $creates = Get-K6Call 'rest'
+            $creates.Count | Should -Be 2
+            $mg = '/providers/Microsoft.Management/managementGroups/mg-example/providers/Microsoft.Authorization/policyAssignments'
+            @($creates | ForEach-Object { $_.Options['--url'][0] }) | Should -Be @("$mg/req-tag-costcenter?api-version=2023-04-01", "$mg/req-tag-owner?api-version=2023-04-01")
+            @($creates | ForEach-Object { $_.Options['--method'][0] } | Select-Object -Unique) | Should -Be 'put'
+            $first = ($global:K6Params[0] | ConvertFrom-Json).properties
+            $first.policyDefinitionId | Should -Be '/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99'
+            $first.enforcementMode | Should -Be 'DoNotEnforce'
+            $first.parameters.tagName.value | Should -Be 'costcenter'
+            $first.displayName | Should -Match 'costcenter'
+            ($global:K6Params[1] | ConvertFrom-Json).properties.parameters.tagName.value | Should -Be 'owner'
+            Test-Path -LiteralPath (([string]$creates[0].Options['--body'][0]).TrimStart('@')) | Should -BeFalse
+        }
+        It 'never uses az policy assignment create, which fails for a built-in definition at a management group scope (Azure CLI 2.90, tplabs 2026-11-23)' {
+            $global:K6Handlers['policy assignment create'] = { param($o, $a) New-K6Error "(PolicyDefinitionNotFound) The policy definition '871b6d14-10aa-478d-b590-94f262ecfa99' could not be found." 1 }
+            $r = Invoke-K6 $script:Policy (New-K6Infra)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Get-K6Call 'policy assignment create' | Should -BeNullOrEmpty
+            (Get-K6Call 'rest').Count | Should -Be 2
         }
         It 'uses the tenant root management group when the file names none' {
             $null = Invoke-K6 $script:Policy (New-K6Infra @{ 'landing_zone.policy.management_group' = $null })
-            (Get-K6Call 'policy assignment create')[0].Options['--scope'] | Should -Be "/providers/Microsoft.Management/managementGroups/$($global:K6Tenant)"
+            (Get-K6Call 'rest')[0].Options['--url'][0] | Should -BeLike "/providers/Microsoft.Management/managementGroups/$($global:K6Tenant)/providers/Microsoft.Authorization/policyAssignments/*"
         }
         It 'leaves an assignment that exists alone, and reports a name taken by another assignment as a conflict with exit code 1' {
             $global:K6Handlers['policy assignment show'] = { param($o, $a) '{"name":"x","policyDefinitionId":"/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99","enforcementMode":"DoNotEnforce","parameters":{"tagName":{"value":"' + $(if ($o['--name'][0] -eq 'req-tag-owner') { 'owner' } else { 'costcenter' }) + '"}}}' }
