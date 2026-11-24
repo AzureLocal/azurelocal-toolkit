@@ -2334,18 +2334,18 @@ function Invoke-AzlArmDeploymentRun {
         # Who is signed in decides whether the Azure checks can run; Plan without a sign-in reads files only.
         if ($Offline -and $Mode -ne 'Plan') { Stop-AzlArmInput '-Offline reads files only; it works with Mode Plan.' }
         $azureContext = if ($Offline -or -not (Test-AzlArmAdapterHas $Adapter GetContext)) { $null } else { & $Adapter.GetContext }
-        $offline = (-not $azureContext)
-        if ($offline -and $Mode -ne 'Plan') { Stop-AzlArmInput 'Nobody is signed in to Azure. Sign in first (Connect-AzAccount, or the pipeline''s OIDC or managed identity step); this run does not sign in itself.' }
+        $noAzure = [bool](-not $azureContext)
+        if ($noAzure -and $Mode -ne 'Plan') { Stop-AzlArmInput 'Nobody is signed in to Azure. Sign in first (Connect-AzAccount, or the pipeline''s OIDC or managed identity step); this run does not sign in itself.' }
         $arguments = @{ Infrastructure = $infra; Handoff = $handoff; Mode = 'Validate'; AllowUnresolvedSanLun = ($Mode -eq 'Plan') }
-        if ($osReport) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $osReport; $arguments.NodeReport = @($osReport.nodes) }
-        if (-not $offline -and -not (Get-AzlProp $infra 'azure.hci_resource_provider_object_id') -and (Test-AzlArmAdapterHas $Adapter GetHciResourceProviderObjectId)) {
+        if ($osReport) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $osReport; $arguments.NodeReport = @($osReport.nodes); if ($OsConfigurationReport -is [string] -and $OsConfigurationReport) { $arguments.AdapterMapSource = $OsConfigurationReport } }
+        if (-not $noAzure -and -not (Get-AzlProp $infra 'azure.hci_resource_provider_object_id') -and (Test-AzlArmAdapterHas $Adapter GetHciResourceProviderObjectId)) {
             $arguments.HciResourceProviderObjectId = [string](Invoke-AzlArmAdapter $Adapter GetHciResourceProviderObjectId)
         }
         try { $set = New-AzlArmParameterSet @arguments }
         catch { Stop-AzlArmInput "The parameters can't be generated: $($_.Exception.Message)" }
         $catalog = Get-AzlArmTemplateCatalog
-        $problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $catalog.templates[$set.Template.Name].parameters)
-        if ($offline) { $problems = @($problems | Where-Object { $_ -notmatch '^(infraVolLunId|infraPerfLunId|hciResourceProviderObjectID) ' }) }
+        $problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $catalog.templates[$set.Template.Name].parameters -Deploy:($Mode -eq 'Deploy'))
+        if ($noAzure) { $problems = @($problems | Where-Object { $_ -notmatch '^(infraVolLunId|infraPerfLunId|hciResourceProviderObjectID) ' }) }
         if ($problems) { Stop-AzlArmInput ("$($problems.Count) problem(s) in the parameter set:`n" + ($problems -join "`n")) }
         $run.ParameterSet = $set
         # The identity of the template is part of the deployment name: a changed template is not taken for the deployment that succeeded with the old one.
@@ -2362,17 +2362,17 @@ function Invoke-AzlArmDeploymentRun {
         # ---- 2 Preconditions
         $context = [pscustomobject]@{
             Run = $run; Infra = $infra; Handoff = $handoff; OsReport = $osReport; Set = $set; Settings = $run.Settings; Subscription = $run.Subscription; ResourceGroup = $run.ResourceGroup
-            Cluster = $cluster; Nodes = $nodes; Build = $run.Build; Phase = 'Validate'; ArcMachines = @{}; State = $null; AzureContext = $null; Offline = $offline; ValidateName = $run.ValidateName
+            Cluster = $cluster; Nodes = $nodes; Build = $run.Build; Phase = 'Validate'; ArcMachines = @{}; State = $null; AzureContext = $null; Offline = $noAzure; ValidateName = $run.ValidateName
             DeviceIdIssue = $(if ($deviceIdIssue) { [pscustomobject]$deviceIdIssue } else { [pscustomobject]@{ affectedBuilds = @() } })
         }
         $context.AzureContext = $azureContext
-        if (-not $offline) { $context.State = Invoke-AzlArmAdapter $Adapter GetDeploymentState @($run.Subscription, $run.ResourceGroup, $cluster) }
+        if (-not $noAzure) { $context.State = Invoke-AzlArmAdapter $Adapter GetDeploymentState @($run.Subscription, $run.ResourceGroup, $cluster) }
         $pre = [System.Collections.Generic.List[object]]::new()
         $firstPhase = if ($Mode -eq 'Deploy') { 'Deploy' } else { 'Validate' }
         $gate = Test-AzlArmPreClusterVerification -Run $run -InfrastructureFile $InfrastructureFile -Infrastructure $infra -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' })
         $pre.Add($gate)
         Send-AzlArmEvent -Run $run -State PreconditionChecked -Step PreClusterVerification -Evidence $gate.Evidence -Level $(switch ($gate.Result) { 'Failed' { 'Error' } 'Warning' { 'Warning' } default { 'Info' } }) -NextAction $gate.NextAction -Data @{ name = 'PreClusterVerification'; result = $gate.Result }
-        foreach ($r in (Invoke-AzlArmPrecondition -Run $run -Context $context -Phase $firstPhase -Offline:$offline)) { $pre.Add($r) }
+        foreach ($r in (Invoke-AzlArmPrecondition -Run $run -Context $context -Phase $firstPhase -Offline:$noAzure)) { $pre.Add($r) }
         $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -in 'PreClusterVerification', 'ArcMachineNaming') { 4000 } else { 400 })) } })
         $failedChecks = @($pre | Where-Object { $_.Result -eq 'Failed' })
         $preFailed = $failedChecks.Count -gt 0
@@ -2382,8 +2382,8 @@ function Invoke-AzlArmDeploymentRun {
         }
 
         if ($Mode -eq 'Plan' -or $preFailed) {
-            Send-AzlArmEvent -Run $run -State PlanCompleted -Evidence $(if ($preFailed) { $run.Message } else { 'Plan complete: parameters generated, no precondition failed.' }) -Level $(if ($preFailed) { 'Error' } else { 'Info' }) -Data @{ failedPreconditions = $failedChecks.Count; offline = $offline }
-            if (-not $preFailed) { $run.Message = "Plan complete. $($pre.Count) checks, none failed$(if ($offline) { ' (Azure was not read: nobody is signed in)' })."; $run.NextAction = 'Run Mode Validate.' }
+            Send-AzlArmEvent -Run $run -State PlanCompleted -Evidence $(if ($preFailed) { $run.Message } else { 'Plan complete: parameters generated, no precondition failed.' }) -Level $(if ($preFailed) { 'Error' } else { 'Info' }) -Data @{ failedPreconditions = $failedChecks.Count; offline = [bool]$noAzure }
+            if (-not $preFailed) { $run.Message = "Plan complete. $($pre.Count) checks, none failed$(if ($noAzure) { ' (Azure was not read: nobody is signed in)' })."; $run.NextAction = 'Run Mode Validate.' }
         }
         else {
             # ---- template for the real submit

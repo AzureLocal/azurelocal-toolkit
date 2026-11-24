@@ -246,7 +246,7 @@ if ($defaultTenant -ne $tenantId) { Exit-Failed "The default sign-in context of 
 
 try {
     $arguments = @{ Infrastructure = $infra; Handoff = $handoff; Mode = $Mode }
-    if ($osReport) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $osReport; $arguments.NodeReport = @($osReport.nodes) }
+    if ($osReport) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $osReport; $arguments.AdapterMapSource = $OsConfigurationReport; $arguments.NodeReport = @($osReport.nodes) }
     if (-not (Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.hci_resource_provider_object_id')) {
         $sp = Invoke-AzCli @('ad', 'sp', 'show', '--id', $HciResourceProviderAppId, '--query', 'id', '--output', 'tsv', '--only-show-errors')
         if ($sp.ExitCode -ne 0 -or -not $sp.Output.Trim()) { Exit-Failed "The service principal of the Azure Local resource provider ($HciResourceProviderAppId) was not found in this tenant. Register Microsoft.AzureStackHCI, or set azure.hci_resource_provider_object_id. $($sp.Detail)" }
@@ -254,7 +254,7 @@ try {
     }
     $set = New-AzlArmParameterSet @arguments
     $catalog = Get-AzlArmTemplateCatalog
-    $problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $catalog.templates[$set.Template.Name].parameters)
+    $problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $catalog.templates[$set.Template.Name].parameters -Deploy:($Mode -eq 'Deploy'))
     if ($problems.Count) { Exit-InputProblem ("$($problems.Count) problem(s) in the parameter set:`n" + ($problems -join "`n")) }
     $parameterJson = ConvertTo-AzlArmParameterFile -ParameterSet $set -Infrastructure $infra -SecretMode KeyVaultReference
 }

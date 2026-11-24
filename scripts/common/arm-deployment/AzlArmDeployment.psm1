@@ -192,14 +192,22 @@ function ConvertTo-AzlOsAdapterName {
     # The name the deployment sends for a port of the file. The port is found on the node by its MAC (never by a name): the name is what the node calls that adapter, read
     # from the OS configuration report's MAC -> name map, or the user's os_name_override (opt-in; the NicNames step renames the adapter to it). Nothing is assumed: without a
     # map the override is used when the file has one, else the file's name is sent as it is and the run says so (a warning), because the OS name was not read.
-    param([string]$FileName, [System.Collections.IDictionary]$PortByName, [System.Collections.IDictionary]$OsNameByMac, [string]$Node, [System.Collections.Generic.List[string]]$Warnings)
-    if (-not $PortByName.Contains($FileName)) { return $FileName }
+    # -MapSource says what the map was read from (the report or the ZTP handoff, by name); -NoMapReason says why there is no map for this node. -Gaps collects what a
+    # Deploy refuses (K1): a port that the intents use but nodes[].network_adapters does not list.
+    param([string]$FileName, [System.Collections.IDictionary]$PortByName, [System.Collections.IDictionary]$OsNameByMac, [string]$Node, [System.Collections.Generic.List[string]]$Warnings, [System.Collections.Generic.List[string]]$Gaps, [string]$MapSource, [string]$NoMapReason)
+    if (-not $PortByName.Contains($FileName)) {
+        $missing = "Node ${Node}: port '$FileName' is used by a network intent or storage network, but nodes[].network_adapters has no entry with that name, so its OS name can't be found by MAC; '$FileName' is sent as it is. Add the adapter (name, mac_address, roles) to the node."
+        if (-not $Warnings.Contains($missing)) { $Warnings.Add($missing) }
+        if ($null -ne $Gaps -and -not $Gaps.Contains($missing)) { $Gaps.Add($missing) }
+        return $FileName
+    }
     $port = $PortByName[$FileName]
     $override = if ($port.Contains('os_name_override') -and "$($port['os_name_override'])" -ne '') { [string]$port['os_name_override'] } else { '' }
     $mac = ConvertTo-MacKey $port['mac_address']
     if (-not $OsNameByMac -or $OsNameByMac.Count -eq 0) {
         if ($override) { return $override }
-        $text = "Node ${Node}: no OS configuration report, so the OS name of port '$FileName' was not read from the node; the file's name '$FileName' is sent as it is. Give the OS configuration report (-NodeReportPath) so the name is read by MAC."
+        $reason = if ($NoMapReason) { $NoMapReason } else { 'no OS configuration report and no ZTP handoff networkAdapters for the node' }
+        $text = "Node ${Node}: $reason, so the OS name of port '$FileName' was not read from the node; the file's name '$FileName' is sent as it is. Give the OS configuration report (-NodeReportPath) or a ZTP handoff with networkAdapters so the name is read by MAC."
         if (-not $Warnings.Contains($text)) { $Warnings.Add($text) }
         return $FileName
     }
@@ -208,7 +216,15 @@ function ConvertTo-AzlOsAdapterName {
         $Warnings.Add("Port $FileName on $Node has no MAC in the file, so its OS name can't be looked up; using $FileName.")
         return $FileName
     }
-    if (-not $OsNameByMac.Contains($mac)) { throw "Port $FileName on $Node has MAC $mac, but the node's report has no port with that MAC." }
+    if (-not $OsNameByMac.Contains($mac)) {
+        # The handoff lists the ports Azure saw after the install, which can be fewer than the file's: that port keeps the file's name, with a warning. A report that lacks the MAC is an error.
+        if ($MapSource -like '*ZTP handoff*') {
+            $partial = "Port $FileName on ${Node}: $MapSource has no port with MAC $mac, so its OS name was not read; '$FileName' is sent as it is."
+            if (-not $Warnings.Contains($partial)) { $Warnings.Add($partial) }
+            return $FileName
+        }
+        throw "Port $FileName on $Node has MAC $mac, but $(if ($MapSource) { $MapSource } else { 'the node''s report' }) has no port with that MAC."
+    }
     $actual = [string]$OsNameByMac[$mac]
     if ($override -and $actual -cne $override) {
         throw "Port $FileName on ${Node}: the file's os_name_override is '$override', but the node calls the adapter (MAC $mac) '$actual'. Run the OS configuration (the NicNames step renames the adapter to the override; renaming is opt-in) and take a new report, or remove os_name_override to use the node's name."
@@ -231,14 +247,18 @@ function Resolve-AzlAdapterName {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
         [Parameter(Mandatory)][string]$FileName,
         [hashtable]$AdapterMap,
-        [System.Collections.Generic.List[string]]$Warnings = ([System.Collections.Generic.List[string]]::new())
+        [System.Collections.Generic.List[string]]$Warnings = ([System.Collections.Generic.List[string]]::new()),
+        [hashtable]$AdapterMapSource,
+        [string]$NoMapReason,
+        [System.Collections.Generic.List[string]]$Gaps
     )
     $names = [ordered]@{}
     foreach ($node in ConvertTo-List $Infrastructure['nodes']) {
         $byName = @{}
         foreach ($p in Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $node) { $byName[[string]$p['name']] = $p }
         $map = if ($AdapterMap -and $AdapterMap.ContainsKey($node['name'])) { $AdapterMap[$node['name']] } else { $null }
-        $names[[string]$node['name']] = ConvertTo-AzlOsAdapterName -FileName $FileName -PortByName $byName -OsNameByMac $map -Node ([string]$node['name']) -Warnings $Warnings
+        $source = if ($AdapterMapSource -and $AdapterMapSource.ContainsKey([string]$node['name'])) { [string]$AdapterMapSource[[string]$node['name']] } else { '' }
+        $names[[string]$node['name']] = ConvertTo-AzlOsAdapterName -FileName $FileName -PortByName $byName -OsNameByMac $map -Node ([string]$node['name']) -Warnings $Warnings -Gaps $Gaps -MapSource $source -NoMapReason $NoMapReason
     }
     $distinct = @($names.Values | Select-Object -Unique)
     if ($distinct.Count -gt 1) {
@@ -348,7 +368,10 @@ function New-AzlArmParameterSet {
         have in azure.resource_group under its Arc machine name; Invoke-AzlArmDeployment checks that it exists.
     .PARAMETER AdapterMap
         node name -> (MAC -> OS adapter name), from the OS configuration report. Each port of the file is found on its node by MAC and the deployment sends the name the node
-        calls it (or the port's os_name_override). Without a map the file's names are sent as they are, with a warning.
+        calls it (or the port's os_name_override). A node the map lacks takes its names from the handoff's networkAdapters (each with macAddress and name, as Azure reports the
+        port after the install). Without either the file's names are sent as they are, with a warning that names what was read.
+    .PARAMETER AdapterMapSource
+        The path or name of the OS configuration report that AdapterMap came from; the warnings name it.
     .PARAMETER NodeReport
         The OS configuration report's nodes (for the SAN disks, to translate LUN numbers).
     .PARAMETER SbeDeployment
@@ -357,7 +380,7 @@ function New-AzlArmParameterSet {
         Validate or Deploy. Default: cluster.deployment_mode.
     .OUTPUTS
         Template (Name, Uri), Parameters (ordered name -> value; a secret is @{ KeyVault = 'keyvault://...' }), Warnings,
-        DeploymentSettingsApiVersion.
+        Gaps (the warnings that a Deploy refuses: Test-AzlArmParameterSet -Deploy reports them as problems), DeploymentSettingsApiVersion.
     .EXAMPLE
         New-AzlArmParameterSet -Infrastructure $infra -Handoff $handoff -Mode Validate
     #>
@@ -368,6 +391,7 @@ function New-AzlArmParameterSet {
         [object]$Handoff,
         [hashtable]$ArcResourceId = @{},
         [hashtable]$AdapterMap,
+        [string]$AdapterMapSource,
         [object[]]$NodeReport,
         [System.Collections.IDictionary]$SbeDeployment,
         [string]$HciResourceProviderObjectId,
@@ -413,9 +437,32 @@ function New-AzlArmParameterSet {
         $arcIds += $id
     }
 
+    # Where each node's OS adapter names come from (K1): its entry in the OS configuration report, else the networkAdapters of its ZTP handoff entry, by MAC.
+    $gaps = [System.Collections.Generic.List[string]]::new()
+    $reportLabel = if ($AdapterMapSource) { "OS configuration report '$AdapterMapSource'" } else { 'the OS configuration report' }
+    $effectiveMap = @{}
+    $mapSources = @{}
+    foreach ($n in $nodes) {
+        $nodeName = [string]$n['name']
+        if ($AdapterMap -and $AdapterMap.ContainsKey($nodeName) -and $AdapterMap[$nodeName] -and $AdapterMap[$nodeName].Count) { $effectiveMap[$nodeName] = $AdapterMap[$nodeName]; $mapSources[$nodeName] = $reportLabel; continue }
+        $fromHandoff = @{}
+        $hn = Get-AzlHandoffNode -Handoff $Handoff -Name $nodeName -ArcMachineName (Get-AzlArcMachineName -Node $n)
+        if ($hn) {
+            foreach ($a in @(Get-AzlProp $hn 'networkAdapters' @())) {
+                $mac = ConvertTo-MacKey (Get-AzlProp $a 'macAddress' ''); $osName = [string](Get-AzlProp $a 'name' '')
+                if ($mac -and $osName) { $fromHandoff[$mac] = $osName }
+            }
+        }
+        if ($fromHandoff.Count) { $effectiveMap[$nodeName] = $fromHandoff; $mapSources[$nodeName] = 'the ZTP handoff networkAdapters of the node' }
+    }
+    $noMapReason = if ($AdapterMap -and $AdapterMap.Count) { "$reportLabel lists no ports for the node and its ZTP handoff entry has no networkAdapters" }
+    elseif ($Handoff) { 'no OS configuration report was given and the ZTP handoff has no networkAdapters for the node' }
+    else { 'no OS configuration report and no ZTP handoff networkAdapters for the node' }
     $resolveLog = $warnings
-    $resolveMap = $AdapterMap   # read inside the script block below, which the analyzer does not follow
-    $resolve = { param($fileName) Resolve-AzlAdapterName -Infrastructure $Infrastructure -FileName $fileName -AdapterMap $resolveMap -Warnings $resolveLog }
+    $resolveMap = $effectiveMap   # read inside the script block below, which the analyzer does not follow
+    $resolveSources = $mapSources
+    $resolveGaps = $gaps
+    $resolve = { param($fileName) Resolve-AzlAdapterName -Infrastructure $Infrastructure -FileName $fileName -AdapterMap $resolveMap -Warnings $resolveLog -AdapterMapSource $resolveSources -NoMapReason $noMapReason -Gaps $resolveGaps }
     $intents = @(ConvertTo-List (& $g 'networking.intents' @()) | ForEach-Object { ConvertTo-AzlArmIntent -Intent $_ -Resolve $resolve })
     if (-not $intents) { throw 'networking.intents is empty.' }
 
@@ -448,6 +495,15 @@ function New-AzlArmParameterSet {
     if (-not $sbeConfigured) {
         $leftover = @($sbe.Keys | Where-Object { $sbe[$_] } | Sort-Object)
         if ($leftover) { $warnings.Add("hardware.sbe gives $($leftover -join ', ') but no version, so no SBE is configured and none of the SBE parameters is passed. Set hardware.sbe.version to deploy with an SBE.") }
+    }
+    else {
+        # A version alone does not tell the deployment which SBE package to install (K2): the family and the publisher select it. They come from hardware.sbe or from a readable
+        # bundle (hardware.sbe.bundle_path). A Validate can run on the version alone, so this is a warning; a Deploy refuses it (Test-AzlArmParameterSet -Deploy).
+        $sbeMissing = @(@(@('family', 'sbeFamily'), @('publisher', 'sbePublisher')) | Where-Object { -not $sbe[$_[1]] } | ForEach-Object { "hardware.sbe.$($_[0])" })
+        if ($sbeMissing) {
+            $sbeText = "hardware.sbe.version is '$($sbe.sbeVersion)' but $($sbeMissing -join ' and ') $(if ($sbeMissing.Count -gt 1) { 'are' } else { 'is' }) empty, and no readable SBE bundle (hardware.sbe.bundle_path) supplies $(if ($sbeMissing.Count -gt 1) { 'them' } else { 'it' }). The template can't select the SBE package from a version alone. Set $($sbeMissing -join ' and ') (or point hardware.sbe.bundle_path at the unpacked bundle) before a Deploy."
+            $warnings.Add($sbeText); $gaps.Add($sbeText)
+        }
     }
 
     $kvRef = { param($ref) if ($ref) { [ordered]@{ KeyVault = [string]$ref } } else { $null } }
@@ -641,6 +697,7 @@ function New-AzlArmParameterSet {
         Template                     = $template
         Parameters                   = $final
         Warnings                     = $warnings.ToArray()
+        Gaps                         = $gaps.ToArray()
         DeploymentSettingsApiVersion = [string]$Catalog.templates[$template.Name].deploymentSettingsApiVersion
     }
 }
@@ -651,11 +708,15 @@ function Test-AzlArmParameterSet {
         Checks a parameter set against the template's parameter list. Returns the problems; nothing when it is clean.
     .PARAMETER TemplateParameters
         Name -> @{ type; required; allowed } from the catalog, or built from a template file.
+    .PARAMETER Deploy
+        The check is for a Deploy: what the parameter set only warns about for a Validate (its Gaps: an adapter port that nodes[].network_adapters does not list, an SBE
+        version without family or publisher) is a problem.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$ParameterSet, [Parameter(Mandatory)][System.Collections.IDictionary]$TemplateParameters)
+    param([Parameter(Mandatory)][object]$ParameterSet, [Parameter(Mandatory)][System.Collections.IDictionary]$TemplateParameters, [switch]$Deploy)
     $problems = [System.Collections.Generic.List[string]]::new()
     $values = $ParameterSet.Parameters
+    if ($Deploy -and $ParameterSet.PSObject.Properties['Gaps']) { foreach ($gap in @($ParameterSet.Gaps)) { if ($gap) { $problems.Add([string]$gap) } } }
     foreach ($k in $values.Keys) { if (-not $TemplateParameters.Contains($k)) { $problems.Add("$k isn't a parameter of the template.") } }
     foreach ($k in $TemplateParameters.Keys) {
         $def = $TemplateParameters[$k]

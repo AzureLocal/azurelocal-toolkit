@@ -54,7 +54,8 @@ function Get-AzlPclFileHash {
 function Resolve-AzlPclReportDirectory {
     <#
     .SYNOPSIS
-        The report directory of the gate: -Configured when given (deployment.pre_cluster_verification_report_directory), else
+        The report directory of the gate: -Configured when given (deployment.pre_cluster_verification_report_directory; environment
+        variables are expanded and a relative path is anchored to the folder of -InfrastructureFile), else
         arm-report\verification\live in the environment data folder, else a folder in the temp directory.
         The environment data folder is the folder that holds the evidence folder of the file (provisioning.simplified.evidence_path, for
         example D:\Data\azl-ztp\iic\evidence gives D:\Data\azl-ztp\iic), else the one that holds media_path, else the folder of
@@ -63,7 +64,17 @@ function Resolve-AzlPclReportDirectory {
     [CmdletBinding()]
     [OutputType([string])]
     param([string]$InfrastructureFile, [string]$Configured, [System.Collections.IDictionary]$Infrastructure)
-    if ($Configured) { return $Configured }
+    if ($Configured -and $Configured.Trim()) {
+        # Same rule as Resolve-AzlEventsDirectory (K8): environment variables are expanded and a relative path is anchored to the folder of
+        # the infrastructure file (else the current folder), so the gate and the run resolve one folder wherever the shell is.
+        $path = [Environment]::ExpandEnvironmentVariables($Configured.Trim())
+        if (-not [IO.Path]::IsPathFullyQualified($path)) {
+            # Also a path with a root but no drive (\reports) or a drive but no root (C:reports): resolved against the folder of the file.
+            $base = if ($InfrastructureFile) { Split-Path -Parent ([IO.Path]::GetFullPath($InfrastructureFile, (Get-Location).ProviderPath)) } else { (Get-Location).ProviderPath }
+            return [IO.Path]::GetFullPath($path, $base)
+        }
+        return [IO.Path]::GetFullPath($path)
+    }
     if ($Infrastructure) {
         foreach ($key in 'evidence_path', 'media_path') {
             $node = $Infrastructure

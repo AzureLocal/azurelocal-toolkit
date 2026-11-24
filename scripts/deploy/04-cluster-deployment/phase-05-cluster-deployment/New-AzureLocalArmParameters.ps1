@@ -74,11 +74,11 @@ $arguments = @{ Infrastructure = $infra; Handoff = $handoff; SanLunIdSource = $S
 if ($Mode) { $arguments.Mode = $Mode }
 if ($HciResourceProviderObjectId) { $arguments.HciResourceProviderObjectId = $HciResourceProviderObjectId }
 if ($sbe) { $arguments.SbeDeployment = $sbe }
-if ($report) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $report; $arguments.NodeReport = @($report.nodes) }
+if ($report) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $report; $arguments.AdapterMapSource = $NodeReportPath; $arguments.NodeReport = @($report.nodes) }
 $set = New-AzlArmParameterSet @arguments
 
 $definitions = if ($TemplateFile) { Get-AzlTemplateParameterDefinition -Template (Get-Content -LiteralPath $TemplateFile -Raw | ConvertFrom-Json -Depth 100) } else { (Get-AzlArmTemplateCatalog).templates[$set.Template.Name].parameters }
-$problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $definitions)
+$problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $definitions -Deploy:([string]$set.Parameters['deploymentMode'] -eq 'Deploy'))
 
 if (-not $OutputPath) { $OutputPath = Join-Path ([IO.Path]::GetTempPath()) ("azl-arm-{0}-{1}.parameters.json" -f (Get-AzlProp $infra 'cluster.name' 'cluster'), $set.Parameters['deploymentMode'].ToLowerInvariant()) }
 $folder = Split-Path -Parent $OutputPath

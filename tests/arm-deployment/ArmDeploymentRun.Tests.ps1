@@ -584,6 +584,18 @@ Describe 'Events, report and exit codes' {
         @($lines | ConvertFrom-Json | Where-Object state -eq 'PreconditionChecked').Count | Should -BeGreaterThan 10
         ($lines | ConvertFrom-Json | Where-Object state -eq 'PreconditionChecked' | Select-Object -First 1).result | Should -BeIn 'Passed', 'Failed', 'Warning', 'Skipped'
     }
+    It 'K7: PlanCompleted carries offline as a real boolean: true without an Azure sign-in, false with one (the -Offline switch is not overwritten)' {
+        $signedIn = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan
+        $done = @(Read-TestEvent $signedIn.EventPath | Where-Object state -eq 'PlanCompleted')
+        $done.Count | Should -Be 1
+        $done[0].offline | Should -BeOfType [bool]
+        $done[0].offline | Should -BeFalse
+        $noAzure = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetContext = { $null } }
+        $doneOffline = @(Read-TestEvent $noAzure.EventPath | Where-Object state -eq 'PlanCompleted')
+        $doneOffline.Count | Should -Be 1
+        $doneOffline[0].offline | Should -BeOfType [bool]
+        $doneOffline[0].offline | Should -BeTrue
+    }
     It 'the event file goes to deployment.events_directory when the file sets it, not to the report directory (D45: the folder Sonar reads)' {
         $events = Join-Path $TestDrive 'arm-shared-events'
         $infra = Get-TestInfra

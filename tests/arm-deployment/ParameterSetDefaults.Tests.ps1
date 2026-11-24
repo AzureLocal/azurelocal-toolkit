@@ -34,8 +34,8 @@ BeforeDiscovery {
         '$local'             = 'identity.local_admin'
         '$n'                 = 'nodes[]'
     }
-    # Objects with a variable key, or whose entries come from a list the file names (SBE partner properties and credentials): no key to compare.
-    $skip = @('$Infrastructure', '$handoffNode', '$sbeFile', '$property', '$credential')
+    # Objects with a variable key, or whose entries come from a list the file names (SBE partner properties and credentials, the ZTP handoff node and its networkAdapters): no key to compare.
+    $skip = @('$Infrastructure', '$handoffNode', '$hn', '$a', '$sbeFile', '$property', '$credential')
 
     # A literal in the source: a constant, $true, $false, $null, an empty array, or an expression.
     function Get-Literal($Node) {

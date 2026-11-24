@@ -97,7 +97,7 @@ if ($Execute) {
 $arguments = @{ Infrastructure = $infra; Handoff = $handoff; Mode = $Mode; SanLunIdSource = $SanLunIdSource; AllowUnresolvedSanLun = (-not $Execute) }
 if ($HciResourceProviderObjectId) { $arguments.HciResourceProviderObjectId = $HciResourceProviderObjectId }
 if ($sbe) { $arguments.SbeDeployment = $sbe }
-if ($report) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $report; $arguments.NodeReport = @($report.nodes) }
+if ($report) { $arguments.AdapterMap = Get-AzlAdapterMapFromReport -Report $report; $arguments.AdapterMapSource = $NodeReportPath; $arguments.NodeReport = @($report.nodes) }
 $set = New-AzlArmParameterSet @arguments
 
 # ---- the template: a local file, or Microsoft's, downloaded when executing
@@ -105,7 +105,7 @@ $template = $null
 if ($TemplateFile) { $template = Get-Content -LiteralPath $TemplateFile -Raw | ConvertFrom-Json -Depth 100 }
 elseif ($Execute) { $template = Invoke-RestMethod -Uri $set.Template.Uri }
 $definitions = if ($template) { Get-AzlTemplateParameterDefinition -Template $template } else { (Get-AzlArmTemplateCatalog).templates[$set.Template.Name].parameters }
-$problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $definitions)
+$problems = @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $definitions -Deploy:([string]$set.Parameters['deploymentMode'] -eq 'Deploy'))
 
 if (-not $OutputFolder) { $OutputFolder = Join-Path ([IO.Path]::GetTempPath()) 'azl-arm' }
 $null = New-Item -ItemType Directory -Path $OutputFolder -Force
