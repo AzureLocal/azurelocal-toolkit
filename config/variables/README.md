@@ -92,7 +92,7 @@ Every parameter of every script a person calls is a registry variable. Nobody ke
 - **Hand-written groups win.** A parameter that a hand-written group of any tool already registers (a group whose `area` is the script) is not written again, so a description you wrote stays. Generated groups are named `<script path>_generated`. To give a parameter a better description, write the `.PARAMETER` help in the script, or register it by hand in a group of its own (the generator then leaves it out of the block).
 - **Placeholder scripts** (they end with exit code 3, NOT IMPLEMENTED) are registered like any other; the group and each description say so.
 - **A default that looks like an environment value** (an address, a name, an ID, a region, a drive path) is a hard-coded value. The generator prints a warning for each. `tests/variables/Enforcement.Tests.ps1` (rule C) fails on the kinds below in `scripts/` and `config/variables/scripts/`; the generator flags the same kinds and also looks at `ansible/` and `tools/` (a test checks that the two agree). Fix the script: read the value from the infrastructure file.
-- **A script whose `param()` block does not parse** stops the generator with exit 1. A syntax error elsewhere in a script only prints a warning (the parser reads the block first).
+- **A script that does not parse** stops the generator with exit 1 and makes `-Check` exit 1, whether the syntax error is in the `param()` block (its parameters cannot be read) or elsewhere in the script (its parameters are still registered, but the script is broken).
 
 **When to run it:** when you add, remove or change a script parameter (and after merging a branch that did). The same moment as the other generator commands:
 

@@ -1,15 +1,15 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.topology = standard with every variable. Schema 5.6.32. Scenario: topology=standard.
+# Template for infrastructure.yml for scenario.topology = standard with every variable. Schema 5.6.33. Scenario: topology=standard.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.0"
+  schema_version: "5.6.33"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp, trailwright
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
   scope: "full"
   # Your own version of this file.
   # used by: trailwright
@@ -147,16 +147,16 @@ azure:
         roles: ["Contributor"]
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
-# used by: ztp, cicd_infra
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, deployment, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
     # used by: cicd_infra, trailwright
@@ -333,7 +333,7 @@ nodes:
       # required; used by: ztp, os_configuration, discovery
       - name: "Embedded NIC 1"
         # The port's identity.
-        # required; used by: ztp, os_configuration, discovery
+        # used by: ztp, os_configuration, discovery
         mac_address: "00:00:5E:00:53:11"
         # Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.
         # used by: ztp, os_configuration, discovery
@@ -1548,7 +1548,7 @@ provisioning:
     # Resource group of the site and edge machines, when it isn't azure.resource_group.
     # used by: ztp, trailwright, deployment
     resource_group: ""
-    # The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL.
+    # The provisioning (maintenance environment) ISO: latest (the default choice), a four-digit train (YYMM), a build (10.<train>.<n>.<n>), or a...
     # required; used by: ztp, trailwright
     maintenance_iso: "latest"
     # The local administrator that the provisioned OS gets (Learn: simplified machine provisioning, step 3, provision machines from Azure).

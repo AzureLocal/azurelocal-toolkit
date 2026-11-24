@@ -44,6 +44,8 @@ $ErrorActionPreference = 'Stop'
 
 $script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'variables', 'schema', 'infrastructure.schema.json'))
 $script:SupportedMajor = 5
+# _metadata.scope values checked against the full schema; any other scope is a cut for one tool (schema/tools/<tool>.schema.json)
+$script:WholeFileScope = @('full', 'ztp', 'trailwright', 'surveyor')
 
 # HOOK remoting-profiles (schema 5.6): rules AZL-060 to AZL-068 live with the profile resolver, so the validator and the run agree.
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingProfile.psm1'))
@@ -274,7 +276,9 @@ function Get-AzlBiosProvisioningOverride {
 function Get-AzlInfrastructureScope {
     <#
     .SYNOPSIS
-        The scope of the file (schema 5.3): full (the default, the whole instance) or ztp (only what azurelocal-ztp reads).
+        The scope of the file (schema 5.3): full (the default, the whole instance) or ztp (only what azurelocal-ztp reads). From
+        5.6.33 also a planning scope (trailwright, surveyor: a whole design whose MACs discovery fills) or a tool id (a cut that
+        New-InfrastructureArtifacts.ps1 -Cut wrote for that tool).
     .EXAMPLE
         Get-AzlInfrastructureScope -Infrastructure $infra
     #>
@@ -764,15 +768,11 @@ function Get-SchemaFinding {
 # ---------------------------------------------------------------------------------------------------------------------
 
 function Get-SemanticFinding {
-    param([System.Collections.IDictionary]$Infra)
+    # -ReferencesOnly: only the secret reference rules (AZL-001, AZL-054). A cut for one tool holds that tool's keys only, so the
+    # design rules would report what the cut left out; a reference the cut keeps must still resolve in the cut.
+    param([System.Collections.IDictionary]$Infra, [switch]$ReferencesOnly)
 
     $v = { param($p) Get-AzlInfrastructureValue -Infrastructure $Infra -Path $p }
-    $scenario = & $v 'scenario'
-    if ($scenario -isnot [System.Collections.IDictionary]) { return }
-    $nodes = @(Get-List (& $v 'nodes') | Where-Object { $_ -is [System.Collections.IDictionary] })
-    $nodeCount = $nodes.Count
-    $storageArch = $scenario['storage_architecture']
-    $usesS2d = $storageArch -in @('s2d', 'hybrid')
 
     # Key Vault references name a listed vault.
     $vaults = @(Get-List (& $v 'key_vaults') | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_['name'] } })
@@ -799,6 +799,14 @@ function Get-SemanticFinding {
             $reportedCommand = $true
         }
     }
+    if ($ReferencesOnly) { return }
+
+    $scenario = & $v 'scenario'
+    if ($scenario -isnot [System.Collections.IDictionary]) { return }
+    $nodes = @(Get-List (& $v 'nodes') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    $nodeCount = $nodes.Count
+    $storageArch = $scenario['storage_architecture']
+    $usesS2d = $storageArch -in @('s2d', 'hybrid')
 
     # Node names and management addresses are unique.
     foreach ($group in ($nodes | Group-Object { $_['name'] } | Where-Object Count -gt 1)) {
@@ -1870,7 +1878,9 @@ function Test-AzlInfrastructure {
     .PARAMETER Path
         The infrastructure file.
     .PARAMETER SchemaPath
-        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit.
+        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit, or, for a cut whose
+        _metadata.scope is a tool id, config/variables/schema/tools/<tool>.schema.json (then only the secret reference rules of
+        the semantic checks run: the cut holds that tool's keys only).
     .OUTPUTS
         One object per finding: Id, Severity (error, warning, info), Path, Message, LearnUrl. Nothing when the file is clean.
     .EXAMPLE
@@ -1890,11 +1900,23 @@ function Test-AzlInfrastructure {
         return
     }
 
+    # A cut for one tool (New-InfrastructureArtifacts.ps1 -Cut <tool> writes _metadata.scope = <tool>) holds only what that tool
+    # reads: it is checked against schema/tools/<tool>.schema.json, not the full schema. Scope full, ztp and the planning scopes
+    # (trailwright, surveyor) use the full schema, whose rules say what each of them requires.
+    $scope = Get-AzlInfrastructureScope -Infrastructure $infra
+    # only a plain id (letters, digits, underscore) names a tool schema: the value never reaches a path as it is
+    $toolScope = ($scope -notin $script:WholeFileScope) -and ($scope -match '^[a-z][a-z0-9_]*$')
+    if ($toolScope -and -not $PSBoundParameters.ContainsKey('SchemaPath')) {
+        $toolSchema = Join-Path (Split-Path -Parent $script:DefaultSchemaPath) ('tools/{0}.schema.json' -f ($scope -replace '_', '-'))
+        if (Test-Path -LiteralPath $toolSchema -PathType Leaf) { $SchemaPath = $toolSchema }
+        else { $toolScope = $false }   # not a tool: the full schema reports the value as not one of _metadata.scope
+    }
     if (-not (Test-Path -LiteralPath $SchemaPath -PathType Leaf)) { throw "Schema not found: $SchemaPath" }
     $json = $infra | ConvertTo-Json -Depth 100
     Get-SchemaFinding -Json $json -SchemaText (Get-Content -LiteralPath $SchemaPath -Raw)
 
-    Get-SemanticFinding -Infra $infra
+    # a cut holds one tool's keys: only the reference rules apply to it (the design rules run on the full file it was cut from)
+    Get-SemanticFinding -Infra $infra -ReferencesOnly:$toolScope
 }
 
 function Import-AzlInfrastructure {
@@ -1905,7 +1927,8 @@ function Import-AzlInfrastructure {
         The infrastructure file (schema 5). Required. There is no default path, no environment variable and no search: the caller
         names the file, and every script takes it as -InfrastructureFile.
     .PARAMETER SchemaPath
-        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit.
+        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit, or, for a cut whose
+        _metadata.scope is a tool id, config/variables/schema/tools/<tool>.schema.json.
     .PARAMETER SkipValidation
         Return the file without checking it. For tools that only display it.
     .EXAMPLE
@@ -1920,7 +1943,10 @@ function Import-AzlInfrastructure {
         [switch]$SkipValidation
     )
     if (-not $SkipValidation) {
-        $findings = @(Test-AzlInfrastructure -Path $Path -SchemaPath $SchemaPath)
+        # without -SchemaPath, Test-AzlInfrastructure picks the schema from _metadata.scope (a tool cut: its tool schema)
+        $testArgs = @{ Path = $Path }
+        if ($PSBoundParameters.ContainsKey('SchemaPath')) { $testArgs['SchemaPath'] = $SchemaPath }
+        $findings = @(Test-AzlInfrastructure @testArgs)
         foreach ($w in ($findings | Where-Object Severity -eq 'warning')) { Write-Warning "$($w.Id) $($w.Path): $($w.Message)" }
         $errors = @($findings | Where-Object Severity -eq 'error')
         if ($errors.Count -gt 0) {

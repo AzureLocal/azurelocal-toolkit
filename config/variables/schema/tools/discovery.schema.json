@@ -18,11 +18,23 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
-            "ztp"
+            "ztp",
+            "trailwright",
+            "surveyor",
+            "os_configuration",
+            "deployment",
+            "cicd_infra",
+            "terraform",
+            "ansible",
+            "monitoring",
+            "discovery",
+            "ranger",
+            "beacon",
+            "s2d_cartographer"
           ]
         },
         "file_version": {
@@ -40,6 +52,28 @@
         "notes": {
           "description": "Free text about this file for the people who keep it. Not read by the tools.",
           "type": "string"
+        }
+      }
+    },
+    "key_vaults": {
+      "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/key_vault_name",
+            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
+          },
+          "subscription_id": {
+            "$ref": "#/$defs/guid",
+            "description": "Subscription (GUID) that holds the vault."
+          },
+          "resource_group": {
+            "$ref": "#/$defs/resource_group",
+            "description": "Resource group that holds the vault."
+          }
         }
       }
     },
@@ -117,6 +151,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address."
+              },
               "mac_address": {
                 "$ref": "#/$defs/mac",
                 "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning."
@@ -137,7 +175,7 @@
                 },
                 "mac_address": {
                   "$ref": "#/$defs/mac",
-                  "description": "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
+                  "description": "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required, except in a planning scope (_metadata.scope trailwright or surveyor, schema 5.6.33): a planner cannot know it, and hardware discovery (Update-InfrastructureYml-FromDiscovery.ps1) fills it before the file is used for a deployment. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
                 },
                 "slot": {
                   "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.",

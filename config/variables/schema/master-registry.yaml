@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.70 (2026-11-24):
+#     - A cut is a scoped file, and the planning scopes (owner decisions O2 and D145; infrastructure schema 5.6.33; every change is a relaxation or an optional addition, so a file of any 5.6 version stays valid). (1) _metadata.scope takes more values: trailwright and surveyor (a whole design written by a planning tool: everything full requires is required, except the MACs of the ports, nodes[].network_adapters[].mac_address and nodes[].management.mac_address, which hardware discovery fills; with scope full or ztp or a deployment cut they are still required) and the id of every tool that has keys (a cut). (2) New-InfrastructureArtifacts.ps1 -Cut <tool> sets _metadata.scope to the tool id, keeps the required children of every object it keeps (identity.active_directory keeps domain_fqdn, ou_path and lcm_user), and copies a free-key map whole (hardware.bios, nodes[].bios, tags), so the ZTP plan from a cut has the same BIOS blocks as the plan from the whole file. The cut for a tool that writes the file (trailwright) is refused. (3) Test-AzlInfrastructure and Import-AzlInfrastructure check a file whose scope is a tool id against schema/tools/<tool>.schema.json and run only the secret reference rules of the semantic checks. (4) key_vaults (and its name, subscription_id and resource_group) is read by os_configuration, deployment, monitoring and discovery as well, so a cut that keeps a keyvault:// reference keeps the vault list. (5) Azure Local 2611 pins: the example files use maintenance_iso latest and no max_train; Microsoft Learn (view azloc-2611) publishes no maintenance image version for 2611, and the descriptions of maintenance_iso and max_train say so. The generator stops when a tool that has keys is not a value of _metadata.scope.
 #   v5.0.69 (2026-11-24):
 #     - Day 2 path from the deployed instance (owner directives D140, D141; infrastructure schema 5.6.32; every new key is optional). New keys: security.telemetry.diagnostic_level (Off, Basic or Enhanced, the desired diagnostic level of the instance resource, set by Invoke-TelemetryConfiguration-Orchestrated.ps1 and its Azure CLI twin) and operations.security_logging (enabled, data_collection_rule, security_audit, event_levels: the data collection rule for the Windows Security, System and Application logs of the machines, created and associated by Invoke-SecurityLogging-Orchestrated.ps1 and its Azure CLI twin; the Security log goes to the Event table, Microsoft Learn). The description of security.telemetry no longer says it is not read. Placeholders implemented as the published guide pages name them: Invoke-ConfigureClusterQuorum-Orchestrated.ps1, Invoke-PostDeploymentVerification-Orchestrated.ps1, Invoke-SdnPrerequisites-Orchestrated.ps1, Invoke-SdnIntegration-Orchestrated.ps1, Invoke-SecurityLogging-Orchestrated.ps1, Invoke-WindowsServerSubscription-Orchestrated.ps1 and Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholders that no guide page names and that a real script of the same task replaces are removed: Invoke-NsgConfiguration-Orchestrated.ps1, Invoke-MonitoringSecurity-Orchestrated.ps1, Invoke-Alerting-Orchestrated.ps1, Invoke-DefenderForCloud-Orchestrated.ps1, Invoke-SecurityBaselines-Orchestrated.ps1, Invoke-AzureHybridBenefit-Orchestrated.ps1 and the five of 06-testing-validation; their generated parameter groups go with them.
 #   v5.0.68 (2026-11-24):
@@ -253,15 +255,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.69"
+  version: "5.0.70"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.32"
+  infrastructure_schema_version: "5.6.33"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.70"
+      change: "A cut is a scoped file, and the planning scopes (owner decisions O2 and D145; infrastructure schema 5.6.33; every change is a relaxation or an optional addition, so a file of any 5.6 version stays valid). (1) _metadata.scope takes more values: trailwright and surveyor (a whole design written by a planning tool: everything full requires is required, except the MACs of the ports, nodes[].network_adapters[].mac_address and nodes[].management.mac_address, which hardware discovery fills; with scope full or ztp or a deployment cut they are still required) and the id of every tool that has keys (a cut). (2) New-InfrastructureArtifacts.ps1 -Cut <tool> sets _metadata.scope to the tool id, keeps the required children of every object it keeps (identity.active_directory keeps domain_fqdn, ou_path and lcm_user), and copies a free-key map whole (hardware.bios, nodes[].bios, tags), so the ZTP plan from a cut has the same BIOS blocks as the plan from the whole file. The cut for a tool that writes the file (trailwright) is refused. (3) Test-AzlInfrastructure and Import-AzlInfrastructure check a file whose scope is a tool id against schema/tools/<tool>.schema.json and run only the secret reference rules of the semantic checks. (4) key_vaults (and its name, subscription_id and resource_group) is read by os_configuration, deployment, monitoring and discovery as well, so a cut that keeps a keyvault:// reference keeps the vault list. (5) Azure Local 2611 pins: the example files use maintenance_iso latest and no max_train; Microsoft Learn (view azloc-2611) publishes no maintenance image version for 2611, and the descriptions of maintenance_iso and max_train say so. The generator stops when a tool that has keys is not a value of _metadata.scope."
+      reason: "Owner directive D145 (one variables solution used by every tool of the chain). The cut files of the tools were refused by their own tools (no scope, empty free-key maps, vault list missing), a Trailwright design could not be valid without MACs it cannot know, and the examples still pinned the 2610 maintenance train."
     - date: "2026-11-24"
       version: "5.0.69"
       change: "Day 2 path from the deployed instance (owner directives D140, D141; infrastructure schema 5.6.32; every new key is optional). New keys: security.telemetry.diagnostic_level (Off, Basic or Enhanced, the desired diagnostic level of the instance resource, set by Invoke-TelemetryConfiguration-Orchestrated.ps1 and its Azure CLI twin) and operations.security_logging (enabled, data_collection_rule, security_audit, event_levels: the data collection rule for the Windows Security, System and Application logs of the machines, created and associated by Invoke-SecurityLogging-Orchestrated.ps1 and its Azure CLI twin; the Security log goes to the Event table, Microsoft Learn). The description of security.telemetry no longer says it is not read. Placeholders implemented as the published guide pages name them: Invoke-ConfigureClusterQuorum-Orchestrated.ps1, Invoke-PostDeploymentVerification-Orchestrated.ps1, Invoke-SdnPrerequisites-Orchestrated.ps1, Invoke-SdnIntegration-Orchestrated.ps1, Invoke-SecurityLogging-Orchestrated.ps1, Invoke-WindowsServerSubscription-Orchestrated.ps1 and Invoke-TelemetryConfiguration-Orchestrated.ps1. Placeholders that no guide page names and that a real script of the same task replaces are removed: Invoke-NsgConfiguration-Orchestrated.ps1, Invoke-MonitoringSecurity-Orchestrated.ps1, Invoke-Alerting-Orchestrated.ps1, Invoke-DefenderForCloud-Orchestrated.ps1, Invoke-SecurityBaselines-Orchestrated.ps1, Invoke-AzureHybridBenefit-Orchestrated.ps1 and the five of 06-testing-validation; their generated parameter groups go with them."
@@ -15320,7 +15326,7 @@ key_vaults:
   description: "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it."
   type: array
   required: false
-  used_by: [ztp, cicd_infra]
+  used_by: [ztp, cicd_infra, os_configuration, deployment, monitoring, discovery]
   items:
     type: object
     additionalProperties: false
@@ -15332,7 +15338,7 @@ key_vaults:
         required: true
         pattern: "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
         example: "kv-iic-mgmt-01"
-        used_by: [ztp, deployment, cicd_infra, trailwright, ansible, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform]
       subscription_id:
         description: "Subscription (GUID) that holds the vault."
         type: string
@@ -15340,7 +15346,7 @@ key_vaults:
         required: true
         pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
         example: "00000000-0000-0000-0000-000000000000"
-        used_by: [ztp, deployment, cicd_infra, trailwright, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform]
       resource_group:
         description: "Resource group that holds the vault."
         type: string
@@ -15348,7 +15354,7 @@ key_vaults:
         required: true
         pattern: "^[-\\w\\._\\(\\)]{1,90}$"
         example: "rg-iic-mgmt-01"
-        used_by: [ztp, deployment, cicd_infra, trailwright, terraform]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform]
       purpose:
         description: "What the vault holds, for example management, deployment or backup."
         type: string
@@ -15794,10 +15800,10 @@ nodes:
               example: "Embedded NIC 1"
               used_by: [ztp, os_configuration, discovery]
             mac_address:
-              description: "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
+              description: "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required, except in a planning scope (_metadata.scope trailwright or surveyor, schema 5.6.33): a planner cannot know it, and hardware discovery (Update-InfrastructureYml-FromDiscovery.ps1) fills it before the file is used for a deployment. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
               type: string
               format: mac
-              required: true
+              required: false
               pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
               example: "00:00:5E:00:53:11"
               used_by: [ztp, os_configuration, discovery]
@@ -17264,7 +17270,7 @@ provisioning:
           pattern: "^[-\\w\\._\\(\\)]{1,90}$"
           used_by: [ztp, trailwright, deployment]
         maintenance_iso:
-          description: "The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL."
+          description: "The provisioning (maintenance environment) ISO: latest (the default choice), a four-digit train (YYMM), a build (10.<train>.<n>.<n>), or a Microsoft download URL. The maintenance environment has its own version, separate from the solution: the solution the machines get is provisioning.os_version (12.2611.1004.9 for Azure Local 2611, Microsoft Learn view azloc-2611). Learn publishes no maintenance image version for 2611; the portal (Azure Arc, Machine provisioning, View downloads) is where the current image is listed. Keep latest, or pin a build you have tested."
           type: string
           required: true
           pattern: "^(latest|[0-9]{4}|10\\.[0-9]{4}\\.[0-9]+\\.[0-9]+|https://.+)$"
@@ -17504,7 +17510,7 @@ provisioning:
           example: false
           used_by: [ztp]
         max_train:
-          description: "Schema 5.4. Resolve stage: the highest train to consider when maintenance_iso is latest, for example 2609 to stay on the train of a given solution release. Default: none."
+          description: "Schema 5.4. Resolve stage: the highest train of the maintenance environment to consider when maintenance_iso is latest, to stay on a train you have tested. Default: none (the newest train). It limits the maintenance ISO only, never the solution version (provisioning.os_version). Microsoft Learn (view azloc-2611) names no maintenance train for 2611, so no value follows the solution release."
           type: string
           since: "5.4"
           required: false
@@ -19228,11 +19234,11 @@ file_metadata:
       example: "5.6.0"
       used_by: [ztp, os_configuration, deployment, monitoring, trailwright]
     scope:
-      description: "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key)."
+      description: "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing)."
       since: "5.3"
       required: false
       default: "full"
-      enum: ["full", "ztp"]
+      enum: ["full", "ztp", "trailwright", "surveyor", "os_configuration", "deployment", "cicd_infra", "terraform", "ansible", "monitoring", "discovery", "ranger", "beacon", "s2d_cartographer"]
       example: "ztp"
       used_by: [ztp, trailwright]
     file_version:
@@ -19824,7 +19830,6 @@ _schema_defs:
     additionalProperties: false
     required:
     - name
-    - mac_address
     - roles
     - ip_assignment
     properties:
@@ -20045,7 +20050,25 @@ _schema_rules:
           - bmc
           properties:
             bmc: true
-    else:
+  - description: 'Schema 5.6.33, _metadata.scope. The whole instance is required when the file has no scope, or scope full, or a planning scope (trailwright, surveyor: a design from a planning tool, complete except for what discovery fills). A cut for one tool (scope os_configuration, deployment, monitoring, ...) is checked against schema/tools/<scope>.schema.json instead, so this rule does not apply to it.'
+    if:
+      not:
+        type: object
+        required:
+        - _metadata
+        properties:
+          _metadata:
+            type: object
+            required:
+            - scope
+            properties:
+              scope:
+                not:
+                  enum:
+                  - full
+                  - trailwright
+                  - surveyor
+    then:
       type: object
       required:
       - scenario
@@ -20372,12 +20395,6 @@ _schema_rules:
             - serial_number
             - bmc
             properties:
-              management:
-                type: object
-                required:
-                - mac_address
-                properties:
-                  mac_address: true
               bmc:
                 type: object
                 required:
@@ -20387,21 +20404,6 @@ _schema_rules:
               serial_number: true
               network_adapters:
                 type: array
-                items:
-                  if:
-                    type: object
-                    required:
-                    - roles
-                    properties:
-                      roles:
-                        contains:
-                          const: management
-                  then:
-                    type: object
-                    required:
-                    - mac_address
-                    properties:
-                      mac_address: true
                 contains:
                   type: object
                   required:
@@ -20410,6 +20412,73 @@ _schema_rules:
                     roles:
                       contains:
                         const: provisioning
+  - description: 'Schema 5.6.33 (owner decision O2). The MAC of every port (nodes[].network_adapters[].mac_address) and, with simplified provisioning, of the management port (nodes[].management.mac_address) is required, except in a planning scope (_metadata.scope trailwright or surveyor): a planner cannot know the MACs, and hardware discovery (Update-InfrastructureYml-FromDiscovery.ps1) fills them. A file for a deployment (no scope, full, ztp or a deployment cut) must have them.'
+    if:
+      type: object
+      required:
+      - _metadata
+      properties:
+        _metadata:
+          type: object
+          required:
+          - scope
+          properties:
+            scope:
+              enum:
+              - trailwright
+              - surveyor
+    else:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              network_adapters:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - mac_address
+                  properties:
+                    mac_address: true
+  - if:
+      type: object
+      required:
+      - scenario
+      properties:
+        scenario:
+          type: object
+          required:
+          - os_install
+          properties:
+            os_install:
+              const: simplified
+        _metadata:
+          not:
+            type: object
+            required:
+            - scope
+            properties:
+              scope:
+                enum:
+                - trailwright
+                - surveyor
+    then:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              management:
+                type: object
+                required:
+                - mac_address
+                properties:
+                  mac_address: true
 
 # =============================================================================
 # TOOL CATALOG (registry 5.0.41)

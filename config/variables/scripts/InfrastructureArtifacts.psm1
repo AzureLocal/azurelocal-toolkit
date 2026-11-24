@@ -57,6 +57,15 @@ function Assert-ToolId {
     if ($Tool -notin $ids) { throw "Unknown tool '$Tool'. The tools in _tool_catalog are: $($ids -join ', ')." }
 }
 
+# reads, writes (Trailwright writes the file), or produces (Surveyor produces values through its sizing handoff)
+function Get-ToolVerb($Entry) {
+    switch ([string]$Entry['relation']) {
+        'writes' { return 'writes' }
+        'produces' { return 'produces (through its sizing handoff)' }
+        default { return 'reads' }
+    }
+}
+
 function Get-ToolWithKey {
     <#
     .SYNOPSIS
@@ -216,7 +225,7 @@ function Get-InfrastructureSchemaFromRegistry {
     $schema = [ordered]@{}
     foreach ($k in $rootInfo.Keys) { if ($k -ne 'sections') { $schema[$k] = Copy-Deep $rootInfo[$k] } }
     if ($Tool) {
-        $verb = if ((Get-ToolCatalog -Registry $Registry)[$Tool]['relation'] -eq 'writes') { 'writes' } else { 'reads' }
+        $verb = Get-ToolVerb ((Get-ToolCatalog -Registry $Registry)[$Tool])
         $schema['$id'] = ([string]$schema['$id']) -replace 'infrastructure\.schema\.json$', "infrastructure.$($Tool -replace '_', '-').schema.json"
         $schema['title'] = "$($schema['title']) ($Tool)"
         $schema['description'] = "The part of infrastructure.yml that the tool '$Tool' $verb. Generated from master-registry.yaml; every key is also in the full schema."
@@ -274,7 +283,66 @@ function Get-ToolPath {
         }
         [void](Visit $Registry[$section] $name $false)
     }
+
+    # A kept object keeps its required children (and theirs): a cut or a template that holds identity.active_directory also holds
+    # domain_fqdn, ou_path and lcm_user, so the reader of the cut never meets an object the schema calls incomplete.
+    function Close($Entry, [string]$Path, [bool]$IsItem) {
+        if (-not $set.Contains($Path)) { return }
+        $prefix = if ($IsItem) { "$Path[]" } else { $Path }
+        $children = Get-FileChild $Entry
+        $sharedReq = if ($Entry.Contains('file_schema') -and $Entry['file_schema'].Contains('required')) { @($Entry['file_schema']['required']) } else { $null }
+        foreach ($name in $children.Keys) {
+            $child = $children[$name]
+            $req = if ($null -ne $sharedReq) { $sharedReq -contains $name } else { $child.Contains('required') -and $child['required'] -eq $true }
+            if ($req) { [void]$set.Add("$prefix.$name") }
+            Close $child "$prefix.$name" $false
+        }
+        if ($Entry.Contains('items') -and $Entry['items'] -is [System.Collections.IDictionary] -and $Entry['items'].Contains('properties')) {
+            Close $Entry['items'] $Path $true
+        }
+    }
+    foreach ($section in $Registry['_schema_root']['sections']) {
+        if ($section -eq 'file_metadata') { continue }
+        Close $Registry[$section] (Get-SectionName $Registry $section) $false
+    }
     return , $set
+}
+
+function Get-ContainerPath {
+    <#
+    .SYNOPSIS
+        The data paths whose children the registry names (an object with properties, or a list whose items have properties, as
+        both <path> and "<path>[]"). Every other path is a leaf for a cut: a value, a free-key map (hardware.bios, tags) or a list of values, copied whole.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Registry)
+    $set = [System.Collections.Generic.HashSet[string]]::new()
+    function Walk($Entry, [string]$Path) {
+        $children = Get-FileChild $Entry
+        if ($children.Keys.Count) { [void]$set.Add($Path) }
+        foreach ($name in $children.Keys) { Walk $children[$name] "$Path.$name" }
+        if ($Entry.Contains('items') -and $Entry['items'] -is [System.Collections.IDictionary] -and $Entry['items'].Contains('properties')) {
+            $itemChildren = Get-FileChild $Entry['items']
+            if ($itemChildren.Keys.Count) { [void]$set.Add($Path); [void]$set.Add("$Path[]") }
+            foreach ($name in $itemChildren.Keys) { Walk $itemChildren[$name] "$Path[].$name" }
+        }
+    }
+    foreach ($section in $Registry['_schema_root']['sections']) { Walk $Registry[$section] (Get-SectionName $Registry $section) }
+    return , $set
+}
+
+function Get-ScopeValue {
+    <#
+    .SYNOPSIS
+        The values _metadata.scope takes (registry file_metadata.scope enum). Throws when a tool that has keys is not one of them,
+        because a cut for that tool could not say what it is.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Registry)
+    $values = @($Registry['file_metadata']['properties']['scope']['enum'] | ForEach-Object { [string]$_ })
+    $missing = @(Get-ToolWithKey -Registry $Registry | Where-Object { $_ -notin $values })
+    if ($missing.Count) { throw "The tools $($missing -join ', ') have keys but are not values of file_metadata.scope (enum) in the registry. Add them." }
+    return $values
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -314,7 +382,6 @@ function Test-ScenarioMatch($Clauses, [hashtable]$Scenario) {
 }
 
 function Get-PlaceholderValue($Entry, [string]$Name, [string]$Tool = '') {
-    if ($Tool -eq 'ztp' -and $Name -eq 'scope' -and $Entry.Contains('enum') -and @($Entry['enum']) -contains 'ztp') { return 'ztp' }
     if ($Entry.Contains('enum') -and $Entry.Contains('default')) { return $Entry['default'] }
     if ($Entry.Contains('example')) { return $Entry['example'] }
     if ($Entry.Contains('default')) { return $Entry['default'] }
@@ -422,6 +489,9 @@ function Get-InfrastructureTemplateText {
             return
         }
         $value = Get-PlaceholderValue $Entry $Name $Tool
+        # the file's own _metadata: the current schema version, and the tool's scope in a tool template (a cut has the same scope)
+        if ($Path -eq '_metadata.schema_version') { $value = [string]$version }
+        if ($Path -eq '_metadata.scope' -and $Tool -and $Entry.Contains('enum') -and @($Entry['enum']) -contains $Tool) { $value = $Tool }
         if ($Entry.Contains('type') -and $Entry['type'] -eq 'object') { $lines.Add("${ind}${key}: {}"); return }
         $lines.Add("${ind}${key}: $(ConvertTo-YamlScalar $value)")
     }
@@ -430,7 +500,7 @@ function Get-InfrastructureTemplateText {
     $lines.Add("# Change the registry, then run the generator. A test regenerates this file and fails when it differs.")
     $what = if ($Tool) {
         $catalogEntry = (Get-ToolCatalog -Registry $Registry)[$Tool]
-        $verb = if ($catalogEntry['relation'] -eq 'writes') { 'writes' } else { 'reads' }
+        $verb = Get-ToolVerb $catalogEntry
         "the part of $Title that $($catalogEntry['title']) ('$Tool') $verb (a strict subset of the master file)"
     } else { "$Title with every variable" }
     $sc = if ($Scenario.Count) { ' Scenario: ' + (($Scenario.Keys | Sort-Object | ForEach-Object { "$_=$($Scenario[$_])" }) -join ', ') + '.' } else { '' }
@@ -454,31 +524,42 @@ function Get-InfrastructureTemplateText {
 function Select-InfrastructureTool {
     <#
     .SYNOPSIS
-        Cuts a loaded infrastructure.yml (ordered dictionary) down to the keys one tool reads. Nothing is added or changed.
+        Cuts a loaded infrastructure.yml (ordered dictionary) down to the keys one tool reads, and marks it _metadata.scope = <tool>.
+    .DESCRIPTION
+        A key is kept when the tool reads it (used_by), when it is above such a key, or when it is a required child of a kept object.
+        A kept leaf is copied whole: a value, a list of values, or a free-key map such as hardware.bios, nodes[].bios or tags (the
+        registry names no children for it, so every attribute stays). _metadata.scope is set to the tool id, so the readers know the
+        file is a cut: Test-AzlInfrastructure checks it against schema/tools/<tool>.schema.json, and the ztp cut gets the ztp rules.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Registry, [Parameter(Mandatory)]$Document, [Parameter(Mandatory)][string]$Tool)
     $keep = Get-ToolPath -Registry $Registry -Tool $Tool
+    $containers = Get-ContainerPath -Registry $Registry
+    $scopes = Get-ScopeValue -Registry $Registry
+    if ($Tool -notin $scopes) { throw "The tool '$Tool' is not a value of _metadata.scope." }
 
     function Cut($Node, [string]$Path) {
+        if ($Path -and -not $containers.Contains($Path)) { return Copy-Deep $Node }
         if ($Node -is [System.Collections.IDictionary]) {
             $out = [ordered]@{}
             foreach ($k in $Node.Keys) {
                 $p = if ($Path) { "$Path.$k" } else { [string]$k }
                 if ($keep.Contains($p)) { $out[$k] = Cut $Node[$k] $p }
-                elseif ($keep.Contains($Path) -and $Path -in $script:MapPaths) { $out[$k] = $Node[$k] }
             }
             return $out
         }
         if ($Node -is [System.Collections.IList]) {
             $out = [System.Collections.Generic.List[object]]::new()
-            foreach ($i in $Node) { $out.Add((Cut $i "$Path[]")) }
+            $itemPath = "$Path[]"
+            foreach ($i in $Node) { if ($containers.Contains($itemPath)) { $out.Add((Cut $i $itemPath)) } else { $out.Add((Copy-Deep $i)) } }
             return , $out
         }
         return $Node
     }
-    $script:MapPaths = @('tags')
-    return Cut $Document ''
+    $result = Cut $Document ''
+    if (-not $result.Contains('_metadata') -or $result['_metadata'] -isnot [System.Collections.IDictionary]) { $result['_metadata'] = [ordered]@{} }
+    $result['_metadata']['scope'] = $Tool
+    return $result
 }
 
-Export-ModuleMember -Function Get-RegistryDocument, Get-ToolCatalog, Get-ToolWithKey, Get-InfrastructureSchemaFromRegistry, Get-ToolPath, Get-InfrastructureTemplateText, Select-InfrastructureTool
+Export-ModuleMember -Function Get-RegistryDocument, Get-ToolCatalog, Get-ToolWithKey, Get-InfrastructureSchemaFromRegistry, Get-ToolPath, Get-ContainerPath, Get-ScopeValue, Get-InfrastructureTemplateText, Select-InfrastructureTool

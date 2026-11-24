@@ -18,11 +18,23 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
-            "ztp"
+            "ztp",
+            "trailwright",
+            "surveyor",
+            "os_configuration",
+            "deployment",
+            "cicd_infra",
+            "terraform",
+            "ansible",
+            "monitoring",
+            "discovery",
+            "ranger",
+            "beacon",
+            "s2d_cartographer"
           ]
         },
         "file_version": {
@@ -71,6 +83,11 @@
           "description": "Short site code, 2 to 8 uppercase letters or digits.",
           "type": "string",
           "pattern": "^[A-Z0-9]{2,8}$"
+        },
+        "name": {
+          "description": "Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -108,6 +125,18 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "type": {
+              "description": "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.",
+              "type": "string",
+              "enum": [
+                "managed_identity",
+                "service_principal"
+              ]
+            },
+            "name": {
+              "description": "Managed identity resource name, or the service principal's display name.",
+              "type": "string"
+            },
             "object_id": {
               "$ref": "#/$defs/guid",
               "description": "Object ID (GUID) of the identity's principal in Microsoft Entra ID. Not a secret. The Terraform identity module assigns the roles of the deployment identity to this ID. Read it from the identity in the Azure portal, or with Get-AzADServicePrincipal."
@@ -180,6 +209,26 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "name": {
+          "$ref": "#/$defs/netbios_name",
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName."
+        },
+        "witness": {
+          "description": "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "type": "string",
+              "enum": [
+                "cloud",
+                "file_share",
+                "none"
+              ]
+            }
+          }
+        },
         "key_vault": {
           "description": "The Key Vault the deployment uses for the instance's secrets (one per instance). ARM keyVaultName.",
           "type": "object",
@@ -252,6 +301,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "description": "true when Azure Monitor is part of the design. When it is false, every monitoring script of phase 02 (workspace, endpoint, Azure Monitor Agent, Insights association, action group) does nothing and exits 0.",
+              "type": "boolean"
+            },
             "log_analytics_workspace": {
               "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it: Enable-HciInsights.ps1 stops when the rule sends to no workspace of this name in operations.monitoring.workspace_resource_group.",
               "type": "string"
@@ -494,6 +547,14 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
+                    "name": {
+                      "description": "Name of the subnet, for example GatewaySubnet.",
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "$ref": "#/$defs/cidr",
+                      "description": "Address range of the subnet in CIDR form."
+                    },
                     "network_security_group": {
                       "description": "Name of the network security group on the subnet.",
                       "type": "string"

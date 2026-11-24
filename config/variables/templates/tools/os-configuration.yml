@@ -1,16 +1,16 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that OS configuration ('os_configuration') reads (a strict subset of the master file). Schema 5.6.32.
+# Template for the part of infrastructure.yml that OS configuration ('os_configuration') reads (a strict subset of the master file). Schema 5.6.33.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.0"
+  schema_version: "5.6.33"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp, trailwright
-  scope: "full"
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  scope: "os_configuration"
   # Your own version of this file.
   # used by: trailwright
   file_version: "1.0.0"
@@ -48,6 +48,12 @@ site:
   # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
   # used by: ztp, os_configuration, trailwright
   time_zone: "Central Standard Time"
+  # Short site code, 2 to 8 uppercase letters or digits.
+  # required; used by: ztp, trailwright, terraform
+  code: "RAL"
+  # Display name of the site.
+  # required; used by: ztp, trailwright
+  name: "Azure Local Cloud"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
@@ -63,6 +69,19 @@ azure:
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   resource_group: "rg-iic-azl-01"
+
+# Every Key Vault that a keyvault:// reference in this file names, with where it is.
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
+key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
+  - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    resource_group: "rg-iic-mgmt-01"
 
 # (since 5.6.13) 
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
@@ -94,6 +113,18 @@ cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
   # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
+  # The quorum witness of the cluster.
+  # required
+  witness:
+    # cloud (an Azure Storage account), file_share (disconnected operations), or none.
+    # required; one of: cloud | file_share | none; used by: deployment, trailwright
+    type: "cloud"
+  # The Key Vault the deployment uses for the instance's secrets (one per instance).
+  # required; used by: deployment
+  key_vault:
+    # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
+    # required; used by: deployment, trailwright, terraform
+    name: "kv-iic-azl-01"
 
 # How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers, and where the run...
 # used by: deployment, os_configuration, monitoring
@@ -130,7 +161,7 @@ nodes:
       # required; used by: ztp, os_configuration, discovery
       - name: "Embedded NIC 1"
         # The port's identity.
-        # required; used by: ztp, os_configuration, discovery
+        # used by: ztp, os_configuration, discovery
         mac_address: "00:00:5E:00:53:11"
         # Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.
         # used by: ztp, os_configuration, discovery
@@ -230,12 +261,18 @@ nodes:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
       # used by: ztp, os_configuration, deployment
       hbas:
-        # The ports of the host bus adapter.
-        # used by: os_configuration, deployment
-        - ports:
+        # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
+        # required; used by: ztp, deployment
+        - slot: "Slot 2"
+          # The ports of the host bus adapter.
+          # used by: os_configuration, deployment
+          ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
             # required; used by: os_configuration, deployment
             - wwpn: ""
+              # A name in storage.san.fibre_channel.fabrics.
+              # required; used by: deployment
+              fabric: "example"
       # The machine's iSCSI initiator name.
       # used by: os_configuration, deployment
       initiator_iqn: ""
@@ -491,9 +528,12 @@ networking:
   # Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create).
   # used by: os_configuration, deployment
   logical_networks:
-    # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
-    # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
-    - purpose: "compute"
+    # Name of the Azure Local logical network resource.
+    # required; used by: deployment, trailwright
+    - name: "lnet-workloads"
+      # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
+      # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
+      purpose: "compute"
       # Address prefix of the logical network in CIDR form.
       # used by: os_configuration, deployment, trailwright
       address_prefix: "203.0.113.0/24"
@@ -608,6 +648,9 @@ storage:
     # (since 5.3) 
     # used by: os_configuration, deployment
     array:
+      # The array's name, for example its hostname in the array manager.
+      # required
+      name: "example"
       # Vendor of the storage array, for example Dell or Pure Storage.
       # required; used by: os_configuration, deployment
       vendor: "example"

@@ -1,16 +1,16 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-ranger ('ranger') reads (a strict subset of the master file). Schema 5.6.32.
+# Template for the part of infrastructure.yml that azurelocal-ranger ('ranger') reads (a strict subset of the master file). Schema 5.6.33.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.0"
+  schema_version: "5.6.33"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp, trailwright
-  scope: "full"
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  scope: "ranger"
   # Your own version of this file.
   # used by: trailwright
   file_version: "1.0.0"
@@ -24,6 +24,18 @@ _metadata:
 
 # The on-premises networks.
 networking:
+  # The management network and the infrastructure IP pool.
+  # required; used by: os_configuration
+  management:
+    # CIDR.
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    subnet: "192.0.2.0/24"
+    # The one default gateway.
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    gateway: "192.0.2.1"
+    # ARM dnsServers.
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:

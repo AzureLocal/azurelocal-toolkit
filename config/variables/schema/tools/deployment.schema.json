@@ -18,11 +18,23 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key). From 5.6.33 two more kinds of scope exist. A planning scope (trailwright, surveyor) marks a whole design written by a planning tool: everything full requires is required, except the MACs of the ports (nodes[].network_adapters[].mac_address, nodes[].management.mac_address), which hardware discovery fills; set scope to full once discovery has run. A tool scope (os_configuration, deployment, cicd_infra, terraform, ansible, monitoring, discovery, ranger, beacon, s2d_cartographer) marks a cut that New-InfrastructureArtifacts.ps1 -Cut <tool> wrote: it holds only the keys that tool reads, and Test-InfrastructureFile.ps1 (Test-AzlInfrastructure, Import-AzlInfrastructure) checks it against schema/tools/<tool>.schema.json instead of the full schema. Every tool of _tool_catalog that has keys is a value here (the generator stops when one is missing).",
           "default": "full",
           "enum": [
             "full",
-            "ztp"
+            "ztp",
+            "trailwright",
+            "surveyor",
+            "os_configuration",
+            "deployment",
+            "cicd_infra",
+            "terraform",
+            "ansible",
+            "monitoring",
+            "discovery",
+            "ranger",
+            "beacon",
+            "s2d_cartographer"
           ]
         },
         "file_version": {
@@ -133,7 +145,21 @@
         "automation_identity": {
           "description": "The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).",
           "type": "object",
-          "additionalProperties": false
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.",
+              "type": "string",
+              "enum": [
+                "managed_identity",
+                "service_principal"
+              ]
+            },
+            "name": {
+              "description": "Managed identity resource name, or the service principal's display name.",
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -502,12 +528,45 @@
             "items": {
               "$ref": "#/$defs/network_adapter",
               "properties": {
+                "name": {
+                  "description": "The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. The same on every machine, unique on the machine. It labels a physical adapter that is found on the node by mac_address, so it does not have to be the name the OS gave the adapter (OS names differ between installs and between ZTP and ISO installs, for example Port0, SLOT 3 Port 1 or NIC1). Discovery writes it from the slot and the port, for example 'Slot 3 Port 1'. The name the deployment sends to Azure is what the OS calls the adapter (read by MAC) or os_name_override when set. A file that already uses the OS name here keeps working.",
+                  "type": "string",
+                  "minLength": 1
+                },
                 "os_name_override": {
                   "description": "Optional, off by default. The name you want this adapter to have in the OS, for example 'Mgmt1', 'Compute1' or 'Storage1'. Without it nothing is renamed: the OS configuration step NicNames leaves every adapter name alone and the deployment sends the name the OS already uses (found by mac_address). With it, NicNames renames the adapter found by mac_address to this name (a guarded change, idempotent, the management adapter last) and the deployment sends this name. Give the same value for the same port (name) on every machine: Network ATC needs one adapter name per intent adapter on every node. 1 to 64 characters: letters, digits, space, underscore, dot, hyphen and parentheses.",
                   "type": "string",
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$",
                   "minLength": 1,
                   "maxLength": 64
+                },
+                "roles": {
+                  "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), iscsi:a or iscsi:b (schema 5.3: a port that carries iSCSI traffic to the SAN's fabric A or B; give it a static address, prefix_length and VLAN, no gateway), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "management",
+                      "compute",
+                      "storage",
+                      "provisioning",
+                      "iscsi:a",
+                      "iscsi:b",
+                      "unused"
+                    ]
+                  }
+                },
+                "ip_assignment": {
+                  "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+                  "type": "string",
+                  "enum": [
+                    "static",
+                    "dhcp_reservation",
+                    "dhcp",
+                    "preconfigured",
+                    "none"
+                  ]
                 },
                 "ip_address": {
                   "$ref": "#/$defs/ipv4",
@@ -624,6 +683,11 @@
       "properties": {
         "vendor": {
           "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
           "type": "string",
           "minLength": 1
         },
@@ -1565,6 +1629,11 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "name": {
+                  "description": "The array's name, for example its hostname in the array manager. Documentation only; not read by the tools.",
+                  "type": "string",
+                  "minLength": 1
+                },
                 "vendor": {
                   "description": "Vendor of the storage array, for example Dell or Pure Storage. The OS configuration matches it with the array's MPIO vendor and product id when it claims the array.",
                   "type": "string",
@@ -1893,6 +1962,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "description": "true when Azure Monitor is part of the design. When it is false, every monitoring script of phase 02 (workspace, endpoint, Azure Monitor Agent, Insights association, action group) does nothing and exits 0.",
+              "type": "boolean"
+            },
             "action_group_enable_if_disabled": {
               "description": "Schema 5.6.31. What Deploy-ActionGroup.ps1 (and its Azure CLI twin) does with an action group that exists but is disabled (a disabled group sends nothing to any receiver). false (default): the group is reported as Disabled with a warning and left disabled, because a person may have disabled it on purpose. true: the run enables it (Update-AzActionGroup -Enabled, az monitor action-group update --enabled true) and reports Enabled. Adding a receiver never changes the enabled state.",
               "type": "boolean",
@@ -1907,11 +1980,21 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "os_version": {
+          "description": "The solution version the machines run: latest, latest-preview, or a version such as 12.2611.1004.9. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it.",
+          "type": "string",
+          "pattern": "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
+        },
         "simplified": {
           "description": "Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-machine-provisioning",
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "site_name": {
+              "description": "Resource name of the Microsoft.Edge site.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
+            },
             "subscription_id": {
               "$ref": "#/$defs/guid",
               "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id. Set-AzlDeploymentPolicyExemption.ps1 exempts the site's resource groups there."
@@ -1919,6 +2002,39 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group",
               "description": "Resource group of the site and edge machines, when it isn't azure.resource_group."
+            },
+            "maintenance_iso": {
+              "description": "The provisioning (maintenance environment) ISO: latest (the default choice), a four-digit train (YYMM), a build (10.<train>.<n>.<n>), or a Microsoft download URL. The maintenance environment has its own version, separate from the solution: the solution the machines get is provisioning.os_version (12.2611.1004.9 for Azure Local 2611, Microsoft Learn view azloc-2611). Learn publishes no maintenance image version for 2611; the portal (Azure Arc, Machine provisioning, View downloads) is where the current image is listed. Keep latest, or pin a build you have tested.",
+              "type": "string",
+              "pattern": "^(latest|[0-9]{4}|10\\.[0-9]{4}\\.[0-9]+\\.[0-9]+|https://.+)$"
+            },
+            "admin": {
+              "description": "The local administrator that the provisioned OS gets (Learn: simplified machine provisioning, step 3, provision machines from Azure).",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run. azurelocal-ztp needs a keyvault://<vault>/<secret> reference here: Azure reads this secret from the vault itself when it provisions the machines (the template passes the vault and the secret name, never a value)."
+                }
+              }
+            },
+            "media_share": {
+              "description": "The SMB share the BMCs mount the images from.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9-]+$"
+                }
+              }
             },
             "managed_resource_group_name": {
               "description": "Schema 5.4. Name for the managed resource group of the site configuration, which holds the Arc machines. Default: empty, the service chooses the name.",
@@ -1939,6 +2055,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "platform": {
+          "description": "The CI/CD platform: github, gitlab or azure_devops.",
+          "type": "string",
+          "enum": [
+            "github",
+            "gitlab",
+            "azure_devops"
+          ]
+        },
         "runners": {
           "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
           "type": "array",
@@ -1946,6 +2071,18 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "name": {
+                "description": "Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.",
+                "type": "string"
+              },
+              "os_type": {
+                "description": "Operating system.",
+                "type": "string",
+                "enum": [
+                  "linux",
+                  "windows"
+                ]
+              },
               "purpose": {
                 "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
                 "type": "string",

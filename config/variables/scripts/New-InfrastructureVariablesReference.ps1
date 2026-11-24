@@ -231,9 +231,11 @@ function Add-ConditionPath($Then, [string]$Prefix, [string]$Text, [bool]$InZtp) 
         }
     }
 }
-$scopeBranch = $schema['allOf'][0]
+# allOf[0]: what scope ztp requires (then). allOf[1]: what a whole design requires (no scope, full, or a planning scope; then).
+# The other items are the rules of every scope.
+$scopeBranch = [ordered]@{ then = $schema['allOf'][0]['then']; else = $schema['allOf'][1]['then'] }
 foreach ($item in @($scopeBranch['else']['allOf'])) { Add-ConditionPath $item['then'] '' (Get-ConditionText $item['if']) $false }
-foreach ($item in @($schema['allOf'] | Select-Object -Skip 1)) { Add-ConditionPath $item['then'] '' (Get-ConditionText $item['if']) $true }
+foreach ($item in @($schema['allOf'] | Select-Object -Skip 2)) { if ($item.Contains('then')) { Add-ConditionPath $item['then'] '' (Get-ConditionText $item['if']) $true } }
 
 # Required keys the scope adds to a section: from the schema's scope branches.
 $fullExtra = @{}; $ztpExtra = @{}

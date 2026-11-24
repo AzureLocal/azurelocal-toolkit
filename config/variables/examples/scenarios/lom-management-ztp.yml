@@ -142,7 +142,7 @@ provisioning:
   os_version: "12.2611.1004.9"
   simplified:
     site_name: "iic-lab-site"
-    maintenance_iso: "2610"
+    maintenance_iso: "latest"
     admin: { username: "administrator", password: "keyvault://kv-iic-lab-mgmt/provisioning-admin-password" }
     maintenance_password: "keyvault://kv-iic-lab-mgmt/maintenance-password" # optional; default: the out-of-box password Microsoft Learn documents
     isolate_san_adapters: true # the default here, because the nodes list san.hbas

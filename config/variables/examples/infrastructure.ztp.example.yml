@@ -150,7 +150,7 @@ provisioning:
   os_version: "12.2611.1004.9" # pin a version
   simplified:
     site_name: "iic-site-01" # resource name of the Microsoft.Edge site
-    maintenance_iso: "2610" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL
+    maintenance_iso: "latest" # latest | a train (YYMM) | a build (10.<train>.<n>.<n>) | a Microsoft URL
     admin: # the local administrator the OS install creates
       username: "administrator"
       password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
@@ -170,7 +170,7 @@ provisioning:
     # retry_provision_os: true
     # skip_azure_check: false
     # include_preview: false
-    # max_train: "2610"
+    # max_train: "<YYMM>"
     # usb_image: { size_gb: 4, name_prefix: "ztp-usb-" }
     # maintenance_environment: { port: 20001, username: "edgeuser" }
     # timeouts: { bootstrap_minutes: 120, bootstrap_voucher_minutes: 90, bootstrap_stall_minutes: 20, voucher_wait_minutes: 120, device_minutes: 30, ready_minutes: 180, network_minutes: 60, adapters_minutes: 10, restore_settle_minutes: 5, bios_minutes: 30, poll_interval_seconds: 60 }

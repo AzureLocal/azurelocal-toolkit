@@ -76,7 +76,7 @@ function Write-ErrorMessage {
     Write-Host "✗ $Message" -ForegroundColor Red
 }
 
-function Invoke-AzRestMethodWithRetry { -ApiVersion "2024-01-01"
+function Invoke-AzRestMethodWithRetry {
     param(
         [string]$Path,
         [string]$Method,
@@ -97,8 +97,9 @@ function Invoke-AzRestMethodWithRetry { -ApiVersion "2024-01-01"
         
         if ($ApiVersion) {
             # Add api-version to the path if not already there
-            if ($Path -notmatch '\ {
-                $params.Path = "$Path`"
+            if ($Path -notmatch 'api-version=') {
+                $separator = if ($Path -match '\?') { '&' } else { '?' }
+                $params.Path = "${Path}${separator}api-version=$ApiVersion"
             }
         }
         
@@ -152,8 +153,7 @@ try {
     
     # Register PolicyInsights provider
     Write-Host "Registering Microsoft.PolicyInsights provider..." -ForegroundColor Yellow
-    Register-AzResourceProvider -ProviderNamespace 'Microsoft.PolicyInsights'
-Out-Null
+    Register-AzResourceProvider -ProviderNamespace 'Microsoft.PolicyInsights' | Out-Null
     
     # Policy initiatives to assign (using built-in definition IDs)
     $policyInitiatives = @(
@@ -190,10 +190,9 @@ Out-Null
                         policyDefinitionId = "/providers/Microsoft.Authorization/policySetDefinitions/$($initiative.Id)"
                         scope = $mgScope
                     }
-                }
-ConvertTo-Json -Depth 10
+                } | ConvertTo-Json -Depth 10
                 
-                $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2023-04-01" -ApiVersion "2024-01-01"
+                $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2023-04-01"
                 if ($result.StatusCode -in 200, 201, 202) {
                     Write-Success "Assigned: $($initiative.DisplayName)"
                 } elseif ($result.StatusCode -eq 409) {
@@ -216,20 +215,17 @@ ConvertTo-Json -Depth 10
     Write-Step "Step 2: Configuring Defender Plans for All Subscriptions"
     
     # Get all subscriptions
-    $subscriptions = Get-AzSubscription -TenantId $TenantId
-Where-Object { $_.State -eq 'Enabled' }
+    $subscriptions = Get-AzSubscription -TenantId $TenantId | Where-Object { $_.State -eq 'Enabled' }
     Write-Host "Found $($subscriptions.Count) active subscription(s)" -ForegroundColor Yellow
     
     foreach ($subscription in $subscriptions) {
         Write-Host "`n--- Processing Subscription: $($subscription.Name) ($($subscription.Id)) ---" -ForegroundColor Cyan
         
         # Set context to subscription
-        Set-AzContext -SubscriptionId $subscription.Id
-Out-Null
+        Set-AzContext -SubscriptionId $subscription.Id | Out-Null
         
         # Register Security provider
-        Register-AzResourceProvider -ProviderNamespace 'Microsoft.Security'
-Out-Null
+        Register-AzResourceProvider -ProviderNamespace 'Microsoft.Security' | Out-Null
         
         #region 2.1 Enable Defender CSPM with all sub-features
         Write-Host "  [2.1] Enabling Defender CSPM with all sub-features..." -ForegroundColor Yellow
@@ -264,10 +260,9 @@ Out-Null
                             }
                         )
                     }
-                }
-ConvertTo-Json -Depth 10
+                } | ConvertTo-Json -Depth 10
                 
-                $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01" -MaxRetries 3 -RetryDelaySeconds 5 -ApiVersion "2024-01-01"
+                $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01" -MaxRetries 3 -RetryDelaySeconds 5
                 if ($result.StatusCode -in 200, 201, 202) {
                     Write-Success "Defender CSPM enabled with all sub-features:"
                     Write-Host "    - Agentless VM scanning" -ForegroundColor Gray
@@ -311,8 +306,7 @@ ConvertTo-Json -Depth 10
                             }
                         )
                     }
-                }
-ConvertTo-Json -Depth 10
+                } | ConvertTo-Json -Depth 10
                 
                 $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -MaxRetries 5 -RetryDelaySeconds 15 -ApiVersion "2024-01-01"
                 if ($result.StatusCode -in 200, 201, 202) {
@@ -328,8 +322,7 @@ ConvertTo-Json -Depth 10
                     properties = @{
                         autoProvision = "On"
                     }
-                }
-ConvertTo-Json
+                } | ConvertTo-Json
                 
                 $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01"
                 if ($result.StatusCode -in 200, 201, 202) {
@@ -345,8 +338,7 @@ ConvertTo-Json
                     properties = @{
                         autoProvision = "On"
                     }
-                }
-ConvertTo-Json
+                } | ConvertTo-Json
                 
                 $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01"
                 if ($result.StatusCode -in 200, 201, 202) {
@@ -373,8 +365,7 @@ ConvertTo-Json
                     properties = @{
                         pricingTier = "Standard"
                     }
-                }
-ConvertTo-Json -Depth 10
+                } | ConvertTo-Json -Depth 10
                 
                 $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01"
                 if ($result.StatusCode -in 200, 201, 202) {
@@ -400,8 +391,7 @@ ConvertTo-Json -Depth 10
                         properties = @{
                             state = "Enabled"
                         }
-                    }
-ConvertTo-Json -Depth 10
+                    } | ConvertTo-Json -Depth 10
                     
                     $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01"
                     if ($result.StatusCode -in 200, 201, 202) {
@@ -445,8 +435,7 @@ ConvertTo-Json -Depth 10
                             }
                         }
                     }
-                }
-ConvertTo-Json -Depth 10
+                } | ConvertTo-Json -Depth 10
                 
                 $result = Invoke-AzRestMethodWithRetry -Path $uri -Method PUT -Payload $body -ApiVersion "2024-01-01"
                 if ($result.StatusCode -in 200, 201, 202) {
@@ -481,15 +470,14 @@ ConvertTo-Json -Depth 10
     Write-Host "  ✓ Defender for SQL Server on Machines enabled on all subscriptions" -ForegroundColor Green
     Write-Host "  ✓ Email notifications configured for all subscriptions" -ForegroundColor Green
     
-    Write-Host "\nPost-Deployment Notes:" -ForegroundColor Cyan
+    Write-Host "`nPost-Deployment Notes:" -ForegroundColor Cyan
     Write-Host "  - SQL Server DCR/workspace configured automatically for Management subscription" -ForegroundColor Gray
     Write-Host "  - Policy compliance evaluation takes ~30 minutes" -ForegroundColor Gray
     Write-Host "  - Guest Configuration agents will deploy to VMs automatically" -ForegroundColor Gray
     
     Write-Host "`nVerification:" -ForegroundColor Cyan
     Write-Host "  Run the following to verify configuration:" -ForegroundColor Gray
-    Write-Host "    Get-AzSecurityPricing
-Select-Object Name, PricingTier, SubPlan" -ForegroundColor Gray
+    Write-Host "    Get-AzSecurityPricing | Select-Object Name, PricingTier, SubPlan" -ForegroundColor Gray
     Write-Host "    Get-AzSecurityContact" -ForegroundColor Gray
     
     Write-Success "`nDefender for Cloud configuration completed successfully!"

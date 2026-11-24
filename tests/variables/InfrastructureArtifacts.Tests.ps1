@@ -107,7 +107,7 @@ Describe 'Tool templates and schemas' {
             $cut = Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool $tool
             @(Get-SchemaError ($cut | ConvertTo-Json -Depth 50) $schemaFile) | Should -BeNullOrEmpty -Because "$($example.Name) cut to $tool"
             $original = @(Get-DataPath $doc '')
-            @(Get-DataPath $cut '' | Where-Object { $original -notcontains $_ }) | Should -BeNullOrEmpty
+            @(Get-DataPath $cut '' | Where-Object { $original -notcontains $_ -and $_ -ne '_metadata.scope' }) | Should -BeNullOrEmpty
         }
     }
 
@@ -137,5 +137,60 @@ Describe 'The cut command' {
         $out | Should -Exist
         $json = ConvertFrom-Yaml (Get-Content $out -Raw) -Ordered | ConvertTo-Json -Depth 50
         @(Get-SchemaError $json (Join-Path $script:Vars 'schema\tools\ztp.schema.json')) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'A cut is a scoped file (_metadata.scope = the tool id)' {
+    BeforeDiscovery {
+        # the tools that read the file (a tool that writes it, Trailwright, has no cut)
+        $script:Readers = @($script:Tools | Where-Object { $_ -ne 'trailwright' })
+    }
+
+    It 'the cut for <_> says which tool it is for' -ForEach $script:Readers {
+        $doc = ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Raw) -Ordered
+        (Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool $_)['_metadata']['scope'] | Should -Be $_
+    }
+
+    It 'every tool with keys is a value of _metadata.scope' {
+        @(Get-ScopeValue -Registry $script:Registry) | Should -Contain 'ztp'
+        foreach ($t in $script:Tools) { @(Get-ScopeValue -Registry $script:Registry) | Should -Contain $t }
+    }
+
+    It 'the cut for <_> passes the validator of the toolkit with no finding (the tool schema and the secret reference rules)' -ForEach @('ztp', 'os_configuration', 'deployment', 'monitoring', 'cicd_infra', 'discovery') {
+        $out = Join-Path $TestDrive "cut.$_.yml"
+        & (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Cut $_ -From (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Out $out 6>$null
+        @(Test-AzlInfrastructure -Path $out) | Should -BeNullOrEmpty
+    }
+
+    It 'a cut keeps a free-key map whole (hardware.bios, nodes[].bios) and never empties it' {
+        $doc = ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Raw) -Ordered
+        $doc['hardware']['bios'] = [ordered]@{ EmbNic1Nic2 = 'Enabled'; SriovGlobalEnable = 'Enabled' }
+        $cut = Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool ztp
+        $cut['hardware']['bios']['EmbNic1Nic2'] | Should -Be 'Enabled'
+        $cut['hardware']['bios']['SriovGlobalEnable'] | Should -Be 'Enabled'
+    }
+
+    It 'the cut for a tool that writes the file is refused' {
+        { & (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Cut trailwright -From (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Out (Join-Path $TestDrive 'x.yml') 6>$null } | Should -Throw '*nothing to cut*'
+    }
+
+    It 'every tool that resolves a keyvault:// reference has the key_vaults list in its cut' -ForEach 'os_configuration', 'deployment', 'monitoring', 'discovery', 'ztp' {
+        $doc = ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Raw) -Ordered
+        $cut = Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool $_
+        @($cut['key_vaults']).Count | Should -BeGreaterThan 0
+    }
+
+    It 'the cut for ztp is read by azurelocal-ztp (Read-ZtpInfrastructure) when that repository is present' -Skip:(-not (Test-Path ($(if ($env:AZL_ZTP_REPO) { $env:AZL_ZTP_REPO } else { 'D:\git\azurelocal\azurelocal-ztp' }) + '\scripts\simplified-provisioning\ZtpEnvironment.Common.ps1'))) {
+        $ztp = if ($env:AZL_ZTP_REPO) { $env:AZL_ZTP_REPO } else { 'D:\git\azurelocal\azurelocal-ztp' }
+        $out = Join-Path $TestDrive 'cut.ztp.yml'
+        & (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Cut ztp -From (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Out $out 6>$null
+        $run = { param($Ztp, $Toolkit, $File)
+            $env:AZL_TOOLKIT_ROOT = $Toolkit
+            . (Join-Path $Ztp 'scripts\simplified-provisioning\ZtpEnvironment.Common.ps1')
+            $null = Read-ZtpInfrastructure -Path $File
+            'read'
+        }
+        $result = & pwsh -NoProfile -Command "& { $($run.ToString()) } -Ztp '$ztp' -Toolkit '$($script:Repo)' -File '$out'" 2>&1 | Out-String
+        $result | Should -Match 'read' -Because $result
     }
 }

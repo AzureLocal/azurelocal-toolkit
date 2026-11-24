@@ -22,7 +22,9 @@
     -Check regenerates everything in memory and exits 1 when a file on disk differs, or when a file in templates/tools or
     schema/tools belongs to no tool (the Pester tests run this).
     -Cut <tool> -From <infrastructure.yml> -Out <file> cuts a real file down to what one tool reads, for example the file
-    azurelocal-ztp or Sonar validates against its tool schema.
+    azurelocal-ztp or Sonar validates against its tool schema. The cut keeps the required children of every object it keeps,
+    copies free-key maps (hardware.bios, nodes[].bios, tags) whole, and sets _metadata.scope to the tool id, so
+    Test-InfrastructureFile.ps1 checks it against schema/tools/<tool>.schema.json (scope ztp: the ztp rules of the full schema).
 
 .PARAMETER RegistryPath
     Default: config/variables/schema/master-registry.yaml.
@@ -64,6 +66,8 @@ $variablesRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../../..')
 $registry = Get-RegistryDocument -Path $RegistryPath
 $tools = @(Get-ToolWithKey -Registry $registry)
+# every tool that has keys is a value of _metadata.scope (a cut says which tool it is for); stops when one is missing
+$null = Get-ScopeValue -Registry $registry
 
 if ($PSCmdlet.ParameterSetName -eq 'Cut') {
     if ($Cut -notin $tools) {
@@ -71,6 +75,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Cut') {
         if ($Cut -in $known) { throw "The tool '$Cut' reads no key of infrastructure.yml, so there is nothing to cut. See its note in _tool_catalog." }
         throw "Unknown tool '$Cut'. Tools with keys: $($tools -join ', ')."
     }
+    if ((Get-ToolCatalog -Registry $registry)[$Cut]['relation'] -ne 'reads') { throw "The tool '$Cut' writes or produces the file (relation $((Get-ToolCatalog -Registry $registry)[$Cut]['relation'])), it does not read a part of it, so there is nothing to cut. Trailwright's own export is a whole design (_metadata.scope trailwright)." }
     $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $From -Raw) -Ordered
     $result = Select-InfrastructureTool -Registry $registry -Document $doc -Tool $Cut
     if (-not $Out) { $Out = Join-Path (Split-Path -Parent (Resolve-Path -LiteralPath $From)) ("{0}.{1}.yml" -f [IO.Path]::GetFileNameWithoutExtension($From), ($Cut -replace '_', '-')) }

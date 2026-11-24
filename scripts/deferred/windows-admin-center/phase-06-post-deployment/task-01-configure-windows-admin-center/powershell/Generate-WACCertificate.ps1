@@ -36,16 +36,16 @@ Write-Host ""
 
 # Get server info
 $computerName = $env:COMPUTERNAME
-$fqdn = \"$computerName.iic.improbability.cloud\"
+$fqdn = "$computerName.iic.improbability.cloud"
 
 # Define all DNS names for the certificate
 $dnsNames = @(
     $fqdn,
     $computerName,
-    \"WAC01.iic.improbability.cloud\",
-    \"WAC01\",
-    \"192.0.2.25\",
-    \"localhost\"
+    "WAC01.iic.improbability.cloud",
+    "WAC01",
+    "192.0.2.25",
+    "localhost"
 )
 
 Write-Host "Certificate will be valid for:" -ForegroundColor Yellow

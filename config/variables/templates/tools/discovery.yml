@@ -1,16 +1,16 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Hardware discovery ('discovery') reads (a strict subset of the master file). Schema 5.6.32.
+# Template for the part of infrastructure.yml that Hardware discovery ('discovery') reads (a strict subset of the master file). Schema 5.6.33.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.0"
+  schema_version: "5.6.33"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp, trailwright
-  scope: "full"
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  scope: "discovery"
   # Your own version of this file.
   # used by: trailwright
   file_version: "1.0.0"
@@ -21,6 +21,19 @@ _metadata:
   generated_by: ""
   # Free text about this file for the people who keep it.
   notes: ""
+
+# Every Key Vault that a keyvault:// reference in this file names, with where it is.
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
+key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
+  - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    resource_group: "rg-iic-mgmt-01"
 
 # (since 5.6.13) 
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
@@ -56,6 +69,9 @@ nodes:
     # The machine's management port and address (schema 5.0 and 5.1).
     # used by: ztp, os_configuration
     management:
+      # Management address.
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
+      ip_address: "192.0.2.11"
       # MAC of the management port.
       # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery, trailwright
       mac_address: "00:00:5E:00:53:11"
@@ -66,7 +82,7 @@ nodes:
       # required; used by: ztp, os_configuration, discovery
       - name: "Embedded NIC 1"
         # The port's identity.
-        # required; used by: ztp, os_configuration, discovery
+        # used by: ztp, os_configuration, discovery
         mac_address: "00:00:5E:00:53:11"
         # Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.
         # used by: ztp, os_configuration, discovery

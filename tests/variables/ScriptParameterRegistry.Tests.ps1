@@ -307,6 +307,18 @@ Describe 'The generator' {
         Remove-Item -LiteralPath (Join-Path $script:Mini 'scripts/area/Broken.ps1')
     }
 
+    It 'makes -Check and the writer exit 1 for a syntax error outside the param() block (the parameters are still read)' {
+        Set-Content -LiteralPath (Join-Path $script:Mini 'scripts/area/BrokenBody.ps1') -Encoding utf8NoBOM -Value "param([string]`$A)`nWrite-Host `"unterminated"
+        $before = Get-Content -LiteralPath $script:MiniRegistry -Raw
+        $global:LASTEXITCODE = 0
+        & $script:Generator -RegistryPath $script:MiniRegistry -Root $script:Mini -Check *>$null 2>$null
+        $LASTEXITCODE | Should -Be 1
+        $global:LASTEXITCODE = 0
+        & $script:Generator -RegistryPath $script:MiniRegistry -Root $script:Mini *>$null 2>$null
+        $LASTEXITCODE | Should -Be 1
+        (Get-Content -LiteralPath $script:MiniRegistry -Raw) | Should -BeExactly $before
+        Remove-Item -LiteralPath (Join-Path $script:Mini 'scripts/area/BrokenBody.ps1')
+    }
     It 'warns about a default that looks like an environment value' {
         Set-Content -LiteralPath (Join-Path $script:Mini 'scripts/area/Env.ps1') -Encoding utf8NoBOM -Value "param([string]`$Address = '10.20.30.40', [string]`$Documentation = '192.0.2.10')"
         $warnings = @(& $script:Generator -RegistryPath $script:MiniRegistry -Root $script:Mini -Check 3>&1 2>$null 6>$null | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message })

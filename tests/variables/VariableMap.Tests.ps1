@@ -130,7 +130,12 @@ Describe 'The tools in the map are the tool files' {
         # a leaf of the tool schema (other than the file's own _metadata) must be one the map gives to this tool
         $leafRows = @($script:Rows | Where-Object { $_.kind -eq 'infrastructure.yml' -and $_.path -notlike '_metadata.*' } | ForEach-Object path)
         $schemaLeaves = @($leafRows | Where-Object { $inSchema.Contains($_) })
-        $schemaLeaves.Count | Should -Be $mapped.Count
+        # a tool schema also holds the required children of the objects it keeps (identity.active_directory keeps domain_fqdn, site keeps
+        # name): keys the full schema requires, though the tool does not name them in used_by
+        $requiredInFull = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($s in (Get-InfrastructureSchemaVariable -SchemaPath (Join-Path $script:Vars 'schema\infrastructure.schema.json'))) { if ($s.Required) { [void]$requiredInFull.Add($s.Path) } }
+        $notMapped = @($schemaLeaves | Where-Object { $mapped -notcontains $_ })
+        @($notMapped | Where-Object { -not $requiredInFull.Contains($_) }) | Should -BeNullOrEmpty -Because "$name's schema holds keys that are neither read by it nor required children of a key it reads"
     }
 }
 

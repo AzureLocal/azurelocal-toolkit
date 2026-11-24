@@ -83,6 +83,6 @@ provisioning:
   os_version: "12.2611.1004.9"
   simplified:
     site_name: "iic-campus-site"
-    maintenance_iso: "2610"
+    maintenance_iso: "latest"
     admin: { username: "administrator", password: "keyvault://kv-iic-campus-mgmt/provisioning-admin-password" }
     media_share: { name: "ztp-virtual-usb", host_adapter: "Management" }

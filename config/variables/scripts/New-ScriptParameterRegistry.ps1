@@ -375,7 +375,7 @@ foreach ($file in $scripts) {
     $scanned++
     $info = Get-ScriptParameter -Full $file.Full -Relative $file.Relative
     if ($info.Error) { $problems.Add("$($file.Relative): the script does not parse: $($info.Error)"); continue }
-    if ($info.Syntax) { Write-Warning "$($file.Relative): the script has a syntax error outside its param() block ($($info.Syntax)). Its parameters are registered. Fix the script." }
+    if ($info.Syntax) { $problems.Add("$($file.Relative): the script does not parse: $($info.Syntax) (outside its param() block: its parameters are still registered). Fix the script.") }
     if (-not $info.Parameters.Count) { continue }
     $withParameters++
     $known = if ($hand.ContainsKey($file.Relative)) { $hand[$file.Relative] } else { $null }

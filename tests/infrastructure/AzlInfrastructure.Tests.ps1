@@ -1521,3 +1521,50 @@ Describe 'Schema 5.6.29: deployment.events_directory (Resolve-AzlEventsDirectory
         @($findings | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Schema 5.6.33: planning scopes and tool cuts (_metadata.scope)' {
+    BeforeAll {
+        $script:Full = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
+        function Remove-PortMac($d) {
+            foreach ($n in $d.nodes) {
+                foreach ($a in $n.network_adapters) { $a.Remove('mac_address') }
+                if ($n.Contains('management') -and $n.management.Contains('mac_address')) { $n.management.Remove('mac_address') }
+            }
+        }
+    }
+
+    It 'a file with scope full needs the MACs of its ports' {
+        $f = Get-FindingFor { param($d) Remove-PortMac $d }
+        @($f | Where-Object { $_.Severity -eq 'error' -and $_.Message -match 'mac_address' }) | Should -Not -BeNullOrEmpty
+    }
+    It 'a file with the planning scope <Scope> needs no MAC (hardware discovery fills them), and nothing else is relaxed' -ForEach @(@{ Scope = 'trailwright' }, @{ Scope = 'surveyor' }) {
+        $f = Get-FindingFor -Change ([scriptblock]::Create("param(`$d) `$d._metadata.scope = '$Scope'; Remove-PortMac `$d"))
+        @($f | Where-Object { $_.Severity -eq 'error' -and $_.Message -match 'mac_address' }) | Should -BeNullOrEmpty
+        $f2 = Get-FindingFor -Change ([scriptblock]::Create("param(`$d) `$d._metadata.scope = '$Scope'; `$d.Remove('cluster')"))
+        @($f2 | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'cluster' }) | Should -Not -BeNullOrEmpty -Because 'a planning scope is a whole design'
+    }
+    It 'reads a tool id as the scope and checks the file against the tool schema' {
+        $f = Get-FindingFor { param($d) $d._metadata.scope = 'ztp'; $d['unknown_section'] = 1 }
+        @($f) | Should -Not -BeNullOrEmpty
+    }
+    It 'a value that is neither a scope nor a tool is reported as a schema error on _metadata.scope' {
+        $f = Get-FindingFor { param($d) $d._metadata.scope = 'nonsense' }
+        @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq '_metadata.scope' }) | Should -Not -BeNullOrEmpty
+    }
+    It 'a cut for a tool whose scope is a tool id passes the validator, and a reference to a vault the cut lacks is still found' {
+        $repoRoot = $repo
+        $out = Join-Path $TestDrive 'cut.deployment.yml'
+        & (Join-Path $repoRoot 'config\variables\scripts\New-InfrastructureArtifacts.ps1') -Cut deployment -From $script:Full -Out $out 6>$null
+        @(Test-AzlInfrastructure -Path $out) | Should -BeNullOrEmpty
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $out -Raw) -Ordered
+        $doc.Remove('key_vaults')
+        $bad = Join-Path $TestDrive 'cut.deployment.novault.yml'
+        Set-Content -LiteralPath $bad -Value (ConvertTo-Yaml $doc)
+        @(Test-AzlInfrastructure -Path $bad | Where-Object Id -eq 'AZL-001') | Should -Not -BeNullOrEmpty
+    }
+    It 'Import-AzlInfrastructure reads a cut without a schema argument' {
+        $out = Join-Path $TestDrive 'cut.os_configuration.yml'
+        & (Join-Path $repo 'config\variables\scripts\New-InfrastructureArtifacts.ps1') -Cut os_configuration -From $script:Full -Out $out 6>$null
+        { Import-AzlInfrastructure -Path $out } | Should -Not -Throw
+    }
+}

@@ -10,7 +10,7 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.69. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.70. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
@@ -990,7 +990,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | `_metadata.schema_version` | string, required | operator | ztp; os_configuration; deployment; monitoring; trailwright | arm-deployment; os-configuration; sonar; ztp |  | read |
-| `_metadata.scope` | default `full`, one of `full`, `ztp` | operator; default | ztp; trailwright | infrastructure-helpers |  | read |
+| `_metadata.scope` | default `full`, one of `full`, `ztp`, `trailwright`, `surveyor`, `os_configuration`, `deployment`, ... (14) | operator; default | ztp; trailwright | infrastructure-helpers |  | read |
 | `_metadata.file_version` | string | operator | trailwright |  |  | placeholder |
 | `_metadata.last_updated` | string (date) | operator |  |  |  | placeholder |
 | `_metadata.generated_by` | string | operator | trailwright |  |  | placeholder |
@@ -1322,9 +1322,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `key_vaults[].name` | string (key_vault_name), required | operator | ztp; deployment; cicd_infra; trailwright; ansible; terraform | arm-deployment; cicd-infra; pre-cluster-verification; ztp |  | read |
-| `key_vaults[].subscription_id` | string (guid), required | operator | ztp; deployment; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification |  | read |
-| `key_vaults[].resource_group` | string (resource_group), required | operator | ztp; deployment; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification |  | read |
+| `key_vaults[].name` | string (key_vault_name), required | operator | ztp; os_configuration; deployment; monitoring; discovery; cicd_infra; trailwright; ansible; terraform | arm-deployment; cicd-infra; pre-cluster-verification; ztp |  | read |
+| `key_vaults[].subscription_id` | string (guid), required | operator | ztp; os_configuration; deployment; monitoring; discovery; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification |  | read |
+| `key_vaults[].resource_group` | string (resource_group), required | operator | ztp; os_configuration; deployment; monitoring; discovery; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification |  | read |
 | `key_vaults[].purpose` | string | operator | cicd_infra; trailwright | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `key_vaults[].soft_delete_retention_days` | integer, default `90` | operator; default | deployment; terraform | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `key_vaults[].allowed_ip_ranges` | array | operator | terraform | (part: toolkit-legacy-scripts) |  | read-as-part |
@@ -1587,7 +1587,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].management.mac_address` | string (mac) | operator; Trailwright; Dell/Redfish discovery (proposes, applies) | ztp; os_configuration; discovery; trailwright | discovery; infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters | read |
 | `nodes[].management.adapter_name` | string | operator | ztp; os_configuration; ansible | infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters | read |
 | `nodes[].network_adapters[].name` | string, required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) | read |
-| `nodes[].network_adapters[].mac_address` | string (mac), required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
+| `nodes[].network_adapters[].mac_address` | string (mac) | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
 | `nodes[].network_adapters[].slot` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
 | `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].network_adapters[].pci_location.bus` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |

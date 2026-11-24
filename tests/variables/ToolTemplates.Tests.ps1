@@ -43,7 +43,18 @@ BeforeAll {
         }
     }
 
-    # The keys of a template that are neither a key the tool is given, nor a section above one, nor the file's own _metadata.
+    # the keys the registry marks required (required: true): a kept object keeps them in a template and a cut
+    $script:RequiredPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($v in $script:Variables) {
+        if ($v.Required -eq $true) { [void]$script:RequiredPaths.Add($v.Path) }
+        # an entry in the 4.0 form says which children are required in file_schema.required (site: code and name)
+        if ($v.Node -is [System.Collections.IDictionary] -and $v.Node.Contains('file_schema') -and $v.Node['file_schema'] -is [System.Collections.IDictionary] -and $v.Node['file_schema'].Contains('required')) {
+            foreach ($child in @($v.Node['file_schema']['required'])) { [void]$script:RequiredPaths.Add("$($v.Path).$child") }
+        }
+    }
+
+    # The keys of a template that are neither a key the tool is given, nor a section above one, nor a required child of a kept
+    # object (and its required children), nor the file's own _metadata.
     function Get-ExtraKey([string[]]$Template, [string[]]$Tagged) {
         $allowed = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($p in $Tagged) {
@@ -52,6 +63,15 @@ BeforeAll {
             $up = $p
             while ($up -match '^(?<parent>.+)(\[\]|\.[^.\[\]]+)$') { $up = $Matches['parent']; [void]$allowed.Add($up); [void]$allowed.Add($up + '[]') }
         }
+        do {
+            $added = $false
+            foreach ($t in $Template) {
+                if ($allowed.Contains($t) -or -not $script:RequiredPaths.Contains($t)) { continue }
+                if ($t -match '^(?<parent>.+?)(\[\])?\.[^.\[\]]+$' -and $allowed.Contains($Matches['parent'])) {
+                    [void]$allowed.Add($t); [void]$allowed.Add($t + '[]'); [void]$allowed.Add($t + '.*'); $added = $true
+                }
+            }
+        } while ($added)
         $Template | Where-Object { $_ -ne '_metadata' -and $_ -notlike '_metadata.*' -and -not $allowed.Contains($_) }
     }
 }
@@ -96,7 +116,7 @@ Describe 'The list of tools' {
         $e = $script:Catalog[$_]
         $e['title'] | Should -Not -BeNullOrEmpty
         $e['kind'] | Should -BeIn 'toolkit', 'external'
-        $e['relation'] | Should -BeIn 'reads', 'writes'
+        $e['relation'] | Should -BeIn 'reads', 'writes', 'produces'
         if ($e['kind'] -eq 'external') {
             $e['repository'] | Should -Not -BeNullOrEmpty
             @($e['evidence']).Count | Should -BeGreaterThan 0

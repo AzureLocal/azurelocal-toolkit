@@ -1,16 +1,16 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.32.
+# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.33.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.0"
+  schema_version: "5.6.33"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp, trailwright
-  scope: "full"
+  # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer; default: "full"; used by: ztp, trailwright
+  scope: "ansible"
   # Your own version of this file.
   # used by: trailwright
   file_version: "1.0.0"
@@ -51,22 +51,46 @@ azure:
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra, terraform
   automation_identity:
+    # The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.
+    # required; one of: managed_identity | service_principal; used by: cicd_infra
+    type: "managed_identity"
+    # Managed identity resource name, or the service principal's display name.
+    # required; used by: cicd_infra
+    name: "id-iic-cicd-01"
     # Client (application) ID of the identity (GUID).
     # used by: cicd_infra, ansible
     client_id: "00000000-0000-0000-0000-000000000000"
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
-# used by: ztp, cicd_infra
+# used by: ztp, cicd_infra, os_configuration, deployment, monitoring, discovery
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, deployment, cicd_infra, trailwright, ansible, terraform
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, ansible, terraform
   - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
+    # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform
+    resource_group: "rg-iic-mgmt-01"
 
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
   # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
+  # The quorum witness of the cluster.
+  # required
+  witness:
+    # cloud (an Azure Storage account), file_share (disconnected operations), or none.
+    # required; one of: cloud | file_share | none; used by: deployment, trailwright
+    type: "cloud"
+  # The Key Vault the deployment uses for the instance's secrets (one per instance).
+  # required; used by: deployment
+  key_vault:
+    # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
+    # required; used by: deployment, trailwright, terraform
+    name: "kv-iic-azl-01"
 
 # The machines, one entry each.
 # used by: deployment, monitoring
@@ -128,6 +152,9 @@ identity:
   # The deployment's local administrator on every machine.
   # required; used by: os_configuration, deployment
   local_admin:
+    # User name of the deployment local administrator on every machine (ARM localAdminUserName).
+    # required; used by: os_configuration, deployment, monitoring, trailwright
+    username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
     # required; used by: os_configuration, deployment, trailwright, ansible
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
@@ -175,7 +202,10 @@ identity:
     dns_forwarders: ["192.0.2.53"]
     # Groups created in the OU for administration of the instance.
     # used by: ansible
-    security_groups: []
+    security_groups:
+      # Name of the security group in Active Directory.
+      # required; used by: os_configuration
+      - name: "sg-iic-azl-01-admins"
 
 # Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring.
 operations:
