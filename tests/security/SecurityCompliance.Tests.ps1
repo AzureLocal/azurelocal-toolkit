@@ -18,6 +18,10 @@ BeforeAll {
     $moduleLine = 'Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, ''..'', ''..'', ''..'', ''..'', ''common'', ''infrastructure'', ''AzlInfrastructure.psm1''))) -Force'
     $script:Text | Should -Match ([regex]::Escape($moduleLine))
     $realModule = "Import-Module '$([IO.Path]::Combine($repo, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))' -Force"
+    # The node questions go through the remoting module, also loaded by a path relative to the script.
+    $remotingLine = 'Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, ''..'', ''..'', ''..'', ''..'', ''common'', ''remoting'', ''AzlClusterConnection.psm1''))) -Force'
+    $script:Text | Should -Match ([regex]::Escape($remotingLine))
+    $script:Text = $script:Text.Replace($remotingLine, "Import-Module '$([IO.Path]::Combine($repo, 'scripts', 'common', 'remoting', 'AzlClusterConnection.psm1'))' -Force")
     $script:Copy = Join-Path $TestDrive 'Test-SecurityCompliance.ps1'
     Set-Content -LiteralPath $script:Copy -Value ((($script:Text.Replace($moduleLine, $realModule)) -split "`r?`n" | Where-Object { $_ -notmatch '^#Requires -Module' }) -join "`n")
 
@@ -28,8 +32,10 @@ BeforeAll {
     function Get-AzPolicyState { param($ResourceGroupName, $ErrorAction) @() }
     function Get-ClusterNode { param($Cluster) @([pscustomobject]@{ Name = 'iic-01-n01' }) }
     function Invoke-Command {
-        param($ComputerName, $ScriptBlock)
+        param($ComputerName, $ScriptBlock, $ErrorAction, $Credential, $ArgumentList, [switch]$UseSSL)
         $body = $ScriptBlock.ToString()
+        # the connection probe and the cluster question of the remoting module run against the stubs
+        if ($body -match 'Get-ClusterNode|^\s*\$true\s*$') { return (& $ScriptBlock) }
         if ($body -match 'Get-BitLockerVolume') { return @([pscustomobject]@{ MountPoint = 'C:'; VolumeStatus = 'FullyEncrypted'; ProtectionStatus = 'On'; EncryptionPercentage = 100 }) }
         if ($body -match 'Get-MpComputerStatus') { return [pscustomobject]@{ RealTimeProtection = $true; AntivirusEnabled = $true; SignatureAge = $global:AzlScSignatureAge; LastScan = [datetime]::Now } }
         @{ EnabledPolicies = 5 }

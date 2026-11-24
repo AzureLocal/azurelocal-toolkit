@@ -13,13 +13,21 @@
 
     It reads the cluster and changes nothing in it: the live migration check reads the settings of each node and the drain check reads the
     state of the cluster; no VM is moved and no node is drained. Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        cluster.name
-    The script does not sign in and asks nothing. Run it as an account that may read the cluster.
+        cluster.name, nodes[] (the management addresses), identity.active_directory (the deployment user and its secret reference)
+    Run it from the management host: every question is asked on a node over PowerShell remoting (scripts/common/remoting/AzlClusterConnection.psm1),
+    so this host needs neither the failover clustering tools nor membership of the cluster's domain. The script asks nothing.
 
-    Exit codes: 0 the quorum is healthy and no CSV failed; 1 the quorum check or a CSV check failed; 2 cluster.name is missing or the file cannot be read.
+    Exit codes: 0 the quorum is healthy and no CSV failed; 1 the quorum check or a CSV check failed, or the cluster could not be reached; 2
+    cluster.name is missing or the file cannot be read.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys listed in the description are read; the whole file is not validated here.
+
+.PARAMETER ComputerName
+    Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers at its management address.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, through the toolkit's secret resolver.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
@@ -49,7 +57,13 @@ param(
     [string]$OutputPath = ".\logs\validation-reports",
 
     [Parameter(Mandatory = $false)]
-    [switch]$SkipMigrationTest
+    [switch]$SkipMigrationTest,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ComputerName,
+
+    [Parameter(Mandatory = $false)]
+    [pscredential]$Credential
 )
 
 #Requires -Version 7.0
@@ -57,6 +71,42 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
+
+# The questions, each run on a node of the cluster. They return plain values only (no live cluster objects cross the remoting boundary).
+$Remote = @{
+    Quorum    = {
+        $q = Get-ClusterQuorum
+        $r = $q.QuorumResource
+        [pscustomobject]@{ QuorumType = [string]$q.QuorumType; WitnessName = $(if ($r) { [string]$r.Name } else { '' }); WitnessState = $(if ($r) { [string]$r.State } else { '' }) }
+    }
+    Csv       = {
+        @(Get-ClusterSharedVolume | ForEach-Object {
+                [pscustomobject]@{ Name = [string]$_.Name; State = [string]$_.State; FaultState = [string]$_.SharedVolumeInfo.FaultState; OwnerNode = [string]$_.OwnerNode.Name }
+            })
+    }
+    Migration = {
+        $vmHost = Get-VMHost
+        [pscustomobject]@{
+            Enabled            = [bool]$vmHost.VirtualMachineMigrationEnabled
+            AuthenticationType = [string]$vmHost.VirtualMachineMigrationAuthenticationType
+            MaxMigrations      = [int]$vmHost.MaximumVirtualMachineMigrations
+            PerformanceOption  = [string]$vmHost.VirtualMachineMigrationPerformanceOption
+        }
+    }
+    FirstVm   = {
+        # no Select-Object -First here: over remoting it stops the pipeline and the call fails with "The pipeline has been stopped" (seen on a live instance)
+        $all = @(Get-ClusterResource | Where-Object { $_.ResourceType -eq 'Virtual Machine' })
+        $vm = if ($all.Count -gt 0) { $all[0] } else { $null }
+        if ($vm) { [pscustomobject]@{ Name = [string]$vm.Name; OwnerNode = [string]$vm.OwnerNode.Name } }
+    }
+    Cau       = {
+        $run = try { Get-CauRun -ErrorAction SilentlyContinue } catch { $null }
+        $plugins = try { @(Get-CauPlugin -ErrorAction SilentlyContinue) } catch { @() }
+        [pscustomobject]@{ RunStatus = $(if ($run) { [string]$run.Status } else { '' }); PluginCount = @($plugins).Count }
+    }
+    Nodes     = { @(Get-ClusterNode | ForEach-Object { [pscustomobject]@{ Name = [string]$_.Name; State = [string]$_.State; DrainStatus = [string]$_.DrainStatus } }) }
+}
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -69,27 +119,24 @@ function Write-Log {
 #region Validation Functions
 
 function Test-QuorumConfiguration {
-    param([string]$Cluster)
-
     Write-Log "Validating quorum configuration..." -Level "HEADER"
 
     try {
-        $quorum = Get-ClusterQuorum -Cluster $Cluster
+        $quorum = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $Remote.Quorum
         Write-Log "  Quorum type: $($quorum.QuorumType)" -Level "INFO"
 
         $witnessOk = $false
-        if ($quorum.QuorumResource) {
-            $resourceState = ($quorum.QuorumResource).State
-            Write-Log "  Witness resource: $($quorum.QuorumResource.Name), State=$resourceState" -Level $(if ($resourceState -eq 'Online') { "SUCCESS" } else { "WARN" })
-            $witnessOk = $resourceState -eq 'Online'
+        if ($quorum.WitnessName) {
+            Write-Log "  Witness resource: $($quorum.WitnessName), State=$($quorum.WitnessState)" -Level $(if ($quorum.WitnessState -eq 'Online') { "SUCCESS" } else { "WARN" })
+            $witnessOk = $quorum.WitnessState -eq 'Online'
         }
         else {
             Write-Log "  No quorum witness configured" -Level "WARN"
         }
 
         return [PSCustomObject]@{
-            QuorumType   = $quorum.QuorumType.ToString()
-            WitnessState = if ($quorum.QuorumResource) { $resourceState } else { "None" }
+            QuorumType   = [string]$quorum.QuorumType
+            WitnessState = if ($quorum.WitnessName) { [string]$quorum.WitnessState } else { "None" }
             Status       = if ($witnessOk) { "PASS" } else { "WARN" }
         }
     }
@@ -100,61 +147,50 @@ function Test-QuorumConfiguration {
 }
 
 function Test-CsvHealth {
-    param([string]$Cluster)
-
     Write-Log "Validating Cluster Shared Volumes..." -Level "HEADER"
     $results = @()
 
     try {
-        $csvs = Get-ClusterSharedVolume -Cluster $Cluster
+        $csvs = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $Remote.Csv)
 
         foreach ($csv in $csvs) {
-            $state = $csv.State
-            $faultState = $csv.SharedVolumeInfo.FaultState
-            $ok = ($state -eq 'Online') -and ($faultState -eq 'NoFaults')
+            $ok = ($csv.State -eq 'Online') -and ($csv.FaultState -eq 'NoFaults')
 
-            Write-Log "  $($csv.Name): State=$state, FaultState=$faultState, Owner=$($csv.OwnerNode.Name)" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
+            Write-Log "  $($csv.Name): State=$($csv.State), FaultState=$($csv.FaultState), Owner=$($csv.OwnerNode)" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
 
             $results += [PSCustomObject]@{
-                Name       = $csv.Name
-                State      = $state.ToString()
-                FaultState = $faultState.ToString()
-                OwnerNode  = $csv.OwnerNode.Name
+                Name       = [string]$csv.Name
+                State      = [string]$csv.State
+                FaultState = [string]$csv.FaultState
+                OwnerNode  = [string]$csv.OwnerNode
                 Status     = if ($ok) { "PASS" } else { "FAIL" }
             }
         }
     }
     catch {
         Write-Log "  CSV check failed — $_" -Level "ERROR"
+        $results += [PSCustomObject]@{ Name = 'Cluster Shared Volumes'; State = 'Error'; FaultState = 'Error'; OwnerNode = ''; Status = 'FAIL' }
     }
 
     return $results
 }
 
 function Test-LiveMigrationSettings {
-    param([string]$Cluster, [string[]]$NodeNames, [switch]$Skip)
+    param([string[]]$NodeNames, [switch]$Skip)
 
     Write-Log "Validating live migration configuration..." -Level "HEADER"
     $results = @()
 
     foreach ($node in $NodeNames) {
         try {
-            $migrationSettings = Invoke-Command -ComputerName $node -ScriptBlock {
-                $vmHost = Get-VMHost
-                [PSCustomObject]@{
-                    Enabled              = $vmHost.VirtualMachineMigrationEnabled
-                    AuthenticationType   = $vmHost.VirtualMachineMigrationAuthenticationType
-                    MaxMigrations        = $vmHost.MaximumVirtualMachineMigrations
-                    PerformanceOption    = $vmHost.VirtualMachineMigrationPerformanceOption
-                }
-            }
+            $migrationSettings = Invoke-AzlClusterCommand -Connection $connection -Node $node -ScriptBlock $Remote.Migration
 
             Write-Log "  $node - Migration=$($migrationSettings.Enabled), Auth=$($migrationSettings.AuthenticationType), Max=$($migrationSettings.MaxMigrations)" -Level $(if ($migrationSettings.Enabled) { "SUCCESS" } else { "WARN" })
 
             $results += [PSCustomObject]@{
                 Node    = $node
-                Enabled = $migrationSettings.Enabled
-                Auth    = $migrationSettings.AuthenticationType
+                Enabled = [bool]$migrationSettings.Enabled
+                Auth    = [string]$migrationSettings.AuthenticationType
                 Status  = if ($migrationSettings.Enabled) { "PASS" } else { "FAIL" }
             }
         }
@@ -166,9 +202,9 @@ function Test-LiveMigrationSettings {
     if (-not $Skip) {
         Write-Log "  Checking for test VM to validate live migration..." -Level "INFO"
         try {
-            $testVm = Get-ClusterResource -Cluster $Cluster | Where-Object { $_.ResourceType -eq 'Virtual Machine' } | Select-Object -First 1
+            $testVm = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $Remote.FirstVm
             if ($testVm) {
-                Write-Log "  Found VM: $($testVm.Name) on $($testVm.OwnerNode.Name)" -Level "INFO"
+                Write-Log "  Found VM: $($testVm.Name) on $($testVm.OwnerNode)" -Level "INFO"
                 Write-Log "  Skipping actual migration (use manual test for production validation)" -Level "INFO"
             }
             else {
@@ -187,26 +223,18 @@ function Test-LiveMigrationSettings {
 }
 
 function Test-ClusterAwareUpdating {
-    param([string]$Cluster)
-
     Write-Log "Validating Cluster-Aware Updating readiness..." -Level "HEADER"
 
     try {
-        $cauRun = Invoke-Command -ComputerName $Cluster -ScriptBlock {
-            try { Get-CauRun -ErrorAction SilentlyContinue } catch { $null }
-        }
-        if ($cauRun) {
-            Write-Log "  CAU run status: $($cauRun.Status)" -Level "INFO"
+        $cau = Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $Remote.Cau
+        if ($cau.RunStatus) {
+            Write-Log "  CAU run status: $($cau.RunStatus)" -Level "INFO"
         }
         else {
             Write-Log "  No active CAU run — ready for updates" -Level "SUCCESS"
         }
-
-        $cauPlugin = Invoke-Command -ComputerName $Cluster -ScriptBlock {
-            try { Get-CauPlugin -ErrorAction SilentlyContinue } catch { $null }
-        }
-        if ($cauPlugin) {
-            Write-Log "  CAU plugins available: $(@($cauPlugin).Count)" -Level "INFO"
+        if ($cau.PluginCount -gt 0) {
+            Write-Log "  CAU plugins available: $($cau.PluginCount)" -Level "INFO"
         }
     }
     catch {
@@ -215,19 +243,12 @@ function Test-ClusterAwareUpdating {
 }
 
 function Test-NodeDrainReadiness {
-    param([string]$Cluster, [string[]]$NodeNames)
+    param([object[]]$ClusterNodes)
 
     Write-Log "Validating node drain readiness..." -Level "HEADER"
 
-    foreach ($node in $NodeNames) {
-        try {
-            $clusterNode = Get-ClusterNode -Cluster $Cluster -Name $node
-            $drainStatus = $clusterNode.DrainStatus
-            Write-Log "  $node - DrainStatus=$drainStatus, State=$($clusterNode.State)" -Level $(if ($clusterNode.State -eq 'Up') { "SUCCESS" } else { "WARN" })
-        }
-        catch {
-            Write-Log "  ${node}: Drain readiness check failed — $_" -Level "ERROR"
-        }
+    foreach ($clusterNode in $ClusterNodes) {
+        Write-Log "  $($clusterNode.Name) - DrainStatus=$($clusterNode.DrainStatus), State=$($clusterNode.State)" -Level $(if ($clusterNode.State -eq 'Up') { "SUCCESS" } else { "WARN" })
     }
 }
 
@@ -247,33 +268,36 @@ if (-not $ClusterName) {
     Write-Log "cluster.name is missing in the infrastructure file. It is the name of the cluster to test." -Level "ERROR"
     exit 2
 }
-$nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+try { $clusterNodes = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock $Remote.Nodes) }
+catch { Write-Log "The cluster could not be reached: $($_.Exception.Message)" -Level "ERROR"; exit 1 }
+$nodes = @($clusterNodes | ForEach-Object { [string]$_.Name })
 Write-Log "Cluster: $ClusterName ($($nodes.Count) nodes)" -Level "INFO"
 Write-Host ""
 
 $report = @{ Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; ClusterName = $ClusterName; Sections = @{} }
 
 # 1. Quorum
-$quorumResult = Test-QuorumConfiguration -Cluster $ClusterName
+$quorumResult = Test-QuorumConfiguration
 $report.Sections["Quorum"] = $quorumResult
 Write-Host ""
 
 # 2. CSV Health
-$csvResults = Test-CsvHealth -Cluster $ClusterName
+$csvResults = Test-CsvHealth
 $report.Sections["CSV"] = $csvResults
 Write-Host ""
 
 # 3. Live Migration
-$migrationResults = Test-LiveMigrationSettings -Cluster $ClusterName -NodeNames $nodes -Skip:$SkipMigrationTest
+$migrationResults = Test-LiveMigrationSettings -NodeNames $nodes -Skip:$SkipMigrationTest
 $report.Sections["LiveMigration"] = $migrationResults
 Write-Host ""
 
 # 4. CAU
-Test-ClusterAwareUpdating -Cluster $ClusterName
+Test-ClusterAwareUpdating
 Write-Host ""
 
 # 5. Node Drain
-Test-NodeDrainReadiness -Cluster $ClusterName -NodeNames $nodes
+Test-NodeDrainReadiness -ClusterNodes $clusterNodes
 Write-Host ""
 
 # Save report

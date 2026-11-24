@@ -16,12 +16,20 @@
         cluster.name, azure.subscription_id, azure.resource_group
         security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark: when the design turns the free
         Defender for Cloud level (or the benchmark assignment) off, that check is not run. Both are true when the key is absent (the registry default).
-    The script does not sign in and asks nothing: run Connect-AzAccount first, and run it as an account that may read the cluster.
+    The script does not sign in to Azure and asks nothing: run Connect-AzAccount first. The node questions are asked over PowerShell remoting, each node at its
+    own management address (nodes[]), as the deployment user of the file (identity.active_directory, through the secret resolver) or -Credential
+    (scripts/common/remoting/AzlClusterConnection.psm1), so the management host needs neither the failover clustering tools nor membership of the domain.
 
     Exit codes: 0 no check failed; 1 a Defender for Cloud or encryption check failed; 2 a value of the file is missing or the file cannot be read.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys listed in the description are read; the whole file is not validated here.
+
+.PARAMETER ComputerName
+    Optional. The machine to send the cluster questions to. Default: the first node of nodes[] that answers at its management address.
+
+.PARAMETER Credential
+    Optional. The account for the remoting sessions. Default: the deployment (LCM) user of the file, through the toolkit's secret resolver.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
@@ -55,7 +63,13 @@ param(
     [int]$MaximumOwnerAssignments = 3,
 
     [Parameter(Mandatory = $false)]
-    [int]$MaximumSignatureAgeDays = 7
+    [int]$MaximumSignatureAgeDays = 7,
+
+    [Parameter(Mandatory = $false)]
+    [string]$ComputerName,
+
+    [Parameter(Mandatory = $false)]
+    [pscredential]$Credential
 )
 
 #Requires -Version 7.0
@@ -65,6 +79,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'remoting', 'AzlClusterConnection.psm1'))) -Force
 
 # Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
 $BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
@@ -164,8 +179,9 @@ function Test-EncryptionStatus {
 
     foreach ($node in $NodeNames) {
         try {
-            $volumes = Invoke-Command -ComputerName $node -ScriptBlock {
-                Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionPercentage
+            $volumes = Invoke-AzlClusterCommand -Connection $connection -Node $node -ScriptBlock {
+                # the enums as text: over remoting an enum arrives as its number (ProtectionStatus On = 1), seen on a live instance
+                Get-BitLockerVolume | Select-Object MountPoint, @{ Name = 'VolumeStatus'; Expression = { [string]$_.VolumeStatus } }, @{ Name = 'ProtectionStatus'; Expression = { [string]$_.ProtectionStatus } }, EncryptionPercentage
             }
 
             foreach ($vol in $volumes) {
@@ -194,7 +210,7 @@ function Test-WindowsDefenderStatus {
 
     foreach ($node in $NodeNames) {
         try {
-            $defender = Invoke-Command -ComputerName $node -ScriptBlock {
+            $defender = Invoke-AzlClusterCommand -Connection $connection -Node $node -ScriptBlock {
                 $status = Get-MpComputerStatus
                 [PSCustomObject]@{
                     RealTimeProtection   = $status.RealTimeProtectionEnabled
@@ -220,7 +236,7 @@ function Test-AuditPolicies {
 
     foreach ($node in $NodeNames) {
         try {
-            $auditInfo = Invoke-Command -ComputerName $node -ScriptBlock {
+            $auditInfo = Invoke-AzlClusterCommand -Connection $connection -Node $node -ScriptBlock {
                 $output = auditpol /get /category:* 2>&1
                 $enabledPolicies = @($output | Select-String "Success|Failure" | Where-Object { $_ -notmatch "No Auditing" }).Count
                 return @{ EnabledPolicies = $enabledPolicies }
@@ -284,7 +300,10 @@ if (-not $ClusterName -or -not $SubscriptionId -or -not $ResourceGroupName) {
     exit 2
 }
 
-$nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
+$connection = Resolve-AzlClusterConnection -Infrastructure $infra -ComputerName $ComputerName -Credential $Credential -RemoteCommand { param([hashtable]$Call) Invoke-Command @Call }
+try { $nodes = @(Invoke-AzlClusterCommand -Connection $connection -ScriptBlock { @(Get-ClusterNode | ForEach-Object { [string]$_.Name }) }) }
+catch { Write-Log "The cluster could not be reached: $($_.Exception.Message)" -Level "ERROR"; exit 1 }
+
 Write-Log "Cluster: $ClusterName ($($nodes.Count) nodes)" -Level "INFO"
 Write-Log "Subscription: $SubscriptionId" -Level "INFO"
 Write-Host ""
