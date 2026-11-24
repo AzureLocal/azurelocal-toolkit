@@ -98,7 +98,7 @@ Describe 'New-StoragePath.ps1' {
             Should -Invoke New-AzStackHCIVMStoragePath -Times 0 -Exactly
         }
 
-        It 'takes the folder Azure Local makes inside the folder asked for as the same path (seen on a deployed instance: <path>\<generated id>)' {
+        It 'takes the folder Azure Local makes inside the folder asked for as the same path (seen on a deployed instance: the path asked for, then a generated id)' {
             Mock Get-AzStackHCIVMStoragePath { [pscustomobject]@{ Name = $Name; Path = 'c:\ClusterStorage\vol-workloads-01\VMS\e81719aea135c35' } }
             $r = Invoke-Path (New-InfraFile)
             $r.ExitCode | Should -Be 0

@@ -132,10 +132,12 @@ function Invoke-AzCli([string[]]$Arguments) {
         if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
     }
     # Not az.cmd: a virtual switch that Network ATC named has parentheses (ComputeSwitch(compute)), and cmd.exe ends the batch file at the closing one.
-    $launcher = Get-AzlAzureCliLauncher
+    # az is looked up here, in the scope of the script (a function or an alias named az, as in the tests, is then started as it is).
+    $launcher = Get-AzlAzureCliLauncher -Command (Get-Command -Name az -ErrorAction SilentlyContinue | Select-Object -First 1)
     $parenthesis = Get-AzlAzureCliParenthesisProblem -Launcher $launcher -Argument $Arguments
     if ($parenthesis) { Exit-InputProblem $parenthesis }
-    $all = @(& $launcher.Command @($launcher.Prefix + $Arguments) 2>&1)
+    $azArguments = @($launcher.Prefix) + @($Arguments)
+    $all = @(& $launcher.Command @azArguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
     $err = (@($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"

@@ -192,6 +192,13 @@ function Write-Check {
 function Write-Skip([string]$Check, [string]$Reason = '') { Write-Log "  [SKIP] $Check$(if ($Reason) { " - $Reason" })" 'WARN'; $script:skipCount++ }
 function Write-Failure([string]$Text) { Write-Log "  [FAIL] $Text" 'FAIL'; $script:failCount++ }
 function Write-Plan([string]$Text) { Write-Log "  [WhatIf] $Text" 'WARN' }
+# The provisioning state of a resource as az lists it: under properties (az stack-hci-vm, seen on a deployed instance), or at the top of the object.
+function Get-ProvisioningState($Resource) {
+    if ($null -eq $Resource) { return '' }
+    if ($Resource.PSObject.Properties['properties'] -and $Resource.properties -and $Resource.properties.PSObject.Properties['provisioningState']) { return [string]$Resource.properties.provisioningState }
+    if ($Resource.PSObject.Properties['provisioningState']) { return [string]$Resource.provisioningState }
+    return ''
+}
 
 # 1. Cluster nodes
 Write-Log ''; Write-Log 'Check 1 - Cluster nodes'
@@ -326,10 +333,10 @@ if ($vmImages.Count -eq 0) { Write-Skip 'VM images' 'the file lists none (storag
 elseif (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'VM images' 'azure.subscription_id or azure.resource_group is not in the file' }
 elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm image list --resource-group $resourceGroup" }
 else {
-    $imagesText = (az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>&1 | Out-String).Trim()
+    $imagesText = (az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json --only-show-errors 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -eq 0) {
         $images = @(if ($imagesText) { $imagesText | ConvertFrom-Json })
-        $succeeded = @($images | Where-Object { $_.provisioningState -eq 'Succeeded' })
+        $succeeded = @($images | Where-Object { (Get-ProvisioningState $_) -eq 'Succeeded' })
         Write-Check -Pass ($succeeded.Count -ge $vmImages.Count) -Check 'All expected images Succeeded' -Detail "$($succeeded.Count) Succeeded of $($images.Count) in $resourceGroup, the file lists $($vmImages.Count)"
     }
     else { Write-Failure "Could not query VM images (az sign-in, or the stack-hci-vm extension): $(($imagesText -split "`n")[0])" }
@@ -341,10 +348,10 @@ if ($logicalNetworks.Count -eq 0) { Write-Skip 'Logical networks' 'the file list
 elseif (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'Logical networks' 'azure.subscription_id or azure.resource_group is not in the file' }
 elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm network lnet list --resource-group $resourceGroup" }
 else {
-    $lnetsText = (az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>&1 | Out-String).Trim()
+    $lnetsText = (az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json --only-show-errors 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -eq 0) {
         $lnets = @(if ($lnetsText) { $lnetsText | ConvertFrom-Json })
-        $succeeded = @($lnets | Where-Object { $_.provisioningState -eq 'Succeeded' })
+        $succeeded = @($lnets | Where-Object { (Get-ProvisioningState $_) -eq 'Succeeded' })
         Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check 'All expected networks Succeeded' -Detail "$($succeeded.Count) Succeeded of $($lnets.Count) in $resourceGroup, the file lists $($logicalNetworks.Count)"
     }
     else { Write-Failure "Could not query logical networks (az sign-in, or the stack-hci-vm extension): $(($lnetsText -split "`n")[0])" }

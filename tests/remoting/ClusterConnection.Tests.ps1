@@ -252,7 +252,8 @@ Describe 'Get-AzlAzureCliLauncher' {
     ) {
         $text = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-06-post-deployment', 'task-08-logical-network-creation', $File)) -Raw
         $text | Should -Match 'Get-AzlAzureCliLauncher'
-        $text | Should -Match '& \$launcher\.Command @\(\$launcher\.Prefix \+ \$Arguments\)'
+        $text | Should -Match '& \$launcher\.Command @azArguments' -Because 'the arguments are splatted: a function named az (the tests) must get them one by one, as az does'
+        $text | Should -Match 'Get-AzlAzureCliLauncher -Command \(Get-Command -Name az'
         $text | Should -Match 'Get-AzlAzureCliParenthesisProblem -Launcher \$launcher -Argument \$Arguments'
         $text | Should -Not -Match '& az @Arguments'
     }

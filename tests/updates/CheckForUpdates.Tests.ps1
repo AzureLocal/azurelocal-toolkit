@@ -78,6 +78,8 @@ Describe 'Get-AvailableSolutionUpdate.ps1 (the cluster)' {
         Mock Get-Date { $global:AzlChkNow }
         Mock Start-Sleep { $global:AzlChkNow = $global:AzlChkNow.AddSeconds($Seconds) }
         Mock Invoke-Command {
+            # the connection first probes the machine with a block that does nothing (AzlClusterConnection.psm1); it is not one of the calls the tests count
+            if ($ScriptBlock.ToString().Trim() -eq '$true') { return $true }
             $global:AzlChkCalls.Add([pscustomobject]@{ Computer = [string]$ComputerName; Credential = $Credential; Block = $ScriptBlock.ToString() })
             if ($global:AzlChkFail) { throw 'simulated remoting failure' }
             $global:AzlChkReads++
@@ -324,6 +326,21 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
         $r.Rows[0].Update | Should -Be '12.2610.1004.50'
         $r.Rows[0].Next | Should -Be 'Start'
         $r.Text | Should -Match 'Verdict: UpdateAvailable'
+    }
+
+    It 'does not offer a solution update that is not newer than the installed version, although Azure still lists it as Ready' {
+        # Seen on a deployed instance right after 12.2611 was installed: Azure kept 12.2610.1004.55 as Ready and the verdict was UpdateAvailable.
+        $global:AzlChkAz.State = 'AppliedSuccessfully'
+        $global:AzlChkAz.Updates = @(
+            @{ name = 'Solution12.2607.1002.20'; properties = @{ version = '12.2607.1002.20'; state = 'Installed'; packageType = 'Solution'; displayName = 'installed' } }
+            @{ name = 'Solution12.2606.1001.9'; properties = @{ version = '12.2606.1001.9'; state = 'Ready'; packageType = 'Solution'; displayName = 'older'; updateStateProperties = @{ notifyMessage = '' } } }
+        )
+        $out = Join-Path $TestDrive 'older.json'
+        $r = Invoke-CheckCli (New-InfraFile) @{ OutputPath = $out }
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $r.Text | Should -Match 'Verdict: UpToDate'
+        (@($r.Rows | Where-Object Update -EQ '12.2606.1001.9'))[0].Next | Should -Be 'None'
+        (@((Get-Content -LiteralPath $out -Raw | ConvertFrom-Json).Updates | Where-Object Version -EQ '12.2606.1001.9'))[0].Next | Should -Be 'None'
     }
 
     It 'says AdditionalContentRequired and UpdateRunning for those states' {

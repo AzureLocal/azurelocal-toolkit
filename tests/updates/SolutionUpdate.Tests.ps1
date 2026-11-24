@@ -55,6 +55,8 @@ Describe 'Start-AzureLocalSolutionUpdate.ps1' {
         Reset-Cluster
         Mock Start-Sleep { throw 'The script must not wait.' }
         Mock Invoke-Command {
+            # the connection first probes the machine with a block that does nothing (AzlClusterConnection.psm1); it is not one of the calls the tests count
+            if ($ScriptBlock.ToString().Trim() -eq '$true') { return $true }
             $step = [string]$ArgumentList[0]
             $global:AzlUpdCalls.Add([pscustomobject]@{ Step = $step; Computer = [string]$ComputerName; Arguments = @($ArgumentList | Select-Object -Skip 1); Credential = $Credential })
             if ($global:AzlUpdFail -eq $step) { throw "simulated failure of $step" }

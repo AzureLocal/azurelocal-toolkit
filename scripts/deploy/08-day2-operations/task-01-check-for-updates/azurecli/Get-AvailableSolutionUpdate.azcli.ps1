@@ -143,6 +143,14 @@ function Get-Next($Update) {
     if ($StateAdvice.ContainsKey($state)) { return @('Attention', $StateAdvice[$state]) }
     @('None', '')
 }
+# Azure can go on listing a solution update that is older than the installed version as Ready (seen after 12.2611 was installed: 12.2610.1004.55 stayed Ready in
+# Azure, while the cluster itself no longer offered it). It is not an update to start.
+function Get-NextForInstalled($Update, $InstalledVersion) {
+    $next = Get-Next $Update
+    $thisVersion = ConvertTo-UpdateVersion ([string]$Update.Version)
+    if ($next[0] -eq 'Start' -and $Update.PackageType -ne 'SBE' -and $InstalledVersion -and $thisVersion -and $thisVersion -le $InstalledVersion) { return @('None', "Not newer than the installed version $InstalledVersion; Azure still lists it.") }
+    $next
+}
 
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
@@ -208,6 +216,7 @@ try {
     }
 
     $attention = [System.Collections.Generic.List[string]]::new()
+    $installedVersion = ConvertTo-UpdateVersion ([string](Get-Prop $summary @('properties', 'currentVersion')))
     $updates = @(foreach ($item in $values) {
             if ($null -eq $item) { continue }
             [pscustomobject]@{
@@ -220,7 +229,7 @@ try {
             }
         }) | Sort-Object { ConvertTo-UpdateVersion $_.Version } -Descending
     foreach ($update in ($updates | Where-Object { $DoneState -notcontains $_.State })) {
-        $next = Get-Next $update
+        $next = Get-NextForInstalled $update $installedVersion
         if ($next[0] -eq 'Attention') { $attention.Add("$($update.Version) is $($update.State)") }
         $rows.Add([pscustomobject][ordered]@{ Update = $update.Version; Type = $update.PackageType; State = $update.State; Next = $next[0]; Detail = (@($next[1], $update.Notify) | Where-Object { $_ }) -join ' ' })
     }
@@ -264,7 +273,7 @@ try {
         LastCheckedAgeHours = $lastCheckedAge
         Verdict           = $verdict
         Attention         = @($attention)
-        Updates           = @($updates | ForEach-Object { $n = Get-Next $_; [ordered]@{ Name = $_.Name; Version = $_.Version; Type = $_.PackageType; State = $_.State; Next = $n[0]; DisplayName = $_.DisplayName } })
+        Updates           = @($updates | ForEach-Object { $n = Get-NextForInstalled $_ $installedVersion; [ordered]@{ Name = $_.Name; Version = $_.Version; Type = $_.PackageType; State = $_.State; Next = $n[0]; DisplayName = $_.DisplayName } })
     }
     Write-Line "Installed solution version $($report.CurrentVersion) (SBE $($report.CurrentSbeVersion)), update state $summaryState, last checked $(if ($lastChecked) { $lastChecked } else { 'not reported' })"
     if ($rows.Count -eq 0) { Write-Line 'Azure shows no update that is offered or running.' }

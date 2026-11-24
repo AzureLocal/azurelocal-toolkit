@@ -66,6 +66,8 @@ Describe 'New-LogicalNetwork.ps1' {
     BeforeEach {
         Reset-World
         Mock Invoke-Command {
+            # the connection first probes the machine with a block that does nothing; it is not one of the questions the tests count
+            if ($ScriptBlock.ToString().Trim() -eq '$true') { return $true }
             $global:AzlLnRemote.Add([pscustomobject]@{ Computer = [string]$ComputerName; Credential = $Credential; Script = $ScriptBlock.ToString() })
             if ($global:AzlLnState.ClusterError) { throw $global:AzlLnState.ClusterError }
             $global:AzlLnState.Switches
@@ -478,7 +480,9 @@ Describe 'New-LogicalNetwork.ps1' {
             $script:Text | Should -Match 'Import-AzlInfrastructure'
             $script:Text | Should -Not -Match 'variables\.yml|default_gateway|ip_pools|-AssociateNsg|compute\.azure_local'
             $script:Text | Should -Not -Match 'Invoke-Expression|Start-Process|cmd(\.exe)? /c|iex '
-            ([regex]::Matches($script:Text, '&\s+az\s+@')).Count | Should -Be 1
+            # one place starts the Azure CLI, through the launcher (the Python of the Azure CLI on Windows: az.cmd ends at a closing parenthesis of a switch name)
+            ([regex]::Matches($script:Text, '&\s+\$launcher\.Command\s+@azArguments')).Count | Should -Be 1
+            ([regex]::Matches($script:Text, '&\s+az\s+@')).Count | Should -Be 0
             $script:Text | Should -Not -Match '(?m)^\s*az\s+(stack-hci-vm|account|extension)'
         }
 

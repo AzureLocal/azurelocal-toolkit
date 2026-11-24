@@ -152,7 +152,10 @@ function Get-AzlAzureCliLauncher {
         with the same arguments (-IBm azure.cli), and cmd.exe is not involved.
 
         Command is what to start and Prefix the arguments that come before the az arguments:
-            & $launcher.Command @($launcher.Prefix + $azArguments)
+            $launcher = Get-AzlAzureCliLauncher -Command (Get-Command -Name az -ErrorAction SilentlyContinue | Select-Object -First 1)
+            $all = @($launcher.Prefix) + @($azArguments)
+            & $launcher.Command @all
+        Give -Command from the script: the lookup then happens in the scope of the script, where a function or an alias named az (a test) is visible.
         When az is not the batch file of the Windows installer (Linux, macOS, a function or an alias named az, as in the tests), Command is 'az' and Prefix is empty.
         The rule for & | < > ^ % and the double quote (Get-AzlAzureCliArgumentProblem) stays as it is: it does not depend on how az is started.
     .PARAMETER Command

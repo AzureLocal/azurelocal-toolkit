@@ -81,7 +81,8 @@ BeforeAll {
         $global:LASTEXITCODE = 0
         $text = "$args"
         if ($text -like '*image list*') { return (1..5 | ForEach-Object { [ordered]@{ name = "img-$_"; provisioningState = $(if ($_ -le $global:VerifyTest.Succeeded) { 'Succeeded' } else { 'Failed' }) } } | ConvertTo-Json -AsArray) }
-        if ($text -like '*lnet list*') { return (ConvertTo-Json -AsArray @([ordered]@{ name = 'lnet-1'; provisioningState = 'Succeeded' })) }
+        # az stack-hci-vm lists the provisioning state under properties (seen on a deployed instance); the image stub above keeps it at the top: both shapes are read.
+        if ($text -like '*lnet list*') { return '[{"name":"lnet-1","properties":{"provisioningState":"Succeeded"}}]' }
     }
 }
 
