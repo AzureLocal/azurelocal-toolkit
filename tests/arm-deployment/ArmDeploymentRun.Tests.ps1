@@ -554,9 +554,13 @@ Describe 'Preconditions before the run' {
         @($r.Preconditions | Where-Object result -eq 'Failed') | Should -BeNullOrEmpty
         ($r.Preconditions | Where-Object name -eq 'OsConfigurationConverged' | Select-Object -First 1).result | Should -Be 'Passed'
     }
-    It 'a node that did not converge fails OsConfigurationConverged for that node' {
+    It 'a node that did not converge is a Warning in Plan and fails OsConfigurationConverged for that node in Validate (K3)' {
         $infra = Get-TestInfra
-        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport (Get-TestOsReport -Infra $infra -NotConverged @('iic-n02'))
+        $report = Get-TestOsReport -Infra $infra -NotConverged @('iic-n02')
+        $p = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $report
+        $p.ExitCode | Should -Be 0
+        @($p.Preconditions | Where-Object { $_.name -eq 'OsConfigurationConverged' -and $_.result -eq 'Warning' }).node | Should -Be 'iic-n02'
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Validate -OsReport $report
         $r.ExitCode | Should -Be 1
         $bad = @($r.Preconditions | Where-Object { $_.name -eq 'OsConfigurationConverged' -and $_.result -eq 'Failed' })
         $bad.Count | Should -Be 1
