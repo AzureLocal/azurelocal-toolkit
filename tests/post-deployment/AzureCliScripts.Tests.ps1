@@ -179,6 +179,7 @@ Describe 'New-VmImage.azcli.ps1' {
         }
         Set-AzHandler 'stack-hci-vm storagepath show' { '{"name":"sp-workloads-01","id":"/subscriptions/x/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/storageContainers/sp-workloads-01"}' }
         Set-AzHandler 'stack-hci-vm image create' { $global:AzlImageState.Created = $true }
+        Set-AzHandler 'tag update' { '' }
     }
     AfterAll { Remove-Variable -Name AzlImageState -Scope Global -ErrorAction SilentlyContinue }
 
@@ -194,6 +195,12 @@ Describe 'New-VmImage.azcli.ps1' {
         $create.Options['--os-type'] | Should -Be 'Windows'
         $create.Options['--custom-location'] | Should -Be $script:CustomLocationId
         $create.Options['--storage-path-id'] | Should -Match 'storageContainers/sp-workloads-01$'
+        # stack-hci-vm 1.15.1 cannot build the image model with --tags (SerializationError): the tags go on afterwards with az tag update
+        $create.Options.ContainsKey('--tags') | Should -BeFalse
+        $tag = (Get-AzCall 'tag update')[0]
+        $tag.Options['--resource-id'] | Should -Match 'Microsoft.AzureStackHCI/marketplaceGalleryImages/img-ws2025$'
+        $tag.Options['--operation'] | Should -Be 'Merge'
+        $tag.Options['--tags'] | Should -Not -BeNullOrEmpty
         @($r.Rows.Action) | Should -Be @('Created')
         $r.Rows[0].Version | Should -Be '26100.1.1'
     }

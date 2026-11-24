@@ -273,9 +273,16 @@ foreach ($plan in $plans) {
             $arguments = @('stack-hci-vm', 'image', 'create', '--subscription', $subscriptionId, '--resource-group', $group, '--name', $plan.Name, '--custom-location', $customLocationId, '--location', $location,
                 '--os-type', $plan.OsType, '--publisher', $plan.Publisher, '--offer', $plan.Offer, '--sku', $plan.Sku, '--version', $plan.Version)
             if ($storagePathId) { $arguments += @('--storage-path-id', $storagePathId) }
-            if ($tagArguments.Count) { $arguments += @('--tags') + $tagArguments }
+            # No --tags on the create: the extension stack-hci-vm 1.15.1 hands the tag list unconverted to the marketplace image model and the
+            # command ends with "SerializationError: Unable to build a model ... Data: ['k=v', ...]" before any request is sent (seen on a live
+            # instance). The tags of the file are merged onto the image with az tag update once it exists.
             $result = Invoke-AzCli ($arguments + @('--output', 'none', '--only-show-errors'))
             if ($result.ExitCode -ne 0) { throw "The creation failed: $($result.Detail)" }
+            if ($tagArguments.Count) {
+                $imageId = "/subscriptions/$subscriptionId/resourceGroups/$group/providers/Microsoft.AzureStackHCI/marketplaceGalleryImages/$($plan.Name)"
+                $tagged = Invoke-AzCli (@('tag', 'update', '--resource-id', $imageId, '--operation', 'Merge', '--tags') + $tagArguments + @('--output', 'none', '--only-show-errors'))
+                if ($tagged.ExitCode -ne 0) { Write-Warning "The image '$($plan.Name)' was created, but its tags could not be set: $($tagged.Detail)" }
+            }
 
             # Read it back: the version Azure chose for 'latest', and the state.
             $created = $null
