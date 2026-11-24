@@ -267,9 +267,9 @@ Describe 'Get-AzlDiscoveryChange and Invoke-AzlYamlEdit' {
     It 'plans the serial number and the MAC of the adapter that has none or a wrong one' {
         $plan = Get-AzlDiscoveryChange -Infrastructure $script:Infra -Item @([pscustomobject]@{ NodeName = 'node-1'; Discovery = $script:Discovery })
         ($plan.Changes | ForEach-Object { $_.Display }) | Should -Contain 'nodes[node-1].serial_number'
-        ($plan.Changes | Where-Object Display -like '*Slot 3 Port 1*').New | Should -Be '00:00:5E:00:53:21'
-        ($plan.Changes | Where-Object Display -like '*Slot 3 Port 2*').New | Should -Be '00:00:5E:00:53:22'
-        ($plan.Changes | Where-Object Display -like '*Embedded NIC 1*') | Should -BeNullOrEmpty
+        ($plan.Changes | Where-Object Display -like '*Slot 3 Port 1*mac_address').New | Should -Be '00:00:5E:00:53:21'
+        ($plan.Changes | Where-Object Display -like '*Slot 3 Port 2*mac_address').New | Should -Be '00:00:5E:00:53:22'
+        ($plan.Changes | Where-Object Display -like '*Embedded NIC 1*mac_address') | Should -BeNullOrEmpty
     }
     It 'notes a management-only node whose management port is only guessed' {
         $plan = Get-AzlDiscoveryChange -Infrastructure $script:Infra -Item @([pscustomobject]@{ NodeName = 'node-2'; Discovery = $script:Discovery })

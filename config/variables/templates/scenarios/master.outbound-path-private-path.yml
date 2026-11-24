@@ -1,13 +1,13 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = private_path with every variable. Schema 5.6.34. Scenario: outbound_path=private_path.
+# Template for infrastructure.yml for scenario.outbound_path = private_path with every variable. Schema 5.6.35. Scenario: outbound_path=private_path.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.34"
+  schema_version: "5.6.35"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "full"
@@ -422,6 +422,9 @@ nodes:
       # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
       ip_address: "198.51.100.11"
+      # (since 5.6.35) 
+      # used by: discovery
+      mac_address: "00:00:5E:00:53:F1"
       # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
       # one of: idrac | ilo | xcc | other; used by: discovery, ranger
       type: "idrac"
@@ -675,6 +678,9 @@ hardware:
       # Size of one capacity drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 3.84
+      # (since 5.6.35) 
+      # used by: discovery, trailwright
+      model: "Example NVMe 3.84TB"
     # The cache drives in each machine (Storage Spaces Direct).
     cache:
       # Media type of the cache drives: nvme, ssd or hdd.
@@ -686,6 +692,24 @@ hardware:
       # Size of one cache drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 0
+      # (since 5.6.35) 
+      # used by: discovery, trailwright
+      model: "Example NVMe 3.84TB"
+  # (since 5.6.35) 
+  # used by: discovery
+  boot_drives:
+    # (since 5.6.35) boss (a Dell BOSS card), raid (drives in a RAID volume of another controller), single (one drive, no RAID) or other.
+    # one of: boss | raid | single | other; used by: discovery
+    type: "boss"
+    # (since 5.6.35) 
+    # used by: discovery
+    count: 2
+    # (since 5.6.35) 
+    # used by: discovery
+    size_gb: 960
+    # (since 5.6.35) 
+    # used by: discovery
+    model: "Example M.2 960GB"
 
 # The on-premises networks.
 networking:

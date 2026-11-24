@@ -268,6 +268,7 @@ function ConvertTo-AzlHardwareInventoryNode {
             $order++
             $ports.Add([ordered]@{
                     order = $order; adapter = ConvertTo-AzlReportedValue (Get-RfText $a 'id'); adapterLocation = ConvertTo-AzlReportedValue (Get-RfText $a 'location')
+                    portId = ConvertTo-AzlReportedValue (Get-RfText $p 'id')
                     portNumber = ConvertTo-AzlReportedValue (Get-RfProp $p 'portIndex'); mac = ConvertTo-AzlReportedValue (Get-RfText $p 'mac')
                     manufacturer = ConvertTo-AzlReportedValue (Get-RfText $a 'manufacturer'); model = ConvertTo-AzlReportedValue (Get-RfText $a 'model')
                     firmware = ConvertTo-AzlReportedValue (Get-RfText $a 'firmwarePackage')

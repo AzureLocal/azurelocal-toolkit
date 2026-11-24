@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.71. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.72. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 775 | 525 | 85 | 5 | 158 | 2 |
+| Keys of infrastructure.yml | 782 | 528 | 87 | 5 | 160 | 2 |
 | Owned by a tool (`tools.*`) | 5015 | 4812 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7163 | 5339 | 96 | 5 | 1711 | 12 |
+| All registry leaves | 7170 | 5342 | 98 | 5 | 1713 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -39,13 +39,13 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Phase | Tool | Keys of infrastructure.yml it reads or fills | Sections | Tool id | Hands on |
 | --- | --- | ---: | --- | --- | --- |
 | Design | Trailwright | 139 | azure, cluster, devops, disconnected, environment, hardware, identity, landing_zone, networking, nodes, operations, provisioning, scenario, sdn, security, site, storage | any (it writes the whole file) | infrastructure.yml (Trailwright exports it) |
-| Discovery | Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1 | 38 | azure, hardware, identity, nodes, scenario | discovery | a proposal for nodes[] (serial number, ports, MACs), reviewed by you |
+| Discovery | Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1 | 39 | azure, hardware, identity, nodes, scenario | discovery | a proposal for nodes[] (serial number, ports, MACs), reviewed by you |
 | ZTP | azurelocal-ztp | 85 | _metadata, azure, hardware, key_vaults, networking, nodes, provisioning, scenario, site | ztp | ztp-handoff.json (Arc machine IDs, installed build, management address verified), ztp-events.jsonl |
 | OS configuration | Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1 | 79 | _metadata, azure, cluster, deployment, hardware, identity, networking, nodes, os_configuration, provisioning, scenario, site, storage | os_configuration | the OS configuration report (ports and OS adapter names by MAC, SAN disks), os-configuration-events.jsonl |
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 369 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 378 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -59,17 +59,17 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `security` | 1 |  |  |  |  | 11 |  | 11 |
 | `operations` | 13 |  |  |  |  |  |  | 18 |
 | `devops` | 4 |  |  |  |  |  |  | 75 |
-| `scenario` | 9 | 1 | 2 | 6 | 5 | 6 | 2 | 7 |
+| `scenario` | 9 | 1 | 2 | 6 | 5 | 6 | 2 | 8 |
 | `azure` | 8 | 1 | 5 | 4 | 5 | 6 | 3 | 10 |
 | `key_vaults` |  |  | 1 |  | 3 | 3 |  | 3 |
 | `secrets` |  |  |  |  |  |  |  | 5 |
 | `cluster` | 9 |  |  | 1 | 1 | 11 | 1 | 4 |
 | `deployment` |  |  |  | 1 |  |  |  | 3 |
-| `nodes` | 10 | 18 | 27 | 15 | 5 | 6 | 6 | 18 |
-| `hardware` | 20 | 15 | 6 | 4 | 4 | 7 |  | 14 |
+| `nodes` | 10 | 19 | 27 | 15 | 5 | 6 | 6 | 22 |
+| `hardware` | 20 | 15 | 6 | 4 | 4 | 7 |  | 16 |
 | `storage` | 4 |  |  | 9 | 3 | 15 |  | 30 |
 | `sdn` | 1 |  |  |  |  |  |  | 5 |
-| `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 4 |
+| `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 6 |
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
 | `network_devices` |  |  |  |  |  |  |  | 16 |
@@ -90,14 +90,14 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | Tool | Phase | Reads (keys) | Writes or fills (keys) | Owns (tool variables) |
 | --- | --- | ---: | ---: | ---: |
 | trailwright | Design | 0 | 139 | 0 |
-| discovery | Discovery | 30 | 13 | 154 |
+| discovery | Discovery | 30 | 15 | 154 |
 | ztp | ZTP | 85 | 0 | 844 |
 | os-configuration | OS configuration | 79 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1124 |
 | sonar | Sonar | 19 | 0 | 267 |
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
-| infrastructure-helpers | Outside the flow | 41 | 0 | 0 |
+| infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 253 | 0 | 0 |
 
@@ -108,13 +108,13 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 
 ### discovery
 
-**Writes or fills (13):**
-`nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].slot`, `nodes[].network_adapters[].port_index`, `nodes[].network_adapters[].vendor`, `nodes[].network_adapters[].model`, `nodes[].network_adapters[].speed_gbps`, `nodes[].network_adapters[].rdma`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].serial_number`
+**Writes or fills (15):**
+`nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].slot`, `nodes[].network_adapters[].port_index`, `nodes[].network_adapters[].vendor`, `nodes[].network_adapters[].model`, `nodes[].network_adapters[].speed_gbps`, `nodes[].network_adapters[].rdma`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].serial_number`, `nodes[].bmc.mac_address`, `nodes[].bmc.type`
 
 **Reads (30):**
 `identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.domain_controllers`, `scenario.identity`, `azure.tenant_id`, `nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.type`, `nodes[].bmc.username`, `nodes[].bmc.password`, `nodes[].bios.*`, `hardware.vendor`, `hardware.model`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.gpu.enabled`, `hardware.gpu.model`, `hardware.gpu.count_per_node`, `hardware.bmc.username`, `hardware.bmc.password`, `hardware.bmc.verify_certificate`, `hardware.inventory.output_directory`, `hardware.inventory.file_name_prefix`, `hardware.inventory.format`, `hardware.inventory.timeout_seconds`, `hardware.bios.*`
 
-Where in the code (file, function, keys read by name; 12 places):
+Where in the code (file, function, keys read by name; 13 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -128,8 +128,8 @@ Where in the code (file, function, keys read by name; 12 places):
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | `Get-ExistingManagementMac` | 3 |
 | `scripts/common/idrac-management/Enable-IdracVnc.ps1` | `(script)` | 2 |
 | `scripts/common/redfish/AzlRedfishInventory.psm1` | `Get-AzlHardwareSymmetry` | 2 |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Update-InfrastructureYml-FromDiscovery.ps1` | `(script)` | 2 |
 | `scripts/common/discovery/Inventory-AzureTenant.ps1` | `(script)` | 1 |
-| `scripts/common/discovery/Invoke-AzlDiscoveryRun.ps1` | `(script)` | 1 |
 
 ### ztp
 
@@ -263,25 +263,25 @@ Where in the code (file, function, keys read by name; 10 places):
 
 ### infrastructure-helpers
 
-**Reads (41):**
-`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `scenario.outbound_path`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.witness.path`, `deployment.events_directory`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `landing_zone.storage_accounts[].name`, `landing_zone.storage_accounts[].resource_group`, `landing_zone.storage_accounts[].sku`, `_metadata.scope`
+**Reads (51):**
+`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `scenario.outbound_path`, `scenario.os_install`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.witness.path`, `deployment.events_directory`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].slot`, `nodes[].network_adapters[].port_index`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.mac_address`, `nodes[].bmc.type`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `hardware.vendor`, `hardware.gpu.enabled`, `hardware.discovery.output_directory`, `provisioning.simplified.site_name`, `provisioning.simplified.evidence_path`, `landing_zone.storage_accounts[].name`, `landing_zone.storage_accounts[].resource_group`, `landing_zone.storage_accounts[].sku`, `_metadata.scope`
 
-Where in the code (file, function, keys read by name; 16 places, the first 12):
+Where in the code (file, function, keys read by name; 18 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlManagementAdapter` | 13 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlClusterWitness` | 8 |
+| `scripts/common/infrastructure/AzlInfrastructureEdit.psm1` | `Get-AzlDiscoveryChange` | 8 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlArcGateway` | 5 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlManagementNetwork` | 4 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlNodeNetworkAdapter` | 4 |
-| `scripts/common/infrastructure/AzlInfrastructureEdit.psm1` | `Get-AzlDiscoveryChange` | 4 |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Resolve-AzlDiscoveryDirectory` | 4 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlArcMachineName` | 3 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlInfrastructureNode` | 3 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlManagementMode` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlSiteIpRange` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Resolve-AzlEventsDirectory` | 2 |
-| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Test-AzlProvisioningDhcpPort` | 2 |
 
 ### validator
 
@@ -432,11 +432,11 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; OS RemoteManagement; Sonar clusterName |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 |
+| `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, t... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; infrastructure-helpers; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin |
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin; RemoteManagement |
 | `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
 | `nodes[].management.ip_address` | Management address. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
-| `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, t... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe |
 | `nodes[].network_adapters[].ip_address` | The host address. | operator by hand | infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `identity.active_directory.ou_path` | Distinguished name of the dedicated OU. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM adouPath; OS DomainJoin |
 | `identity.local_admin.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin |
@@ -450,6 +450,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].network_adapters[].ip_assignment` | How the installed OS gets this port's host address before deployment. | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; sonar; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement |
 | `scenario.outbound_path` | How the machines reach Azure. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 |
 | `nodes[].network_adapters[].name` | The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) |
+| `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; sonar; ztp | Sonar provisioningRoute |
 | `networking.management.vlan_id` | 0 means untagged. | operator by hand; Trailwright questionnaire | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; ztp |  |
 | `nodes[].arc_machine_name` | Name of the machine's Arc resource (Microsoft.HybridCompute/machines). | operator by hand; Trailwright questionnaire | infrastructure-helpers; sonar; toolkit-legacy-scripts; ztp | OS Network |
@@ -460,16 +461,15 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `azure.hci_resource_provider_object_id` | Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; ztp | ARM hciResourceProviderObjectID |
 | `scenario.connectivity` | connected to Azure, or disconnected operations (needs the disconnected section). | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | Gate NW-005 |
 | `networking.management.infrastructure_pool.start` | First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and... | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM startingIPAddress; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters; Gate NW-015 |
+| `nodes[].management.mac_address` | MAC of the management port. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed, applied on request) | discovery; infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters |
 | `scenario.cloud` | Azure public cloud or Azure Government. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 |
-| `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | os-configuration; sonar; ztp | Sonar provisioningRoute |
 | `hardware.sbe.bundle_path` | Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; toolkit-legacy-scripts |  |
-| `networking.management.infrastructure_pool.end` | Last address of the infrastructure pool (ARM endingIPAddress). | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM endingIPAddress; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters; Gate NW-015 |
 
 ## Unread and placeholder variables
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (158)
+### Placeholder: documented, not read by any tool in the scan (160)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -536,7 +536,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `azure.automation_identity.object_id` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `azure.automation_identity.resource_group_roles[].resource_group` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `azure.automation_identity.resource_group_roles[].roles` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].speed_gbps` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].rdma` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
@@ -546,7 +545,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `nodes[].network_adapters[].switch_port.description` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].notes` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
 | `nodes[].rack` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `hardware.discovery.output_directory` | discovery; monitoring; beacon | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].label` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].make` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].model` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -554,6 +552,10 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `hardware.network_cards[].ports[].speed_gbps` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].ports[].rdma` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].ports[].role` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
+| `hardware.boot_drives.type` | discovery | operator by hand | documented in the registry; no tool in the scan reads it |
+| `hardware.boot_drives.count` | discovery | operator by hand | documented in the registry; no tool in the scan reads it |
+| `hardware.boot_drives.size_gb` | discovery | operator by hand | documented in the registry; no tool in the scan reads it |
+| `hardware.boot_drives.model` | discovery | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.san.array.name` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.san.array.management_address` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.san.fibre_channel.fabrics[].switch` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -642,7 +644,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.target_wwpns[].wwpn` | deployment | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.target_wwpns[].fabric` | deployment | operator by hand | only the validator names it |
 
-### Read as part: no tool names the key; a tool reads the section or list that holds it (85)
+### Read as part: no tool names the key; a tool reads the section or list that holds it (87)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -709,10 +711,12 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `hardware.sbe.manifest_source` | deployment; trailwright | operator by hand | read as part by ztp |
 | `hardware.sbe.manifest_creation_date` | deployment; trailwright | operator by hand | read as part by ztp |
 | `hardware.sbe.allow_unvalidated` | trailwright | operator by hand; Trailwright questionnaire | read as part by ztp |
-| `hardware.drives.capacity.size_tb` | discovery; trailwright; surveyor | operator by hand | read as part by discovery |
-| `hardware.drives.cache.media` | discovery; trailwright; surveyor | operator by hand | read as part by discovery |
-| `hardware.drives.cache.count` | discovery; trailwright; surveyor | operator by hand | read as part by discovery |
-| `hardware.drives.cache.size_tb` | discovery; trailwright; surveyor | operator by hand | read as part by discovery |
+| `hardware.drives.capacity.size_tb` | discovery; trailwright; surveyor | operator by hand | read as part by discovery; infrastructure-helpers |
+| `hardware.drives.capacity.model` | discovery; trailwright | operator by hand | read as part by discovery; infrastructure-helpers |
+| `hardware.drives.cache.media` | discovery; trailwright; surveyor | operator by hand | read as part by discovery; infrastructure-helpers |
+| `hardware.drives.cache.count` | discovery; trailwright; surveyor | operator by hand | read as part by discovery; infrastructure-helpers |
+| `hardware.drives.cache.size_tb` | discovery; trailwright; surveyor | operator by hand | read as part by discovery; infrastructure-helpers |
+| `hardware.drives.cache.model` | discovery; trailwright | operator by hand | read as part by discovery; infrastructure-helpers |
 | `provisioning.simplified.ntp.configuration` | ztp; trailwright | operator by hand; default | read as part by ztp |
 | `provisioning.simplified.ntp.server` | ztp; trailwright | operator by hand | read as part by ztp |
 | `provisioning.simplified.ntp.alternate_server` | ztp | operator by hand | read as part by ztp |
@@ -1227,11 +1231,11 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `hardware.vendor` | string, required | operator; Trailwright | ztp; os_configuration; deployment; discovery; trailwright; beacon | arm-deployment; discovery; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe | read |
+| `hardware.vendor` | string, required | operator; Trailwright | ztp; os_configuration; deployment; discovery; trailwright; beacon | arm-deployment; discovery; infrastructure-helpers; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe | read |
 | `hardware.model` | string, required | operator; Trailwright | ztp; os_configuration; discovery; trailwright; draftsman | discovery; pre-cluster-verification; toolkit-legacy-scripts; ztp | Gate SB-001; SB-002; SB-003; SB-004; SB-005; SB-006 | read |
 | `hardware.cpu_cores` | integer | operator; Trailwright | discovery; trailwright; surveyor | discovery; pre-cluster-verification | Gate ND-008 | read |
 | `hardware.memory_gib` | integer | operator; Trailwright | discovery; trailwright; surveyor | discovery; pre-cluster-verification | Gate ND-008 | read |
-| `hardware.gpu.enabled` | boolean | operator; Trailwright | discovery; trailwright | discovery |  | read |
+| `hardware.gpu.enabled` | boolean | operator; Trailwright | discovery; trailwright | discovery; infrastructure-helpers |  | read |
 | `hardware.gpu.model` | string | operator; Trailwright | discovery; trailwright | discovery |  | read |
 | `hardware.gpu.count_per_node` | integer | operator | discovery | discovery |  | read |
 | `hardware.bmc.username` | string, required | operator; Trailwright | ztp; discovery; trailwright; ranger | discovery; ztp |  | read |
@@ -1242,7 +1246,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `hardware.inventory.file_name_prefix` | string, default `hardware-inventory` | operator; default | discovery | discovery |  | read |
 | `hardware.inventory.format` | string, default `json`, one of `json`, `yaml` | operator; default | discovery | discovery |  | read |
 | `hardware.inventory.timeout_seconds` | integer, default `60` | operator; default | discovery | discovery |  | read |
-| `hardware.discovery.output_directory` | string | operator | discovery; monitoring; beacon |  |  | placeholder |
+| `hardware.discovery.output_directory` | string | operator | discovery; monitoring; beacon | infrastructure-helpers |  | read |
 | `hardware.bios.*` | string | operator | ztp | discovery |  | read |
 | `hardware.bios_during_provisioning.*` | string | operator | ztp | (part: infrastructure-helpers; ztp) |  | read-as-part |
 | `hardware.sbe.publisher` | string | operator | os_configuration; deployment; trailwright | toolkit-legacy-scripts | ARM sbePublisher; Gate SB-004 (named) | read |
@@ -1274,10 +1278,16 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `hardware.network_cards[].ports[].role` | string | operator | os_configuration; trailwright |  |  | placeholder |
 | `hardware.drives.capacity.media` | string, one of `nvme`, `ssd`, `hdd` | operator | discovery; trailwright; surveyor | toolkit-legacy-scripts |  | read |
 | `hardware.drives.capacity.count` | integer | operator | discovery; trailwright; surveyor | pre-cluster-verification | Gate ST-001 | read |
-| `hardware.drives.capacity.size_tb` | number | operator | discovery; trailwright; surveyor | (part: discovery) |  | read-as-part |
-| `hardware.drives.cache.media` | string, one of `nvme`, `ssd`, `hdd` | operator | discovery; trailwright; surveyor | (part: discovery) |  | read-as-part |
-| `hardware.drives.cache.count` | integer | operator | discovery; trailwright; surveyor | (part: discovery) |  | read-as-part |
-| `hardware.drives.cache.size_tb` | number | operator | discovery; trailwright; surveyor | (part: discovery) |  | read-as-part |
+| `hardware.drives.capacity.size_tb` | number | operator | discovery; trailwright; surveyor | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.drives.capacity.model` | string | operator | discovery; trailwright | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.drives.cache.media` | string, one of `nvme`, `ssd`, `hdd` | operator | discovery; trailwright; surveyor | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.drives.cache.count` | integer | operator | discovery; trailwright; surveyor | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.drives.cache.size_tb` | number | operator | discovery; trailwright; surveyor | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.drives.cache.model` | string | operator | discovery; trailwright | (part: discovery; infrastructure-helpers) |  | read-as-part |
+| `hardware.boot_drives.type` | string, one of `boss`, `raid`, `single`, `other` | operator | discovery |  |  | placeholder |
+| `hardware.boot_drives.count` | integer | operator | discovery |  |  | placeholder |
+| `hardware.boot_drives.size_gb` | number | operator | discovery |  |  | placeholder |
+| `hardware.boot_drives.model` | string | operator | discovery |  |  | placeholder |
 
 ### identity
 
@@ -1585,8 +1595,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].management.adapter_name` | string | operator | ztp; os_configuration; ansible | infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters | read |
 | `nodes[].network_adapters[].name` | string, required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) | read |
 | `nodes[].network_adapters[].mac_address` | string (mac) | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
-| `nodes[].network_adapters[].slot` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
-| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
+| `nodes[].network_adapters[].slot` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | infrastructure-helpers; ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
+| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | infrastructure-helpers | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
 | `nodes[].network_adapters[].pci_location.bus` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.device` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.function` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
@@ -1610,7 +1620,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].network_adapters[].notes` | string | operator | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].serial_number` | string | operator; Trailwright; Dell/Redfish discovery (proposes, applies) | ztp; discovery; trailwright; ranger | discovery; infrastructure-helpers; ztp |  | read |
 | `nodes[].bmc.ip_address` | string (ipv4) | operator; Trailwright | ztp; discovery; trailwright; ranger | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  | read |
-| `nodes[].bmc.type` | string, one of `idrac`, `ilo`, `xcc`, `other` | operator | discovery; ranger | discovery |  | read |
+| `nodes[].bmc.mac_address` | string (mac) | operator; Dell/Redfish discovery (proposes, applies) | discovery | infrastructure-helpers |  | read |
+| `nodes[].bmc.type` | string, one of `idrac`, `ilo`, `xcc`, `other` | operator; Dell/Redfish discovery (proposes, applies) | discovery; ranger | discovery; infrastructure-helpers |  | read |
 | `nodes[].bmc.username` | string | operator | ztp; discovery | discovery; ztp |  | read |
 | `nodes[].bmc.password` | string (kv_ref) | operator; Key Vault ref | ztp; discovery | discovery; ztp |  | read |
 | `nodes[].rack` | string | operator; Trailwright | trailwright |  |  | placeholder |
@@ -1696,7 +1707,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `provisioning.os_version` | string, required | operator; Trailwright | ztp; os_configuration; trailwright | os-configuration; pre-cluster-verification; ztp | Gate ND-004; SB-003; SB-005; SB-006 | read |
 | `provisioning.iso.image_source` | string, one of `microsoft`, `oem` | operator; Trailwright | trailwright |  |  | placeholder |
 | `provisioning.iso.image_uri` | string | operator |  | toolkit-legacy-scripts |  | read |
-| `provisioning.simplified.site_name` | string, required | operator; Trailwright | ztp; monitoring; trailwright; beacon | sonar; ztp |  | read |
+| `provisioning.simplified.site_name` | string, required | operator; Trailwright | ztp; monitoring; trailwright; beacon | infrastructure-helpers; sonar; ztp |  | read |
 | `provisioning.simplified.subscription_id` | string (guid) | operator | ztp; deployment | toolkit-legacy-scripts; ztp |  | read |
 | `provisioning.simplified.resource_group` | string (resource_group) | operator | ztp; trailwright; deployment | toolkit-legacy-scripts; ztp |  | read |
 | `provisioning.simplified.maintenance_iso` | string, required | operator; Trailwright | ztp; trailwright | ztp |  | read |
@@ -1709,7 +1720,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `provisioning.simplified.media_share.account_name` | string, default `svc-ztp-media` | operator; default | ztp | ztp |  | read |
 | `provisioning.simplified.media_share.keep` | boolean, default `false` | operator; default | ztp | ztp |  | read |
 | `provisioning.simplified.media_path` | string | operator | ztp | ztp |  | read |
-| `provisioning.simplified.evidence_path` | string | operator | ztp; monitoring; beacon | sonar; ztp | Sonar discoveryPath (file discovery); osConfigEventsPath (file os-configuration-events.jsonl); ztpEvents.path (file ztp-events.jsonl) | read |
+| `provisioning.simplified.evidence_path` | string | operator | ztp; monitoring; beacon | infrastructure-helpers; sonar; ztp | Sonar discoveryPath (file discovery); osConfigEventsPath (file os-configuration-events.jsonl); ztpEvents.path (file ztp-events.jsonl) | read |
 | `provisioning.simplified.isolate_san_adapters` | boolean | operator | ztp | ztp |  | read |
 | `provisioning.simplified.enable_embedded_nics` | boolean, default `true` | operator; default | ztp | ztp |  | read |
 | `provisioning.simplified.create_resource_group` | boolean, default `true` | operator; default | ztp | ztp |  | read |
@@ -1756,7 +1767,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `scenario.connectivity` | string, one of `connected`, `disconnected` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | Gate NW-005 | read |
 | `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright; ansible; beacon | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
 | `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible; ztp; beacon | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 | read |
-| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright; ansible | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
+| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright; ansible | infrastructure-helpers; os-configuration; sonar; ztp | Sonar provisioningRoute | read |
 | `scenario.deploy_method` | string, one of `portal`, `arm` | operator; Trailwright | trailwright |  |  | placeholder |
 | `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration; terraform | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
 

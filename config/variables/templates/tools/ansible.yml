@@ -1,13 +1,13 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.34.
+# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.35.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.34"
+  schema_version: "5.6.35"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "ansible"

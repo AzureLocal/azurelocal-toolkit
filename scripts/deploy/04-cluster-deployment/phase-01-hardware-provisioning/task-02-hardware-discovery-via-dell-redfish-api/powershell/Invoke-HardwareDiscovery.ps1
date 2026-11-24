@@ -24,16 +24,20 @@
     Vendor: detected from the Oem namespace, Manufacturer and Model. This version supports Dell iDRAC only; any other BMC is
     reported as "Unsupported vendor in this version" for that node and the others carry on. -Vendor Dell forces the Dell adapter.
 
-    Output, in -OutputPath (default .\discovery; keep it out of git, it holds serials and MACs):
+    Output, in -OutputPath (keep it out of git, it holds serials and MACs). Default: hardware.discovery.output_directory, else
+    <provisioning.simplified.evidence_path>\discovery (the folder the Sonar Discovery view reads), else, for simplified
+    provisioning, %ProgramData%\AzureLocalZtp\<provisioning.simplified.site_name>\evidence\discovery, else .\discovery
+    (Resolve-AzlDiscoveryDirectory in scripts/common/infrastructure/AzlInfrastructure.psm1):
       <ServiceTag>.json             one file per node
       <SummaryFileName>             one line per node, with the suggested management port and why (default discovery-summary.json)
       <ProposalFileName>            the nodes: fragment to review and copy into infrastructure.yml (roles are yours to set;
                                     default infrastructure.discovered.yml)
 
-    With -UpdateInfrastructure it then runs Update-InfrastructureYml-FromDiscovery.ps1 -Apply, which edits only the
-    serial_number and MAC lines (with a backup and a confirmation). ZTP then finds the maintenance environment by the
-    management MAC; the OS configuration finds every port by MAC. New infrastructure.yml fields are added through the master
-    variable registry first, so nothing else is written.
+    With -UpdateInfrastructure it then runs Update-InfrastructureYml-FromDiscovery.ps1 -Apply, which writes the serial
+    numbers, the BMC MACs, the port MACs and the port facts (port_index, vendor, model, PCI location) into the file, with a
+    backup and a confirmation; this script then ends with its exit code (1 when a value cannot be placed, or a MAC in the file
+    is on no port of its machine). ZTP then finds the maintenance environment by the management MAC; the OS configuration
+    finds every port by MAC. Every key written is a key of the master variable registry.
 
     The BMC login: -Credential, then the secret references in infrastructure.yml (nodes[].bmc or hardware.bmc). Nothing is asked: with
     neither, the script stops with exit code 2. No password is read from a file or logged. Only GET requests are sent (with -UseSession also one session POST and
@@ -43,7 +47,8 @@
     The master infrastructure.yml (schema 5). Required. Only the keys named in the description are read; the file is not validated here.
 
 .PARAMETER OutputPath
-    Folder for the output. Default: .\discovery
+    Folder for the output. Default: hardware.discovery.output_directory, else <provisioning.simplified.evidence_path>\discovery,
+    else (simplified provisioning) %ProgramData%\AzureLocalZtp\<site_name>\evidence\discovery, else .\discovery.
 
 .PARAMETER SummaryFileName
     Name of the summary file in -OutputPath. Default: discovery-summary.json
@@ -113,7 +118,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
-    [string]$OutputPath = (Join-Path '.' 'discovery'),
+    [string]$OutputPath,
     [string]$SummaryFileName = 'discovery-summary.json',
     [string]$ProposalFileName = 'infrastructure.discovered.yml',
     [ValidateRange(1, 600)][int]$TimeoutSeconds = 60,
@@ -170,6 +175,9 @@ $nodes = @(@($infrastructure['nodes']) | Where-Object { $_ -is [System.Collectio
 if ($TargetNode.Count -gt 0) { $nodes = @($nodes | Where-Object { [string]$_['name'] -in $TargetNode }) }
 if ($nodes.Count -eq 0) { throw 'No node with a bmc.ip_address to discover. Check nodes[].bmc.ip_address and -TargetNode.' }
 
+if (-not $OutputPath) { $OutputPath = Resolve-AzlDiscoveryDirectory -Infrastructure $infrastructure -InfrastructureFile $InfrastructureFile }
+Write-Information "Output folder: $OutputPath"
+
 New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
 
 # The logins are resolved here, one node at a time, before the parallel runspaces start. Nothing is asked: without -Credential and without a
@@ -202,6 +210,7 @@ $scan = {
         -TimeoutSeconds $Shared.TimeoutSeconds -ConnectTimeoutSeconds $Shared.ConnectTimeoutSeconds -MaxRetries $Shared.MaxRetries -RetryDelaySeconds $Shared.RetryDelaySeconds `
         -NodeBudgetSeconds $Shared.NodeBudgetSeconds -MaxMembers $Shared.MaxMembers
 }
+$updateExit = 0
 $results = Invoke-AzlRedfishBatch -Item @($work) -ScriptBlock $scan -Shared $options -ThrottleLimit $ThrottleLimit
 
 $items = [System.Collections.Generic.List[object]]::new()
@@ -261,9 +270,12 @@ if ($UpdateInfrastructure -and $items.Count -gt 0) {
     $arguments.InfrastructureFile = $InfrastructureFile
     if ($ManagementPort) { $arguments.ManagementPort = $ManagementPort }
     if ($Force) { $arguments.Force = $true }
+    $global:LASTEXITCODE = 0
     & $updater @arguments
+    $updateExit = [int]$global:LASTEXITCODE
 }
 elseif ($items.Count -gt 0) { Write-Information 'infrastructure.yml was not changed. Run Update-InfrastructureYml-FromDiscovery.ps1 -Apply, or copy the proposal.' }
 
 if ($failed.Count -gt 0) { throw "$($failed.Count) node(s) could not be discovered: $($failed -join ', ')." }
+if ($updateExit -ne 0) { Write-Error "Update-InfrastructureYml-FromDiscovery.ps1 ended with exit code $updateExit (see its warnings)." -ErrorAction Continue; exit $updateExit }
 Write-Information 'Discovery complete. Next: ZTP (azurelocal-ztp) reads serial_number and the management MAC from infrastructure.yml.'

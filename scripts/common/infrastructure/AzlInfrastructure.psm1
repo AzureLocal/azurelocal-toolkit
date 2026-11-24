@@ -443,6 +443,48 @@ function Resolve-AzlEventsDirectory {
     return [IO.Path]::Combine($root, 'AzureLocalToolkit', $clusterName, 'events')
 }
 
+function Resolve-AzlDiscoveryDirectory {
+    <#
+    .SYNOPSIS
+        The folder of the hardware discovery files: where Invoke-HardwareDiscovery.ps1 writes its node files and where
+        Update-InfrastructureYml-FromDiscovery.ps1 and the Sonar Discovery view read them.
+    .DESCRIPTION
+        hardware.discovery.output_directory when the file sets it. Otherwise <provisioning.simplified.evidence_path>\discovery,
+        the folder Sonar derives. Otherwise, for scenario.os_install simplified with provisioning.simplified.site_name, the
+        azurelocal-ztp default evidence folder %ProgramData%\AzureLocalZtp\<site_name>\evidence\discovery. Otherwise
+        discovery in the current folder. Environment variables such as %ProgramData% are expanded; a relative path is relative to
+        the folder of -InfrastructureFile (else to the current folder), the same rule as Resolve-AzlEventsDirectory and Sonar.
+        Returns the folder; it is not created here.
+    .EXAMPLE
+        Resolve-AzlDiscoveryDirectory -Infrastructure $infra -InfrastructureFile ./infrastructure.yml
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
+        [string]$InfrastructureFile
+    )
+    $here = (Get-Location).ProviderPath
+    $base = if ($InfrastructureFile) { Split-Path -Parent ([IO.Path]::GetFullPath($InfrastructureFile, $here)) } else { $here }
+    $resolve = {
+        param([string]$Path)
+        $p = [Environment]::ExpandEnvironmentVariables($Path.Trim())
+        if (-not [IO.Path]::IsPathRooted($p)) { $p = Join-Path $base $p }
+        [IO.Path]::GetFullPath($p)
+    }
+    $configured = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.discovery.output_directory'
+    if ($configured -is [string] -and $configured.Trim()) { return (& $resolve $configured) }
+    $evidence = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'provisioning.simplified.evidence_path'
+    if ($evidence -is [string] -and $evidence.Trim()) { return (Join-Path (& $resolve $evidence) 'discovery') }
+    $osInstall = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'scenario.os_install'
+    $site = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'provisioning.simplified.site_name'
+    if ("$osInstall" -eq 'simplified' -and $site -is [string] -and $site.Trim()) {
+        $root = if ($IsWindows -and $env:ProgramData) { $env:ProgramData } else { [IO.Path]::GetTempPath() }
+        return [IO.Path]::Combine($root, 'AzureLocalZtp', $site.Trim(), 'evidence', 'discovery')
+    }
+    return (Join-Path $here 'discovery')
+}
+
 function Get-AzlInfrastructureNode {
     <#
     .SYNOPSIS
@@ -1957,4 +1999,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange, Resolve-AzlEventsDirectory
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange, Resolve-AzlEventsDirectory, Resolve-AzlDiscoveryDirectory

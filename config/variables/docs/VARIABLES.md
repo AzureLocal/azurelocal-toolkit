@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.31, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.35, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./config/variables/scripts/New-InfrastructureVariablesReference.ps1
@@ -271,6 +271,7 @@ The machines, one entry each.
 | `nodes[].serial_number` | Serial number (Dell service tag). | string | when scenario.os_install is simplified / yes |  | `SERIAL01` | The machine's label or its BMC (the Dell service tag). | ZTP, Discovery, Trailwright |
 | `nodes[].bmc` | The baseboard management controller (BMC) of the machine: address, type and login. | object | when scenario.os_install is simplified / yes |  |  | Your machine inventory and addressing plan. | ZTP, Trailwright |
 | `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | IPv4 address | when scenario.os_install is simplified / yes |  | `198.51.100.11` | Your out-of-band addressing plan; the BMC's web page shows it. | ZTP, Discovery, Trailwright |
+| `nodes[].bmc.mac_address` | MAC address of the BMC's own network port (Redfish Manager EthernetInterface): the key of the DHCP reservation that gives the BMC its ip_address on t... (since 5.6.35) | MAC address | no / no |  |  | The BMC (iDRAC, iLO, XCC). | Discovery, Trailwright |
 | `nodes[].bmc.type` | Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. | one of `idrac`, `ilo`, `xcc`, `other` | no / no |  | `idrac` | The BMC (iDRAC, iLO, XCC). | Discovery, Trailwright |
 | `nodes[].bmc.username` | BMC account name of this machine: a secret reference (keyvault://, env://, file:// or command://) or the plain name. azurelocal-ztp uses one login fo... | string | no / no |  |  | The BMC (iDRAC, iLO, XCC). | ZTP, Discovery, Trailwright |
 | `nodes[].bmc.password` (secret) | A secret reference: keyvault://<vault>/<secret> (the vault listed in key_vaults), env://, file:// or command://, read through the toolkit's resolver... | keyvault:// reference | no / no |  |  | The BMC (iDRAC, iLO, XCC). | ZTP, Discovery, Trailwright |
@@ -366,10 +367,17 @@ What every machine is.
 | `hardware.drives.capacity.media` | Media type of the capacity drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  | `nvme` | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.capacity.count` | Number of capacity drives in each machine. | integer | no / no |  | `8` | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.capacity.size_tb` | Size of one capacity drive in TB (decimal terabytes). | number | no / no |  | `3.84` | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.capacity.model` | Model of the capacity drives, as the BMC reports it (Redfish Drive Model). (since 5.6.35) | string | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.cache` | The cache drives in each machine (Storage Spaces Direct). | object | no / no |  |  | The hardware you ordered. | Trailwright |
 | `hardware.drives.cache.media` | Media type of the cache drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.cache.count` | Number of cache drives in each machine. | integer | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.cache.size_tb` | Size of one cache drive in TB (decimal terabytes). | number | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.cache.model` | Model of the cache drives, as the BMC reports it (Redfish Drive Model). (since 5.6.35) | string | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.boot_drives` | The OS boot drives of every machine, for example a Dell BOSS card (two M.2 drives in RAID 1). (since 5.6.35) | object | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.boot_drives.type` | Boss (a Dell BOSS card), raid (drives in a RAID volume of another controller), single (one drive, no RAID) or other. (since 5.6.35) | one of `boss`, `raid`, `single`, `other` | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.boot_drives.count` | Number of boot drives in each machine. (since 5.6.35) | integer | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.boot_drives.size_gb` | Size of one boot drive in GB (decimal gigabytes, as drives are sold). (since 5.6.35) | number | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.boot_drives.model` | Model of the boot drives, as the BMC reports it. (since 5.6.35) | string | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 
 ### networking
 
