@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 121.
+Task folders: 122.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 69 | 52 | 0 |
-| Azure CLI | 48 | 0 | 73 |
+| PowerShell | 71 | 51 | 0 |
+| Azure CLI | 48 | 0 | 74 |
 
-Azure CLI applies to 48 tasks, does not apply to 73, and is not decided for 0.
+Azure CLI applies to 48 tasks, does not apply to 74, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -126,7 +126,7 @@ Azure CLI applies to 48 tasks, does not apply to 73, and is not decided for 0.
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not applicable | no |
 | `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | built | yes |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
-| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | built | yes |
+| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | built | built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |
 | `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | built | yes |
 | `phase-06-post-deployment/task-05-storage-configuration` | built | built | yes |
@@ -134,6 +134,7 @@ Azure CLI applies to 48 tasks, does not apply to 73, and is not decided for 0.
 | `phase-06-post-deployment/task-07-configure-nsgs` | built | built | yes |
 | `phase-06-post-deployment/task-08-logical-network-creation` | built | built | yes |
 | `phase-06-post-deployment/task-09-post-deployment-verification` | built | built | yes |
+| `phase-06-post-deployment/task-10-enable-external-storage-hybrid` | built | not applicable | no |
 | `phase-06-post-deployment/task-11-sbe-update-import` | built | not applicable | no |
 
 ## 05-operational-foundations

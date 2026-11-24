@@ -75,7 +75,6 @@ BeforeDiscovery {
         "$p5/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyADDomainStatus-Orchestrated.ps1"
         "$p5/local-identity/task-01-initiate-deployment-via-azure-portal/powershell/Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1"
         "$p5/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1"
-        'phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1'
     ) | ForEach-Object { @{ Name = [IO.Path]::GetFileName($_); Path = [IO.Path]::Combine($cluster, $_.Replace('/', [IO.Path]::DirectorySeparatorChar)) } }
 
     # The scripts that stay: relative path (to the repository), what they do when the file cannot be read.

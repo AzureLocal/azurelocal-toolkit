@@ -1,9 +1,9 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.67
+# Version: 5.0.68
 # Schema: infrastructure.schema.json (generated from this file)
-# Last Updated: 2026-11-23
+# Last Updated: 2026-11-24
 #
 # This file defines ALL variable names, types, and descriptions used across
 # the AzureLocal Cloud Team Cloud Management Platform (AzureLocalCloud-CMP) and all
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.68 (2026-11-24):
+#     - Phase 06 post-deployment scripts (owner directive D140; no infrastructure key added or removed; infrastructure schema stays 5.6.31). Invoke-ConfigureClusterQuorum-Orchestrated.ps1 (task 02) is a real script, no longer a placeholder: it checks or creates the cloud witness storage account and sets the quorum witness from cluster.witness (type, storage_account, path) and landing_zone.storage_accounts[]; new parameters ComputerName, Credential, AccessKeyName and UpdateAccessKey. New task folder task-10-enable-external-storage-hybrid with Invoke-ExternalStorageHybrid-Orchestrated.ps1, which runs the steps of the guide page through the scripts that do them (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio and SanVerify, Invoke-NodeMaintenanceReboot.ps1, New-SanVolume.ps1, New-StoragePath.ps1) and reads scenario.storage_architecture, scenario.topology and storage.san.type; parameters InfrastructureFile, Credential, RollingRestart, ValidateStorage and LogPath. Both parameter groups are generated.
 #   v5.0.67 (2026-11-23):
 #     - Azure Local 2611 and two fixes (infrastructure schema 5.6.31; the new key is optional, so a file of any 5.6 version stays valid). (1) operations.monitoring.action_group_enable_if_disabled (boolean, default false): Deploy-ActionGroup.ps1 and its Azure CLI twin report an action group that exists but is disabled as Disabled, with a warning, never as existing; they enable it only when this key is true, and an update that adds receivers passes the enabled state on. (2) Azure Local 2611 (12.2611.1004.9, OS build 26100.33822, released 2026-11-20): the examples of deployment.solution_version, provisioning.os_version and operations.updates.target_version are 12.2611.1004.9, and the Learn view the descriptions name is azloc-2611. (3) The parameters InfrastructureFile and OutputPath of New-TerraformStateMoveList.ps1 (config/variables/scripts; it lists the terraform state mv commands for a landing zone state written before registry 5.0.62) are registered under tools.arm_deployment.parameters.
 #   v5.0.66 (2026-11-23):
@@ -249,15 +251,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.67"
+  version: "5.0.68"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.31"
-  last_updated: "2026-11-23"
+  last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.68"
+      change: "Phase 06 post-deployment scripts (owner directive D140; no infrastructure key added or removed; infrastructure schema stays 5.6.31). Invoke-ConfigureClusterQuorum-Orchestrated.ps1 (task 02) is a real script, no longer a placeholder: it checks or creates the cloud witness storage account and sets the quorum witness from cluster.witness (type, storage_account, path) and landing_zone.storage_accounts[]; new parameters ComputerName, Credential, AccessKeyName and UpdateAccessKey. New task folder task-10-enable-external-storage-hybrid with Invoke-ExternalStorageHybrid-Orchestrated.ps1, which runs the steps of the guide page through the scripts that do them (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio and SanVerify, Invoke-NodeMaintenanceReboot.ps1, New-SanVolume.ps1, New-StoragePath.ps1) and reads scenario.storage_architecture, scenario.topology and storage.san.type; parameters InfrastructureFile, Credential, RollingRestart, ValidateStorage and LogPath. Both parameter groups are generated."
+      reason: "Owner directive D140: every Implementation guide step after the deployment has a real script that reads this registry; owner priority: the phase 06 post-deployment automation first."
     - date: "2026-11-23"
       version: "5.0.67"
       change: "Azure Local 2611 and two fixes (infrastructure schema 5.6.31; the new key is optional, so a file of any 5.6 version stays valid). (1) operations.monitoring.action_group_enable_if_disabled (boolean, default false): Deploy-ActionGroup.ps1 and its Azure CLI twin report an action group that exists but is disabled as Disabled, with a warning, never as existing; they enable it only when this key is true, and an update that adds receivers passes the enabled state on. (2) Azure Local 2611 (12.2611.1004.9, OS build 26100.33822, released 2026-11-20): the examples of deployment.solution_version, provisioning.os_version and operations.updates.target_version are 12.2611.1004.9, and the Learn view the descriptions name is azloc-2611. (3) The parameters InfrastructureFile and OutputPath of New-TerraformStateMoveList.ps1 (config/variables/scripts; it lists the terraform state mv commands for a landing zone state written before registry 5.0.62) are registered under tools.arm_deployment.parameters."
@@ -22413,10 +22419,13 @@ tools:
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_02_cluster_quorum_configuration_powershell_Invoke_ConfigureClusterQuorum_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1"
-              description: "Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED) and changes nothing. Its parameters are registered as declared."
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Optional. The machine to run the cluster commands on (a node name of the file or an address), instead of the first node of nodes[]."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Optional. The account for the remoting session to the node. Without it the account of the file is used (see above)."}
+                AccessKeyName: {"name":"AccessKeyName","type":"string","declared_type":"string","default":"key1","enum":["key1","key2"],"required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Optional. Which access key of the storage account the cloud witness gets: key1 (default) or key2. Learn: before you regenerate key1, set the witness to key2 on every cluster that uses the account."}
+                UpdateAccessKey: {"name":"UpdateAccessKey","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Optional. Set the cloud witness again with the current access key even when the cluster already uses the account (after a key rotation)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1","description":"Invoke-ConfigureClusterQuorum-Orchestrated.ps1. Optional. Also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_03_security_groups_applied_to_nodes_powershell_Invoke_ApplySecurityGroups_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1"
@@ -22482,6 +22491,15 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1","description":"Invoke-VerifyPostDeployment.ps1. Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1","description":"Invoke-VerifyPostDeployment.ps1. Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1","description":"Invoke-VerifyPostDeployment.ps1. Log path (no help text for this parameter)."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_10_enable_external_storage_hybrid_powershell_Invoke_ExternalStorageHybrid_Orchestrated_ps1_generated:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. The master infrastructure.yml (schema 5)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. The account for the remoting sessions to the nodes. Without it the account of the file is used (see above)."}
+                RollingRestart: {"name":"RollingRestart","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Restart the nodes one at a time (drain, restart, resume) after the MPIO step, as page step 6 asks, then run the MPIO step again."}
+                ValidateStorage: {"name":"ValidateStorage","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Run Test-Cluster -Include Storage on a node after the volumes are created (page step 9)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Passed to the steps that take it; the progress lines of this script are appended to it. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_01_validate_sdn_prerequisites_powershell_Invoke_SdnPrerequisites_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1"
