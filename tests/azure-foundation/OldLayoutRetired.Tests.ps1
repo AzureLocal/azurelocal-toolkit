@@ -111,28 +111,9 @@ Describe 'What the schema 5 scripts replaced is gone' {
     }
 }
 
-Describe 'The placeholders that stay' {
-    It 'are a few, and none takes a credential or a target node' {
-        @($script:Placeholders).Count | Should -BeGreaterThan 0
-        foreach ($p in $script:Placeholders) {
-            $names = Get-ParamName $p.Path
-            $names | Should -Contain 'InfrastructureFile'
-            $names | Should -Not -Contain 'Credential'
-            $names | Should -Not -Contain 'TargetNode'
-        }
-    }
-
-    if (@($script:Placeholders).Count -gt 0) {
-        It '<Relative> ends with NOT IMPLEMENTED and exit code 3, and changes nothing' -ForEach $script:Placeholders {
-            $own = Split-Path -Path $Path -Parent
-            $logs = Join-Path $script:Repo 'logs'
-            $before = @((Get-ChildItem -LiteralPath $own -Force).Name) -join ','
-            $logsBefore = Test-Path -LiteralPath $logs
-            $output = & pwsh -NoProfile -NonInteractive -File $Path -InfrastructureFile 'infrastructure.yml' 2>&1 | Out-String
-            $LASTEXITCODE | Should -Be 3 -Because $output
-            $output | Should -Match 'NOT IMPLEMENTED'
-            (@((Get-ChildItem -LiteralPath $own -Force).Name) -join ',') | Should -Be $before
-            Test-Path -LiteralPath $logs | Should -Be $logsBefore
-        }
+Describe 'No placeholder is left in the two stages' {
+    # O10: a placeholder that no guide page names is removed; the task folders the pages name stay (a .gitkeep, a catalogue row).
+    It 'no script of 01-cicd-infra or 02-azure-foundation is a placeholder' {
+        @($script:Placeholders | ForEach-Object Relative) | Should -BeNullOrEmpty
     }
 }

@@ -2,7 +2,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 # K2 batch 3: a placeholder (exit code 3, "NOT IMPLEMENTED") goes when a real script of the same task folder does the task. These four were retired;
 # the script that does the job instead is there, is not a placeholder, and the task folder keeps its catalogue entry. The network device monitoring
-# server task keeps its placeholder on purpose: in the public route that server is the syslog collector, and syslog forwarding is parked.
+# server task (syslog collector, syslog forwarding is parked) lost its placeholder with the others under O10: no page names it.
 # These tests read files; nothing is run.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/deploy-scripts/RetiredPlaceholders.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
@@ -36,9 +36,6 @@ BeforeDiscovery {
         $folder = [IO.Path]::Combine($deploy, $_.Task.Replace('/', [IO.Path]::DirectorySeparatorChar), 'powershell')
         $_ + @{ GonePath = [IO.Path]::Combine($folder, $_.Gone); InsteadPath = [IO.Path]::Combine($folder, $_.Instead) }
     }
-    $script:Kept = @(
-        @{ Task = '02-azure-foundation/phase-04-azure-management-infrastructure/task-14-configure-ndm-server'; Name = 'Invoke-NdmServer-Orchestrated.ps1' }
-    ) | ForEach-Object { $_ + @{ Path = [IO.Path]::Combine($deploy, $_.Task.Replace('/', [IO.Path]::DirectorySeparatorChar), 'powershell', $_.Name) } }
 }
 
 BeforeAll {
@@ -58,13 +55,5 @@ Describe 'Placeholders retired in K2 batch 3 and for D140' {
         @($script:Catalogue.Tasks | Where-Object Path -EQ $Task).Count | Should -Be 1
         $left = @(Get-ChildItem -LiteralPath (Split-Path -Parent $InsteadPath) -Filter '*.ps1' | Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match $script:PlaceholderPattern })
         $left | Should -BeNullOrEmpty
-    }
-}
-
-Describe 'Placeholders kept on purpose' {
-    It '<Name> stays a placeholder: the task is the syslog collector of network devices, which is parked' -ForEach $script:Kept {
-        Test-Path -LiteralPath $Path | Should -BeTrue
-        (Get-Content -LiteralPath $Path -Raw) | Should -Match $script:PlaceholderPattern
-        ($script:Catalogue.Tasks | Where-Object Path -EQ $Task).Reason | Should -Match 'syslog'
     }
 }

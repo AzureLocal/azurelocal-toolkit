@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 122.
+Task folders: 118.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 75 | 47 | 0 |
-| Azure CLI | 50 | 0 | 72 |
+| PowerShell | 75 | 43 | 0 |
+| Azure CLI | 50 | 0 | 68 |
 
-Azure CLI applies to 50 tasks, does not apply to 72, and is not decided for 0.
+Azure CLI applies to 50 tasks, does not apply to 68, and is not decided for 0.
 
 ## 01-cicd-infra
 
@@ -69,10 +69,6 @@ Azure CLI applies to 50 tasks, does not apply to 72, and is not decided for 0.
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | built | yes |
-| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not applicable | no |
-| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not applicable | no |
-| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not applicable | no |
-| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not applicable | no |
 
 ## 03-onprem-readiness
 
