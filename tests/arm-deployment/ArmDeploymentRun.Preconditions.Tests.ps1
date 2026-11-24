@@ -178,17 +178,47 @@ Describe 'OS configuration, build and SBE' {
         (Get-Pre $r OsConfigurationConverged iic-n02).result | Should -Be 'Failed'
         (Get-Pre $r OsConfigurationConverged iic-n01).result | Should -Be 'Passed'
     }
-    It 'a plan report with nothing to change counts as converged; pending changes and errors do not' {
+    It 'a Plan report never proves convergence (K3): a Warning in Mode Plan, Failed in Validate, even with nothing to change' {
         $infra = Get-TestInfra
         $report = Get-TestOsReport -Infra $infra
         $report.mode = 'Plan'
-        foreach ($n in $report.nodes) { $n.converged = $false }
+        $report.exitCode = 2
+        foreach ($n in $report.nodes) { $n.converged = $false; $n.status = 'pending' }
         $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $report
-        @(Get-Pre $r OsConfigurationConverged | Where-Object result -eq 'Passed').Count | Should -Be 2
+        @(Get-Pre $r OsConfigurationConverged | Where-Object result -eq 'Passed').Count | Should -Be 0
+        @(Get-Pre $r OsConfigurationConverged | Where-Object result -eq 'Warning').Count | Should -Be 2
+        (Get-Pre $r OsConfigurationConverged iic-n01).evidence | Should -Match 'Mode Plan'
+        (Get-Pre $r OsConfigurationConverged iic-n01).evidence | Should -Match 'exit code 2'
+        $v = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Validate -OsReport $report
+        @(Get-Pre $v OsConfigurationConverged | Where-Object result -eq 'Failed').Count | Should -Be 2
+        $v.ExitCode | Should -Not -Be 0
+    }
+    It 'an Apply report passes only a node that says converged with exit code 0; pending changes are a Warning in Plan, errors are Failed' {
+        $infra = Get-TestInfra
+        $report = Get-TestOsReport -Infra $infra
+        $report.nodes[1].converged = $false
         $report.nodes[1].planned.changes = 3
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $report
+        (Get-Pre $r OsConfigurationConverged iic-n01).result | Should -Be 'Passed'
+        (Get-Pre $r OsConfigurationConverged iic-n02).result | Should -Be 'Warning'
+        (Get-Pre $r OsConfigurationConverged iic-n02).evidence | Should -Match '3 change'
+        $report.nodes[1].errors = @('Dns: the DNS server did not answer')
         $r2 = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $report
         (Get-Pre $r2 OsConfigurationConverged iic-n02).result | Should -Be 'Failed'
-        (Get-Pre $r2 OsConfigurationConverged iic-n02).evidence | Should -Match '3 change'
+        $report.nodes[1].errors = @(); $report.nodes[1].converged = $true; $report.exitCode = 1
+        $r3 = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $report
+        (Get-Pre $r3 OsConfigurationConverged iic-n01).result | Should -Be 'Warning'
+        (Get-Pre $r3 OsConfigurationConverged iic-n01).evidence | Should -Match 'exit code 1'
+    }
+    It 'a node-level report (executed true, no mode) counts as applied; executed false does not' {
+        $infra = Get-TestInfra
+        $report = Get-TestOsReport -Infra $infra
+        $nodeLevel = [pscustomobject]@{ schemaVersion = 1; generatedUtc = $report.generatedUtc; executed = $true; complete = $true; nodes = $report.nodes }
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $nodeLevel
+        @(Get-Pre $r OsConfigurationConverged | Where-Object result -eq 'Passed').Count | Should -Be 2
+        $nodeLevel.executed = $false
+        $r2 = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan -OsReport $nodeLevel
+        @(Get-Pre $r2 OsConfigurationConverged | Where-Object result -eq 'Warning').Count | Should -Be 2
     }
     It 'an old report is a Warning' {
         $infra = Get-TestInfra

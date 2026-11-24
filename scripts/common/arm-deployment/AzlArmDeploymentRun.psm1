@@ -1482,6 +1482,16 @@ $script:Checks['OsConfigurationConverged'] = {
         $at = [datetime]::MinValue
         if ([datetime]::TryParse($generated, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$at) -and ((& $Ctx.Run.Adapter.Now) - $at).TotalHours -gt $Ctx.Settings.osReportMaxAgeHours) { $extra = " The report is older than $($Ctx.Settings.osReportMaxAgeHours) hours." }
     }
+    # Convergence is proven only by an applied run: the report's mode is Apply (a node-level report of Set-AzureLocalNodeConfiguration says
+    # executed true instead), the run ended with exit code 0, and the node says converged true. A Plan report proves nothing was applied, and a
+    # node that is pending or was not reached has not converged, even with nothing planned. Those are a Warning in Mode Plan (which reads files
+    # and blocks nothing) and Failed before Validate and Deploy. A node with errors, or a failed node, is Failed in every mode.
+    $reportMode = [string](Get-AzlProp $report 'mode' '')
+    $applied = if ($reportMode) { $reportMode -eq 'Apply' } else { [bool](Get-AzlProp $report 'executed' $false) }
+    $exitCode = Get-AzlProp $report 'exitCode' $null
+    $exitOk = ($null -eq $exitCode -or "$exitCode" -eq '0')
+    $soft = if ($Ctx.Run.Mode -eq 'Plan') { 'Warning' } else { 'Failed' }
+    $applyAction = 'Run the OS configuration with -Mode Apply (Invoke-AzureLocalOsConfiguration.ps1) until every node converges, and pass that report.'
     foreach ($n in $Ctx.Nodes) {
         $name = [string]$n['name']
         $r = @(ConvertTo-AzlArmArray (Get-AzlProp $report 'nodes' @()) | Where-Object { ([string]$_.name) -ieq $name }) | Select-Object -First 1
@@ -1489,15 +1499,23 @@ $script:Checks['OsConfigurationConverged'] = {
         $converged = Get-AzlProp $r 'converged' $null
         $changes = [int](Get-AzlProp $r 'planned.changes' -1)
         $blocked = [int](Get-AzlProp $r 'planned.blocked' 0)
-        $errors = @(ConvertTo-AzlArmArray (Get-AzlProp $r 'errors' @()))
+        $errors = @(@(ConvertTo-AzlArmArray (Get-AzlProp $r 'errors' @())) + @([string](Get-AzlProp $r 'error' '')) | Where-Object { "$_" })
         $status = [string](Get-AzlProp $r 'status' '')
-        if ($converged -eq $true -or ($changes -eq 0 -and $blocked -eq 0 -and $errors.Count -eq 0 -and $status -ne 'failed')) {
+        if ($errors.Count -or $status -eq 'failed') {
+            $why = if ($errors.Count) { "error: $($errors[0])" } else { 'status failed' }
+            New-AzlArmCheckResult OsConfigurationConverged Failed "$name has not converged ($why)." $applyAction -Node $name
+            continue
+        }
+        if ($applied -and $exitOk -and $converged -eq $true) {
             New-AzlArmCheckResult OsConfigurationConverged $(if ($extra) { 'Warning' } else { 'Passed' }) "$name converged.$extra" -Node $name
+            continue
         }
-        else {
-            $why = if ($errors.Count) { "error: $($errors[0])" } elseif ($changes -gt 0 -or $blocked -gt 0) { "$changes change(s) pending, $blocked blocked" } else { 'not converged' }
-            New-AzlArmCheckResult OsConfigurationConverged Failed "$name has not converged ($why)." 'Run the OS configuration with -Mode Apply and read its report.' -Node $name
-        }
+        $why = [System.Collections.Generic.List[string]]::new()
+        if (-not $applied) { $why.Add($(if ($reportMode) { "the report is from Mode $reportMode, which applies nothing" } else { 'the report is not from an applied run (executed is not true)' })) }
+        if (-not $exitOk) { $why.Add("the run ended with exit code $exitCode") }
+        if ($changes -gt 0 -or $blocked -gt 0) { $why.Add("$changes change(s) pending, $blocked blocked") }
+        if ($converged -ne $true) { $why.Add($(if ($status) { "the node is $status, not converged" } else { 'the node does not say converged' })) }
+        New-AzlArmCheckResult OsConfigurationConverged $soft "$name is not proven converged: $($why -join '; ').$extra" $applyAction -Node $name
     }
 }
 
