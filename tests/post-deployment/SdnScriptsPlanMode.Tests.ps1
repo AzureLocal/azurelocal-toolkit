@@ -66,10 +66,10 @@ BeforeAll {
             [ordered]@{ name = 'storage'; traffic = @('storage'); adapters = @('Port3', 'Port4') })
         $doc.identity.local_admin.password = "env://$($global:AzlPlanSecret)"
         $doc.identity.active_directory.lcm_user.password = "env://$($global:AzlPlanSecret)"
-        $doc.sdn = [ordered]@{ enabled = $true; prefix = 'iic01'; dns_records = 'dynamic'; acknowledge_maintenance_window = $true }
+        $doc.sdn = [ordered]@{ enabled = $true; dns_records = 'dynamic'; acknowledge_maintenance_window = $true }   # no prefix: derived from cluster.name
         if (-not $NoGroupInFile) {
             $doc.networking.network_security_groups = @([ordered]@{ name = 'nsg-iic-baseline'; rules = @(
-                    [ordered]@{ name = 'Allow-RDP-Management'; priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; source_address_prefixes = @('192.0.2.0/24'); destination_port_ranges = @('3389') }
+                    [ordered]@{ name = 'Allow-RDP-Management'; priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; source_address_prefixes = @('management'); destination_port_ranges = @('3389') }
                     [ordered]@{ name = 'Deny-All-Inbound'; priority = 4000; direction = 'Inbound'; access = 'Deny'; protocol = '*'; destination_port_ranges = @('*') }) })
             $doc.networking.logical_networks[0].nsg_name = 'nsg-iic-baseline'
         }
@@ -174,7 +174,9 @@ Describe 'The SDN scripts of phase 06 run alone in Plan mode' {
     Context 'task 01: Enable-ArcSdn.ps1 plans the enablement and says it cannot be undone' {
         It 'shows the Add-EceFeature plan with the prefix, and warns' {
             $r = Invoke-Alone $script:Paths['Enable-ArcSdn.ps1'] (New-PlanFile -Sdn) @{}
-            $r.Text | Should -Match 'Plan: Add-EceFeature -Name NC -SDNPrefix iic01'
+            $r.Text | Should -Match 'prefix \(derived from cluster\.name\): iicazl01'
+            $r.Text | Should -Match 'Plan: Add-EceFeature -Name NC -SDNPrefix iicazl01'
+            $r.Text | Should -Match 'fifth address of networking\.management\.infrastructure_pool'
             $r.Text | Should -Match 'CANNOT BE UNDONE'
             @($r.Output | Where-Object { $_.PSObject.Properties['Action'] })[0].Action | Should -Be 'WouldEnable'
         }
@@ -184,7 +186,7 @@ Describe 'The SDN scripts of phase 06 run alone in Plan mode' {
             $file = Join-Path $TestDrive 'example-sdn-on.yml'
             Set-Content -LiteralPath $file -Value $text
             $doc = ConvertFrom-Yaml -Ordered $text
-            $doc.sdn = [ordered]@{ enabled = $true; prefix = 'iic01'; dns_records = 'dynamic'; acknowledge_maintenance_window = $true }
+            $doc.sdn = [ordered]@{ enabled = $true; dns_records = 'dynamic'; acknowledge_maintenance_window = $true }
             Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
             $r = Invoke-Alone $script:Paths['Enable-ArcSdn.ps1'] $file @{}
             $r.ExitCode | Should -Be 2
@@ -214,6 +216,16 @@ Describe 'The SDN scripts of phase 06 run alone in Plan mode' {
             $rows = @($r.Output | Where-Object { $_.PSObject.Properties['Action'] })
             @($rows.Action) | Should -Be @('WouldCreate', 'WouldCreate', 'WouldCreate')
             Get-Change | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'task 07: the group rules name the management network by reference' {
+        It '<Script> plans the baseline rule with the management subnet of the file, not a typed address, and prints the variable' -ForEach @(
+            @{ Script = 'New-NetworkSecurityGroup.ps1' }, @{ Script = 'New-NetworkSecurityGroup.azcli.ps1' }) {
+            $global:AzlPlanState.Groups = @{}
+            $r = Invoke-Alone $script:Paths[$Script] (New-PlanFile -Sdn) @{}
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'source_address_prefixes: management = 192\.0\.2\.0/24 \(networking\.management\.subnet\)'
         }
     }
 

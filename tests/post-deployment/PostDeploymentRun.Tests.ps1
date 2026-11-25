@@ -142,7 +142,7 @@ Describe 'A full Plan run' {
             $line.cluster | Should -Be 'clus01'
             foreach ($f in 'timestamp', 'node', 'step', 'state', 'evidence', 'level', 'nextAction', 'runId') { $line.PSObject.Properties.Name | Should -Contain $f }
         }
-        @($e | Where-Object state -EQ 'StepPlanned').Count | Should -Be 11
+        @($e | Where-Object state -EQ 'StepPlanned').Count | Should -Be 12
         ($e | Where-Object { $_.step -eq 'sdn' -and $_.state -eq 'StepStarted' }) | Should -Not -BeNullOrEmpty
     }
 }
@@ -176,7 +176,23 @@ Describe 'A step the file does not enable is skipped with the reason' {
         (Get-StepRow $r 'nsgs').reason | Should -Match 'network_security_groups'
         (Get-StepRow $r 'logical-networks').reason | Should -Match 'logical_networks'
         (Get-StepRow $r 'external-storage').reason | Should -Match "scenario.storage_architecture is not 'hybrid'"
-        @($r.Events | Where-Object state -EQ 'StepSkipped').Count | Should -Be 7
+        @($r.Events | Where-Object state -EQ 'StepSkipped').Count | Should -Be 8
+    }
+    It 'checks the Network Controller (sdn-test) right after the sdn step, with -WhatIf in Plan, and skips it with the sdn step when SDN is off' {
+        $on = Invoke-Run -File (New-Infra)
+        $on.Ran[0..1] | Should -Be @('sdn', 'sdn-test')
+        (Get-StepRow $on 'sdn-test').result | Should -Be 'Planned'
+        @($on.Calls | Where-Object step -EQ 'sdn-test')[0].whatif | Should -BeTrue
+        $off = Invoke-Run -File (New-Infra @{ 'sdn.enabled' = $false })
+        (Get-StepRow $off 'sdn-test').reason | Should -Match 'sdn.enabled is not true'
+        $off.Ran | Should -Not -Contain 'sdn-test'
+    }
+    It 'runs sdn-test in Apply mode after the sdn step, and not after a failed sdn step' {
+        (Invoke-Run -File (New-Infra) -Parameters @{ Mode = 'Apply' }).Ran[0..1] | Should -Be @('sdn', 'sdn-test')
+        $failed = Invoke-Run -File (New-Infra) -Parameters @{ Mode = 'Apply' } -Behaviour 'sdn=fail'
+        $failed.Code | Should -Be 1
+        $failed.Ran | Should -Be @('sdn')
+        (Get-StepRow $failed 'sdn-test').result | Should -Be 'NotRun'
     }
     It 'does not create the network security groups when SDN is off, whatever the file lists' {
         $r = Invoke-Run -File (New-Infra @{ 'sdn.enabled' = $false })
@@ -228,7 +244,7 @@ Describe 'The selection: one task, one step, or a range' {
     It '-From and -To run the range, both ends included' {
         (Invoke-Run -File (New-Infra) -Parameters @{ From = 'storage-paths'; To = 'nsgs' }).Ran | Should -Be @('storage-paths', 'vm-images', 'nsgs')
         (Invoke-Run -File (New-Infra) -Parameters @{ From = 'task-09' }).Ran | Should -Be @('verification', 'external-storage', 'sbe-import-plan')
-        (Invoke-Run -File (New-Infra) -Parameters @{ To = 'quorum' }).Ran | Should -Be @('sdn', 'quorum')
+        (Invoke-Run -File (New-Infra) -Parameters @{ To = 'quorum' }).Ran | Should -Be @('sdn', 'sdn-test', 'quorum')
     }
     It 'a skipped step inside the selection is still skipped' {
         $r = Invoke-Run -File (New-Infra -Remove 'storage.vm_images') -Parameters @{ Only = @('vm-images') }
@@ -253,7 +269,7 @@ Describe 'The run stops at the first failure and never goes past it' {
     It 'a failed step ends the run with exit 1, and the steps after it are NotRun' {
         $r = Invoke-Run -File (New-Infra) -Parameters @{ Mode = 'Apply' } -Behaviour 'storage-paths=fail'
         $r.Code | Should -Be 1
-        $r.Ran | Should -Be @('sdn', 'quorum', 'security-groups', 'ssh', 'storage-volumes', 'storage-paths')
+        $r.Ran | Should -Be @('sdn', 'sdn-test', 'quorum', 'security-groups', 'ssh', 'storage-volumes', 'storage-paths')
         (Get-StepRow $r 'storage-paths').result | Should -Be 'Failed'
         (Get-StepRow $r 'vm-images').result | Should -Be 'NotRun'
         (Get-StepRow $r 'sbe-import-plan').result | Should -Be 'NotRun'
@@ -288,11 +304,11 @@ Describe 'Warnings' {
         $stop = Invoke-Run -File (New-Infra) -Behaviour 'ssh=warn'
         $stop.Code | Should -Be 3
         (Get-StepRow $stop 'ssh').result | Should -Be 'Warning'
-        $stop.Ran | Should -Be @('sdn', 'quorum', 'security-groups', 'ssh')
+        $stop.Ran | Should -Be @('sdn', 'sdn-test', 'quorum', 'security-groups', 'ssh')
         $go = Invoke-Run -File (New-Infra) -Parameters @{ ContinueOnWarning = $true } -Behaviour 'ssh=warn'
         $go.Code | Should -Be 0
         (Get-StepRow $go 'ssh').result | Should -Be 'Warning'
-        $go.Ran.Count | Should -Be 12
+        $go.Ran.Count | Should -Be 13
     }
 }
 
@@ -417,7 +433,7 @@ Describe 'Invoke-AzureLocalPostDeployment.ps1 (the entry script)' {
         $null = & pwsh -NoProfile -NonInteractive -File $entry -InfrastructureFile $file -LogPath $log -EventLogPath $events -SkipValidation 2>&1
         $LASTEXITCODE | Should -Be 0
         $report = Get-Content -LiteralPath (Join-Path $log 'report.json') -Raw | ConvertFrom-Json
-        @($report.steps | Where-Object result -EQ 'Skipped').Count | Should -Be 12
+        @($report.steps | Where-Object result -EQ 'Skipped').Count | Should -Be 13
         $events | Should -Exist
     }
 }

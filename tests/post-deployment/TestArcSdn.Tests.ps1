@@ -20,7 +20,7 @@ BeforeAll {
     function New-InfraFile {
         param(
             [object]$Enabled = $true, [object]$Prefix = 'iic01', [string]$Identity = 'active_directory', [string]$Domain = 'improbability.cloud',
-            [string]$PoolStart = '192.0.2.20', [string]$PoolEnd = '192.0.2.29', [switch]$LcmUser, [switch]$NoSdn, [int]$Nodes = 2
+            [string]$PoolStart = '192.0.2.20', [string]$PoolEnd = '192.0.2.29', [switch]$LcmUser, [switch]$NoSdn, [int]$Nodes = 2, [string]$ClusterName = ''
         )
         $doc = [ordered]@{
             scenario   = [ordered]@{ identity = $Identity }
@@ -28,6 +28,7 @@ BeforeAll {
             networking = [ordered]@{ management = [ordered]@{ infrastructure_pool = [ordered]@{ start = $PoolStart; end = $PoolEnd } } }
             identity   = [ordered]@{ local_admin = [ordered]@{ username = 'azl-admin'; password = "env://$($script:PasswordVariable)" } }
         }
+        if ($ClusterName) { $doc.cluster = [ordered]@{ name = $ClusterName } }
         if ($Domain -and $Identity -eq 'active_directory') { $doc.identity.active_directory = [ordered]@{ domain_fqdn = $Domain; netbios_name = 'IMPROB' } }
         if ($Domain -and $Identity -eq 'local_identity') { $doc.identity.local_identity = [ordered]@{ dns_zone = $Domain } }
         if ($LcmUser) { $doc.identity.active_directory.lcm_user = [ordered]@{ username = 'lcm-iic01'; password = "env://$($script:PasswordVariable)" } }
@@ -180,6 +181,21 @@ Describe 'Test-ArcSdn.ps1' {
             $r = Invoke-Check (New-InfraFile)
             $r.ExitCode | Should -Be 1
             $r.Rows[0].Check | Should -Be 'Connection'
+        }
+    }
+
+    Context 'the prefix' {
+        It 'checks the name <prefix>-NC with the prefix derived from cluster.name when sdn.prefix is not set, and says where it comes from' {
+            $r = Invoke-Check (New-InfraFile -Prefix $null -ClusterName 'iic-azl-c01')
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'prefix \(derived from cluster\.name\): iicazlc0'
+            (Get-Result $r 'DNS')[0].Detail | Should -Match '^iicazlc0-NC\.improbability\.cloud'
+        }
+
+        It 'uses sdn.prefix when both are set' {
+            $r = Invoke-Check (New-InfraFile -Prefix 'own01' -ClusterName 'iic-azl-c01')
+            $r.Text | Should -Match 'prefix \(sdn\.prefix\): own01'
+            (Get-Result $r 'DNS')[0].Detail | Should -Match '^own01-NC\.'
         }
     }
 

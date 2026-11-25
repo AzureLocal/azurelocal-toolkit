@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.72
+# Version: 5.0.74
 # Schema: infrastructure.schema.json (generated from this file)
 # Last Updated: 2026-11-24
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.74 (2026-11-24):
+#     - Network values come from the variables the file already has, not from typed copies (owner directive D150; infrastructure schema 5.6.37; no key added or removed, and every change is a relaxation, so a file of any 5.6 version stays valid). (1) sdn.prefix is optional with a derivation rule: when it is not set, Enable-ArcSdn.ps1 and Test-ArcSdn.ps1 (Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1) take cluster.name, make it lower case, remove every character that is not a letter or a digit and keep the first eight characters, then apply the Microsoft Learn prefix rules; the plan prints 'prefix (derived from cluster.name)' or 'prefix (sdn.prefix)'. (2) networking.network_security_groups[].rules[].source_address_prefixes and destination_address_prefixes accept, besides *, an IPv4 address or a CIDR, a reference to a network of the file: management (networking.management.subnet), oob, automation, compute or storage (every networking.vlans[] entry with that purpose), vlan:<name> (that VLAN's subnet) and logical-network:<name> (that logical network's address_prefix). New-NetworkSecurityGroup.ps1 and its Azure CLI twin, Set-NetworkSecurityGroupRule.azcli.ps1 and Test-NetworkSecurityGroupRule.azcli.ps1 replace the reference by the subnet (Resolve-AzlNsgAddressPrefix) and print which variable it came from; a reference the file cannot answer stops the script with exit 2. (3) operations.post_cluster.skip_steps takes the new value sdn-test: the step of Invoke-AzureLocalPostDeployment.ps1 that runs Test-ArcSdn.ps1 right after the sdn step when sdn.enabled is true.
 #   v5.0.73 (2026-11-24):
 #     - Post-deployment automation (owner directive D150; infrastructure schema 5.6.36; every new key is optional, so a file of any 5.6 version stays valid). New keys: operations.post_cluster.enabled, operations.post_cluster.skip_steps and operations.post_cluster.allow_node_restarts, read by Invoke-AzureLocalPostDeployment.ps1, which runs the tasks of phase 06 of the Implementation guide in page order (or one task, or a range) from the step table PostDeploymentSteps.psd1.
 #   v5.0.72 (2026-11-24):
@@ -261,15 +263,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.73"
+  version: "5.0.74"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.36"
+  infrastructure_schema_version: "5.6.37"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.74"
+      change: "Network values come from the variables the file already has, not from typed copies (owner directive D150; infrastructure schema 5.6.37; no key added or removed, and every change is a relaxation, so a file of any 5.6 version stays valid). (1) sdn.prefix is optional with a derivation rule: when it is not set, Enable-ArcSdn.ps1 and Test-ArcSdn.ps1 (Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1) take cluster.name, make it lower case, remove every character that is not a letter or a digit and keep the first eight characters, then apply the Microsoft Learn prefix rules; the plan prints 'prefix (derived from cluster.name)' or 'prefix (sdn.prefix)'. (2) networking.network_security_groups[].rules[].source_address_prefixes and destination_address_prefixes accept, besides *, an IPv4 address or a CIDR, a reference to a network of the file: management (networking.management.subnet), oob, automation, compute or storage (every networking.vlans[] entry with that purpose), vlan:<name> (that VLAN's subnet) and logical-network:<name> (that logical network's address_prefix). New-NetworkSecurityGroup.ps1 and its Azure CLI twin, Set-NetworkSecurityGroupRule.azcli.ps1 and Test-NetworkSecurityGroupRule.azcli.ps1 replace the reference by the subnet (Resolve-AzlNsgAddressPrefix) and print which variable it came from; a reference the file cannot answer stops the script with exit 2. (3) operations.post_cluster.skip_steps takes the new value sdn-test: the step of Invoke-AzureLocalPostDeployment.ps1 that runs Test-ArcSdn.ps1 right after the sdn step when sdn.enabled is true."
+      reason: "Owner directive D150: the SDN automation (phase 06 tasks 01, 07 and 08) must use variables, not typed-in values. The prefix and the management subnet of a rule were typed in the run file although cluster.name and networking.management.subnet are already variables."
     - date: "2026-11-24"
       version: "5.0.73"
       change: "Post-deployment automation (owner directive D150; infrastructure schema 5.6.36; every new key is optional). New keys: operations.post_cluster.enabled, skip_steps and allow_node_restarts. Invoke-AzureLocalPostDeployment.ps1 runs the tasks of phase 06 of the Implementation guide in page order, one task or a range, from the step table PostDeploymentSteps.psd1 (plan or apply, skip with a reason when the file does not enable a step, stop at the first failure, SDN only with its acknowledgement keys, events for Sonar)."
@@ -7884,25 +7890,25 @@ networking:
                   example: "Tcp"
                   used_by: [deployment]
                 source_address_prefixes:
-                  description: "Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list. Service tags are not used on Azure Local."
+                  description: "Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of the file. A reference to a network the file already describes is accepted in place of an address, so the subnet is not typed twice: management (networking.management.subnet); oob, automation, compute or storage (the subnet of every networking.vlans[] entry with that purpose); vlan:<name> (the subnet of the networking.vlans[] entry with that name); logical-network:<name> (the address_prefix of the networking.logical_networks[] entry with that name). The scripts replace a reference by the subnet, print the address and the variable it came from, and stop with exit 2 when the file cannot answer it. Write the words in lower case. A list. Service tags are not used on Azure Local."
                   type: array
                   required: false
                   since: "5.6.11"
                   minItems: 1
-                  example: [["192.0.2.0/24", "198.51.100.0/24"]]
+                  example: [["management", "192.0.2.0/24"]]
                   used_by: [deployment]
                   items:
-                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"}
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|management|oob|automation|compute|storage|(vlan|logical-network):[A-Za-z0-9._-]+)$"}
                 destination_address_prefixes:
-                  description: "Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list."
+                  description: "Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of the file. A reference to a network the file already describes is accepted in place of an address, so the subnet is not typed twice: management (networking.management.subnet); oob, automation, compute or storage (the subnet of every networking.vlans[] entry with that purpose); vlan:<name> (the subnet of the networking.vlans[] entry with that name); logical-network:<name> (the address_prefix of the networking.logical_networks[] entry with that name). The scripts replace a reference by the subnet, print the address and the variable it came from, and stop with exit 2 when the file cannot answer it. Write the words in lower case. A list."
                   type: array
                   required: false
                   since: "5.6.11"
                   minItems: 1
-                  example: [["203.0.113.0/24", "198.51.100.0/24"]]
+                  example: [["203.0.113.0/24", "storage"]]
                   used_by: [deployment]
                   items:
-                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"}
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|management|oob|automation|compute|storage|(vlan|logical-network):[A-Za-z0-9._-]+)$"}
                 source_port_ranges:
                   description: "Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535. A list."
                   type: array
@@ -13990,12 +13996,12 @@ operations:
           default: true
           example: true
         skip_steps:
-          description: "Schema 5.6.36. Steps of Invoke-AzureLocalPostDeployment.ps1 to leave out even though the file enables them: sdn, quorum, security-groups, ssh, storage-volumes, storage-paths, vm-images, nsgs, logical-networks, verification, external-storage, sbe-import-plan. The step order and what enables each step are in PostDeploymentSteps.psd1 next to the script. A skipped step is reported with this key as the reason."
+          description: "Schema 5.6.36. Steps of Invoke-AzureLocalPostDeployment.ps1 to leave out even though the file enables them: sdn, sdn-test, quorum, security-groups, ssh, storage-volumes, storage-paths, vm-images, nsgs, logical-networks, verification, external-storage, sbe-import-plan. The step order and what enables each step are in PostDeploymentSteps.psd1 next to the script. A skipped step is reported with this key as the reason."
           type: array
           since: "5.6.36"
           required: false
           items:
-            {"type":"string","enum":["sdn","quorum","security-groups","ssh","storage-volumes","storage-paths","vm-images","nsgs","logical-networks","verification","external-storage","sbe-import-plan"]}
+            {"type":"string","enum":["sdn","sdn-test","quorum","security-groups","ssh","storage-volumes","storage-paths","vm-images","nsgs","logical-networks","verification","external-storage","sbe-import-plan"]}
           example: [["ssh"]]
         allow_node_restarts:
           description: "Schema 5.6.36. true to let the external storage step (task 10, hybrid S2D plus SAN) restart the nodes one at a time (drain, restart, resume) after the MPIO step, as the page's step 6 asks: Invoke-ExternalStorageHybrid-Orchestrated.ps1 -RollingRestart. false or absent: the step stops with exit code 1 when a node needs a restart, and says what to run. This is the approval of the restarts."
@@ -17313,7 +17319,7 @@ sdn:
       example: false
       used_by: [deployment, trailwright, ranger]
     prefix:
-      description: "The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Required when sdn.enabled is true: Enable-ArcSdn.ps1 stops with exit 2 without it."
+      description: "OPTIONAL. The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Leave it out and it is derived from cluster.name (Resolve-AzlSdnPrefix, used by Enable-ArcSdn.ps1 and Test-ArcSdn.ps1): lower case, every character that is not a letter or a digit removed (hyphens too), the first eight characters kept; for example the name iic-azl-c01 gives iicazlc0. The plan prints which one it uses: 'prefix (sdn.prefix)' or 'prefix (derived from cluster.name)'. Set it when the derived prefix is not unique in the domain (two instances whose names share their first eight letters and digits; the scripts warn when the name was cut) or when you want another name. The rules apply to the derived prefix too. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Enable-ArcSdn.ps1 stops with exit 2 when sdn.enabled is true and neither this key nor cluster.name gives a usable prefix."
       type: string
       required: false
       pattern: "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"

@@ -8,6 +8,9 @@
     ConvertTo-AzlSdnIntentTraffic The traffic list of an intent as Get-NetIntent reports it on a machine (IsManagementIntentSet and the others).
     Resolve-AzlSdnLogin           The account that connects to a machine of the instance (the deployment user of the file), with its password read
                                   from the secret reference.
+    Resolve-AzlSdnPrefix          The SDN prefix: sdn.prefix, or derived from cluster.name when it is not set.
+    Resolve-AzlNsgAddressPrefix   The addresses of a network security group rule: literals as written, a reference (management, vlan:<name>, ...) as the subnet
+                                  the file already holds.
 
     Source: Microsoft Learn, Software Defined Networking enabled by Azure Arc on Azure Local (sdn-overview): Supported networking patterns and
     Unsupported intent configurations. The intent functions read no file and no machine: the caller passes the intents. Resolve-AzlSdnLogin reads
@@ -146,4 +149,118 @@ function Resolve-AzlSdnLogin {
     & $result ([pscredential]::new($account, $secret)) $source $what '' ''
 }
 
-Export-ModuleMember -Function Get-AzlSdnIntentProblem, ConvertTo-AzlSdnIntentTraffic, Resolve-AzlSdnLogin
+function Resolve-AzlSdnPrefix {
+    <#
+    .SYNOPSIS
+        The SDN prefix (Add-EceFeature -SDNPrefix): sdn.prefix when the file sets it, otherwise derived from cluster.name.
+    .DESCRIPTION
+        One rule for Enable-ArcSdn.ps1 and Test-ArcSdn.ps1, so they use the same prefix. The registry key sdn.prefix is optional.
+          1. sdn.prefix, when it is set, is used as written.
+          2. Otherwise the prefix is derived from cluster.name: lower case, every character that is not a letter or a digit removed (hyphens too),
+             the first eight characters kept.
+        Either way the result must satisfy the rules of Microsoft Learn (Enable SDN integration): not empty, eight characters or fewer, letters,
+        digits and hyphens only, no two hyphens in a row, no hyphen at the end; the toolkit also refuses a hyphen at the start. Two instances of one
+        domain need two prefixes: when the derived prefix is shorter than the cluster name (Truncated), set sdn.prefix on the instances whose names
+        share their first eight letters and digits.
+    .PARAMETER Infrastructure
+        The file as read by Import-AzlInfrastructure.
+    .OUTPUTS
+        Prefix (text, empty when there is a Problem), Source (sdn.prefix or cluster.name), Derived (bool), Truncated (bool, derived and cut to eight
+        characters), Label (for the plan: 'prefix (sdn.prefix)' or 'prefix (derived from cluster.name)'), Problem (text, empty when usable).
+    .EXAMPLE
+        $p = Resolve-AzlSdnPrefix -Infrastructure $infra; Write-Information "$($p.Label): $($p.Prefix)"
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $rules = 'at most 8 characters, letters, digits and single hyphens, with no hyphen at the start or the end'
+    $result = { param($p, $s, $d, $t, $problem) [pscustomobject]@{ Prefix = $(if ($problem) { '' } else { $p }); Source = $s; Derived = $d; Truncated = $t; Label = "prefix ($(if ($d) { 'derived from cluster.name' } else { 'sdn.prefix' }))"; Problem = $problem } }
+    $set = ([string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'sdn.prefix')).Trim()
+    $derived = $false; $truncated = $false; $source = 'sdn.prefix'
+    if ($set) { $value = $set }
+    else {
+        $derived = $true; $source = 'cluster.name'
+        $name = ([string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'cluster.name')).Trim()
+        if (-not $name) { return & $result '' $source $true $false 'sdn.prefix is not set and cannot be derived, because cluster.name is missing. Set sdn.prefix, or cluster.name.' }
+        $letters = ($name.ToLowerInvariant() -replace '[^a-z0-9]', '')
+        if (-not $letters) { return & $result '' $source $true $false 'sdn.prefix is not set and cannot be derived: cluster.name holds no letter or digit. Set sdn.prefix.' }
+        $truncated = $letters.Length -gt 8
+        $value = $letters.Substring(0, [Math]::Min(8, $letters.Length))
+    }
+    if ($value.Length -gt 8 -or $value -notmatch '^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$') {
+        return & $result '' $source $derived $truncated "The SDN prefix '$value' ($source) is not usable: $rules."
+    }
+    & $result $value $source $derived $truncated ''
+}
+
+function Resolve-AzlNsgAddressPrefix {
+    <#
+    .SYNOPSIS
+        The addresses of a network security group rule: literal values as written, and a symbolic reference replaced by the subnet the file already holds.
+    .DESCRIPTION
+        networking.network_security_groups[].rules[].source_address_prefixes and destination_address_prefixes take, per entry:
+          *                           any address (kept)
+          an IPv4 address or a CIDR   kept as written
+          management                  networking.management.subnet
+          oob, automation, compute, storage
+                                      every networking.vlans[] entry with that purpose and a subnet (all of them, when there are several)
+          vlan:<name>                 the subnet of the networking.vlans[] entry with that name
+          logical-network:<name>      address_prefix of the networking.logical_networks[] entry with that name
+        The words are matched without regard to case. A reference that the file cannot answer (no such network, no subnet) is a Problem, never
+        a guess. Nothing is read from anywhere but the file passed in.
+    .PARAMETER Infrastructure
+        The file as read by Import-AzlInfrastructure.
+    .PARAMETER Value
+        The entries of the list as written in the file.
+    .OUTPUTS
+        Addresses (the list to validate and send, without duplicates), Notes (one line for every reference: the word, the address and the variable it
+        came from), Problem (text, empty when every entry is usable).
+    .EXAMPLE
+        $r = Resolve-AzlNsgAddressPrefix -Infrastructure $infra -Value @('management')
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Value
+    )
+    $octet = '(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+    $literal = "^(\*|($octet\.){3}$octet(/([0-9]|[12][0-9]|3[0-2]))?)$"
+    $addresses = [System.Collections.Generic.List[string]]::new()
+    $notes = [System.Collections.Generic.List[string]]::new()
+    $fail = { param($text) [pscustomobject]@{ Addresses = @(); Notes = @($notes); Problem = $text } }
+    $add = { param($items) foreach ($a in $items) { if ($addresses -notcontains $a) { $addresses.Add($a) } } }
+    $list = { param($path) @(@(Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path $path) | Where-Object { $null -ne $_ } | ForEach-Object { $_ }) }
+    foreach ($entry in $Value) {
+        $text = $entry.Trim()
+        if ($text -match $literal) { & $add @($text); continue }
+        $key = $text.ToLowerInvariant()
+        if ($key -eq 'management') {
+            $subnet = ([string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.subnet')).Trim()
+            if (-not $subnet) { return & $fail "'$text' means networking.management.subnet, which the file does not set." }
+            & $add @($subnet); $notes.Add("$text = $subnet (networking.management.subnet)")
+        }
+        elseif ($key -in 'oob', 'automation', 'compute', 'storage') {
+            $found = @(& $list 'networking.vlans' | Where-Object { $_ -is [System.Collections.IDictionary] -and ([string](Get-AzlSdnField $_ 'purpose' '')).Trim() -ieq $key -and ([string](Get-AzlSdnField $_ 'subnet' '')).Trim() })
+            if ($found.Count -eq 0) { return & $fail "'$text' means the networks of networking.vlans[] with purpose $key and a subnet, and the file has none." }
+            $subnets = @($found | ForEach-Object { ([string]$_['subnet']).Trim() })
+            & $add $subnets; $notes.Add("$text = $($subnets -join ', ') (networking.vlans[] with purpose ${key}: $(@($found | ForEach-Object { [string](Get-AzlSdnField $_ 'name' '?') }) -join ', '))")
+        }
+        elseif ($key -like 'vlan:*' -or $key -like 'logical-network:*') {
+            $kind = $key.Substring(0, $key.IndexOf(':')); $name = $text.Substring($text.IndexOf(':') + 1).Trim()
+            $path = if ($kind -eq 'vlan') { 'networking.vlans' } else { 'networking.logical_networks' }
+            $field = if ($kind -eq 'vlan') { 'subnet' } else { 'address_prefix' }
+            if (-not $name) { return & $fail "'$text' names no entry: write the name after the colon." }
+            $hit = @(& $list $path | Where-Object { $_ -is [System.Collections.IDictionary] -and ([string](Get-AzlSdnField $_ 'name' '')).Trim() -ieq $name })
+            if ($hit.Count -eq 0) { return & $fail "'$text' names '$name', which is not in ${path}[]." }
+            if ($hit.Count -gt 1) { return & $fail "'$text' is ambiguous: ${path}[] has $($hit.Count) entries named '$name' (names are compared without regard to case)." }
+            $subnet = ([string](Get-AzlSdnField $hit[0] $field '')).Trim()
+            if (-not $subnet) { return & $fail "'${text}': the entry '${name}' of ${path}[] has no ${field}." }
+            & $add @($subnet); $notes.Add("$text = $subnet (${path}[].${field} of '${name}')")
+        }
+        else { return & $fail "'$text' is not usable. Use *, an IPv4 address, an IPv4 range in CIDR form, or a reference: management, oob, automation, compute, storage, vlan:<name> or logical-network:<name>." }
+    }
+    [pscustomobject]@{ Addresses = @($addresses); Notes = @($notes); Problem = '' }
+}
+
+Export-ModuleMember -Function Get-AzlSdnIntentProblem, ConvertTo-AzlSdnIntentTraffic, Resolve-AzlSdnLogin, Resolve-AzlSdnPrefix, Resolve-AzlNsgAddressPrefix

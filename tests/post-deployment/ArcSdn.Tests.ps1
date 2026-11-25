@@ -26,7 +26,7 @@ BeforeAll {
             [object[]]$Intents = @((New-Intent 'mgmt_compute' @('management', 'compute')), (New-Intent 'storage' @('storage'))),
             [int]$Nodes = 2, [string]$Connectivity = 'switched', [string]$Architecture = 's2d', [string]$Identity = 'active_directory',
             [string]$Domain = 'improbability.cloud', [string]$PoolStart = '192.0.2.20', [string]$PoolEnd = '192.0.2.29',
-            [object]$AdminPassword = $null, [switch]$NoSdn, [switch]$LcmUser
+            [object]$AdminPassword = $null, [switch]$NoSdn, [switch]$LcmUser, [string]$ClusterName = ''
         )
         if ($null -eq $AdminPassword) { $AdminPassword = "env://$($script:PasswordVariable)" }
         $doc = [ordered]@{
@@ -35,6 +35,7 @@ BeforeAll {
             networking = [ordered]@{ management = [ordered]@{ infrastructure_pool = [ordered]@{ start = $PoolStart; end = $PoolEnd } } }
             identity   = [ordered]@{ local_admin = [ordered]@{ username = 'azl-admin' } }
         }
+        if ($ClusterName) { $doc.cluster = [ordered]@{ name = $ClusterName } }
         if ($Intents) { $doc.networking.intents = @($Intents) }
         if ($AdminPassword) { $doc.identity.local_admin.password = $AdminPassword }
         if ($Domain -and $Identity -eq 'active_directory') { $doc.identity.active_directory = [ordered]@{ domain_fqdn = $Domain; netbios_name = 'IMPROB' } }
@@ -282,10 +283,40 @@ Describe 'Enable-ArcSdn.ps1' {
     }
 
     Context 'a value in the file is missing or the design is not supported (exit 2, nothing changed)' {
-        It 'refuses a missing prefix' {
+        It 'refuses a missing prefix when cluster.name cannot give one either' {
             $r = Invoke-Sdn (New-InfraFile -Prefix $null)
             $r.ExitCode | Should -Be 2
-            $r.Text | Should -Match 'sdn.prefix is missing'
+            $r.Text | Should -Match 'sdn.prefix is not set and cannot be derived'
+            $global:AzlSdnCalls.Count | Should -Be 0
+        }
+
+        It 'derives the prefix from cluster.name when sdn.prefix is not set, and the plan says so' {
+            $r = Invoke-Sdn (New-InfraFile -Prefix $null -ClusterName 'IIC-01') -DryRun
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'prefix \(derived from cluster\.name\): iic01'
+            $r.Text | Should -Match '-SDNPrefix iic01 '
+            $r.Text | Should -Not -Match 'cut to 8 characters'
+            $r.Text | Should -Match 'fifth address of networking\.management\.infrastructure_pool'
+        }
+
+        It 'enables SDN with the derived prefix, and warns when the name was cut to eight characters' {
+            $r = Invoke-Sdn (New-InfraFile -Prefix $null -ClusterName 'iic-azl-c01')
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            (Get-Call 'Enable')[0].Arguments[0] | Should -Be 'iicazlc0'
+            $r.Text | Should -Match 'cut to 8 characters'
+        }
+
+        It 'prefers sdn.prefix to cluster.name and says that the prefix comes from sdn.prefix' {
+            $r = Invoke-Sdn (New-InfraFile -Prefix 'own01' -ClusterName 'iic-azl-c01') -DryRun
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'prefix \(sdn\.prefix\): own01'
+            $r.Text | Should -Not -Match 'derived from cluster\.name'
+        }
+
+        It 'refuses a cluster.name that gives no usable prefix' {
+            $r = Invoke-Sdn (New-InfraFile -Prefix $null -ClusterName '---')
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'holds no letter or digit'
             $global:AzlSdnCalls.Count | Should -Be 0
         }
 

@@ -24,7 +24,9 @@
         multicast, management with Windows Admin Center or SDN Express, and some intent layouts (below).
 
     What the script checks before it sends anything (exit 2, a value or the design in the file is not usable):
-      - sdn.prefix: not empty, at most 8 characters, letters, digits and single hyphens, no hyphen at the start or the end.
+      - the SDN prefix: sdn.prefix when the file sets it, otherwise derived from cluster.name (lower case, only letters and digits, the first 8 characters;
+        Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1). Either way: not empty, at most 8 characters, letters, digits and single hyphens, no hyphen at the
+        start or the end. The plan says which of the two it is: 'prefix (sdn.prefix)' or 'prefix (derived from cluster.name)'.
       - sdn.dns_records is dynamic or static, and the management infrastructure pool is in the file (the Network Controller record points at its fifth address).
       - the layout of networking.intents and the storage connectivity are ones Learn supports with SDN enabled by Arc (see sdn-overview):
         at most three intents; no intent with compute and storage but without management; no intent of compute only on a single machine;
@@ -58,7 +60,8 @@
     Completed fails the run.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        sdn.enabled, sdn.prefix, sdn.dns_records, sdn.acknowledge_maintenance_window, sdn.acknowledge_dns_record
+        sdn.enabled, sdn.prefix (optional), sdn.dns_records, sdn.acknowledge_maintenance_window, sdn.acknowledge_dns_record
+        cluster.name                                            the prefix when sdn.prefix is not set
         networking.management.infrastructure_pool.start, end    the Network Controller record points at the fifth address
         networking.intents[].name, traffic                      the layout Learn supports
         scenario.identity, identity.active_directory.domain_fqdn, identity.local_identity.dns_zone   the domain of the REST URL
@@ -189,11 +192,9 @@ if ($null -eq $enabledRaw -or $enabledRaw -eq $false) {
 }
 if ($enabledRaw -isnot [bool]) { Exit-InputProblem "sdn.enabled must be true or false; found '$enabledRaw'." }
 
-$prefix = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'sdn.prefix')).Trim()
-if (-not $prefix) { Exit-InputProblem 'sdn.prefix is missing. SDN needs a prefix of at most 8 characters (Add-EceFeature -SDNPrefix).' }
-if ($prefix.Length -gt 8 -or $prefix -notmatch '^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$') {
-    Exit-InputProblem "sdn.prefix '$prefix' is not usable: at most 8 characters, letters, digits and single hyphens, with no hyphen at the start or the end."
-}
+$prefixResult = Resolve-AzlSdnPrefix -Infrastructure $infra   # sdn.prefix, or derived from cluster.name when it is not set
+if ($prefixResult.Problem) { Exit-InputProblem $prefixResult.Problem }
+$prefix = $prefixResult.Prefix
 $dnsMode = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'sdn.dns_records')).Trim().ToLowerInvariant()
 if ($dnsMode -notin 'dynamic', 'static') { Exit-InputProblem "sdn.dns_records must be dynamic or static; found '$dnsMode'." }
 foreach ($key in 'acknowledge_maintenance_window', 'acknowledge_dns_record') {
@@ -228,6 +229,9 @@ if ($intents.Count -eq 0) { Write-Caution 'networking.intents is not in the file
 Write-Caution 'SDN enabled by Azure Arc CANNOT BE UNDONE. Microsoft Learn: once you enable SDN you cannot roll back or disable it.'
 Write-Caution 'Enabling it interrupts the network of running workloads for a short time while the Virtual Filtering Platform policies are applied. Arrange a maintenance window on a production instance.'
 Write-Caution 'The action plan takes up to 20 minutes. Never run it where Network Controller was deployed with on-premises tools (SDN Express, Windows Admin Center).'
+Write-Line "$($prefixResult.Label): $prefix"
+if ($prefixResult.Truncated) { Write-Caution 'The prefix was derived from cluster.name and cut to 8 characters. Another instance of the same domain whose name starts with the same 8 letters and digits would get the same prefix: set sdn.prefix on one of them.' }
+Write-Line "Reserved address ${reservedAddress}: the fifth address of networking.management.infrastructure_pool. REST name $(if ($fqdn) { $fqdn } else { "$prefix-NC" }): the prefix, -NC and the domain of $(if ($identityKind -eq 'local_identity') { 'identity.local_identity.dns_zone' } else { 'identity.active_directory.domain_fqdn' })."
 Write-Line "Plan: Add-EceFeature -Name NC -SDNPrefix $prefix -AcknowledgeMaintenanceWindow$(if ($dnsMode -eq 'static') { ' -AcknowledgeDNSRecordCreation' }). DNS $dnsMode; the record $(if ($fqdn) { $fqdn } else { "$prefix-NC" }) must point at $reservedAddress."
 
 $answersMissing = [System.Collections.Generic.List[string]]::new()

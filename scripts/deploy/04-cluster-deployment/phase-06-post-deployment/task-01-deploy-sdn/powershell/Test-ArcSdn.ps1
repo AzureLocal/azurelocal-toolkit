@@ -10,7 +10,7 @@
       1. OS build: 26100 or later (systeminfo shows 10.0.26100).
       2. Network Controller cluster group: it exists and its state is Online (Get-ClusterGroup, name matching Network Controller). The owner node is reported.
       3. Network Controller cluster resources: every resource of that group is Online (Get-ClusterGroup | Get-ClusterResource).
-      4. DNS: <sdn.prefix>-NC.<domain> resolves, on the machine, to the fifth address of networking.management.infrastructure_pool, the reserved address
+      4. DNS: <prefix>-NC.<domain> resolves, on the machine, to the fifth address of networking.management.infrastructure_pool, the reserved address
          that Learn names for the record (Resolve-DnsName).
     Not checked here, because it is a view of the Azure portal and not a command: Azure Local instance, Networking, Network Controller listed. Learn's
     outcome of the action plan is shown by Enable-ArcSdn.ps1 and kept in its -LogPath. The network security group scripts verify the Azure side
@@ -24,7 +24,8 @@
     scripts/common/sdn/AzlSdn.psm1, Resolve-AzlSdnLogin). The password is a secret reference. The script never prompts.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
-        sdn.enabled, sdn.prefix, networking.management.infrastructure_pool.start, end
+        sdn.enabled, sdn.prefix (optional; cluster.name when it is not set: see Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1, the same prefix as Enable-ArcSdn.ps1)
+        networking.management.infrastructure_pool.start, end
         scenario.identity, identity.active_directory.domain_fqdn, identity.local_identity.dns_zone, nodes[].name, nodes[].management.ip_address
         identity.active_directory.netbios_name, identity.active_directory.lcm_user (username, password), identity.local_admin (username, password)
 
@@ -132,8 +133,10 @@ if ($null -eq $enabledRaw -or $enabledRaw -eq $false) {
     exit 0
 }
 if ($enabledRaw -isnot [bool]) { Exit-InputProblem "sdn.enabled must be true or false; found '$enabledRaw'." }
-$prefix = (Get-Text 'sdn.prefix')
-if (-not $prefix) { Exit-InputProblem 'sdn.prefix is missing: the Network Controller name <prefix>-NC cannot be checked.' }
+$prefixResult = Resolve-AzlSdnPrefix -Infrastructure $infra   # sdn.prefix, or derived from cluster.name when it is not set
+if ($prefixResult.Problem) { Exit-InputProblem $prefixResult.Problem }
+$prefix = $prefixResult.Prefix
+Write-Line "$($prefixResult.Label): $prefix"
 $poolStart = Get-Text 'networking.management.infrastructure_pool.start'
 $poolEnd = Get-Text 'networking.management.infrastructure_pool.end'
 if (-not (Test-Ipv4 $poolStart) -or -not (Test-Ipv4 $poolEnd)) { Exit-InputProblem 'networking.management.infrastructure_pool.start and end are missing or not IPv4 addresses. The Network Controller record points at the fifth address of this range.' }

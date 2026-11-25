@@ -282,6 +282,29 @@ Describe 'New-NetworkSecurityGroup.azcli.ps1' {
         $order | Should -Be @('stack-hci-vm network nsg create', 'stack-hci-vm network nsg rule create')
     }
 
+    It 'sends the subnet a rule names by reference (management, a purpose, vlan:<name>) and says which variable it came from' {
+        $r = Invoke-AzTool $script:Nsg (New-AzTestInfraFile { param($d)
+                $d.networking.management = [ordered]@{ subnet = '198.51.100.0/24' }
+                $d.networking.vlans = @([ordered]@{ name = 'workloads'; id = 714; subnet = '203.0.113.0/24'; purpose = 'compute' })
+                $rule = $d.networking.network_security_groups[0].rules[0]
+                $rule.source_address_prefixes = @('management', 'vlan:workloads')
+                $rule.destination_address_prefixes = @('compute')
+            })
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $rule = (Get-AzCall 'stack-hci-vm network nsg rule create')[0]
+        @($rule.Options['--source-address-prefixes']) | Should -Be @('198.51.100.0/24', '203.0.113.0/24')
+        @($rule.Options['--destination-address-prefixes']) | Should -Be @('203.0.113.0/24')
+        $r.Text | Should -Match 'source_address_prefixes: management = 198\.51\.100\.0/24 \(networking\.management\.subnet\)'
+        $r.Text | Should -Match 'destination_address_prefixes: compute = 203\.0\.113\.0/24 \(networking\.vlans\[\] with purpose compute: workloads\)'
+    }
+
+    It 'stops with exit code 2 and calls nothing when a reference cannot be answered by the file' {
+        $r = Invoke-AzTool $script:Nsg (New-AzTestInfraFile { param($d) $d.networking.network_security_groups[0].rules[0].source_address_prefixes = @('storage') })
+        $r.ExitCode | Should -Be 2
+        $r.Text | Should -Match 'networking\.vlans\[\] with purpose storage'
+        $global:AzlFake.Calls.Count | Should -Be 0
+    }
+
     It 'changes nothing under -WhatIf' {
         $r = Invoke-AzTool $script:Nsg (New-AzTestInfraFile) -DryRun
         $r.ExitCode | Should -Be 0 -Because $r.Text

@@ -1230,21 +1230,21 @@
                       ]
                     },
                     "source_address_prefixes": {
-                      "description": "Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list. Service tags are not used on Azure Local.",
+                      "description": "Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of the file. A reference to a network the file already describes is accepted in place of an address, so the subnet is not typed twice: management (networking.management.subnet); oob, automation, compute or storage (the subnet of every networking.vlans[] entry with that purpose); vlan:<name> (the subnet of the networking.vlans[] entry with that name); logical-network:<name> (the address_prefix of the networking.logical_networks[] entry with that name). The scripts replace a reference by the subnet, print the address and the variable it came from, and stop with exit 2 when the file cannot answer it. Write the words in lower case. A list. Service tags are not used on Azure Local.",
                       "type": "array",
                       "minItems": 1,
                       "items": {
                         "type": "string",
-                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"
+                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|management|oob|automation|compute|storage|(vlan|logical-network):[A-Za-z0-9._-]+)$"
                       }
                     },
                     "destination_address_prefixes": {
-                      "description": "Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list.",
+                      "description": "Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of the file. A reference to a network the file already describes is accepted in place of an address, so the subnet is not typed twice: management (networking.management.subnet); oob, automation, compute or storage (the subnet of every networking.vlans[] entry with that purpose); vlan:<name> (the subnet of the networking.vlans[] entry with that name); logical-network:<name> (the address_prefix of the networking.logical_networks[] entry with that name). The scripts replace a reference by the subnet, print the address and the variable it came from, and stop with exit 2 when the file cannot answer it. Write the words in lower case. A list.",
                       "type": "array",
                       "minItems": 1,
                       "items": {
                         "type": "string",
-                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"
+                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|management|oob|automation|compute|storage|(vlan|logical-network):[A-Za-z0-9._-]+)$"
                       }
                     },
                     "source_port_ranges": {
@@ -1910,7 +1910,7 @@
           "type": "boolean"
         },
         "prefix": {
-          "description": "The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Required when sdn.enabled is true: Enable-ArcSdn.ps1 stops with exit 2 without it.",
+          "description": "OPTIONAL. The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Leave it out and it is derived from cluster.name (Resolve-AzlSdnPrefix, used by Enable-ArcSdn.ps1 and Test-ArcSdn.ps1): lower case, every character that is not a letter or a digit removed (hyphens too), the first eight characters kept; for example the name iic-azl-c01 gives iicazlc0. The plan prints which one it uses: 'prefix (sdn.prefix)' or 'prefix (derived from cluster.name)'. Set it when the derived prefix is not unique in the domain (two instances whose names share their first eight letters and digits; the scripts warn when the name was cut) or when you want another name. The rules apply to the derived prefix too. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Enable-ArcSdn.ps1 stops with exit 2 when sdn.enabled is true and neither this key nor cluster.name gives a usable prefix.",
           "type": "string",
           "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$",
           "minLength": 1,

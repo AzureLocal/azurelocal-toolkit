@@ -10,7 +10,7 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.73. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.74. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 380 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 383 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -55,7 +55,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `environment` | 4 |  |  |  |  |  |  |  |
 | `tags` |  |  |  |  |  |  |  | 1 |
 | `identity` | 11 | 3 |  | 14 | 14 | 9 | 4 | 20 |
-| `networking` | 22 |  | 9 | 12 | 24 | 20 |  | 36 |
+| `networking` | 22 |  | 9 | 12 | 24 | 20 |  | 39 |
 | `security` | 1 |  |  |  |  | 11 |  | 11 |
 | `operations` | 13 |  |  |  |  |  |  | 20 |
 | `devops` | 4 |  |  |  |  |  |  | 75 |
@@ -99,7 +99,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 255 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 259 | 0 | 0 |
 
 ### trailwright
 
@@ -307,7 +307,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (255):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (259):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 3 keys
@@ -315,7 +315,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `identity`: 20 keys
 - `landing_zone`: 81 keys
 - `network_devices`: 16 keys
-- `networking`: 26 keys
+- `networking`: 30 keys
 - `nodes`: 3 keys
 - `operations`: 20 keys
 - `provisioning`: 4 keys
@@ -327,7 +327,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 149 places, the first 12):
+Where in the code (file, function, keys read by name; 151 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -432,10 +432,10 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM clusterName; customLocation; OS RemoteManagement; Sonar clusterName |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 |
+| `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
 | `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, t... | operator by hand; Trailwright questionnaire | arm-deployment; discovery; infrastructure-helpers; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin |
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin; RemoteManagement |
-| `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
 | `nodes[].management.ip_address` | Management address. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `nodes[].network_adapters[].ip_address` | The host address. | operator by hand | infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `identity.active_directory.ou_path` | Distinguished name of the dedicated OU. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM adouPath; OS DomainJoin |
@@ -1500,7 +1500,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `networking.management.subnet` | string (cidr), required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible; beacon | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 | read |
+| `networking.management.subnet` | string (cidr), required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible; beacon | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 | read |
 | `networking.management.gateway` | string (ipv4), required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible; beacon | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM defaultGateway; OS Dns; Network; NicNames; UnusedAdapters; Gate NW-004; NW-015 | read |
 | `networking.management.vlan_id` | integer | operator; Trailwright | ztp; os_configuration; trailwright; ansible; beacon; draftsman | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 | read |
 | `networking.management.dns_servers` | array, required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible; ranger; beacon | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 | read |
@@ -1546,10 +1546,10 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `networking.cluster_networks[].vlan_id` | integer, required | operator | os_configuration; deployment; trailwright | arm-deployment | ARM sanNetworkList; OS ~Network; ~RemoteManagement | read |
 | `networking.cluster_networks[].subnet` | string (cidr), required | operator | os_configuration; deployment; trailwright | arm-deployment | ARM sanNetworkList; OS ~Network; ~RemoteManagement | read |
 | `networking.cluster_networks[].purpose` | string, one of `management`, `oob`, `automation`, `compute`, `storage`, `other` | operator | os_configuration | (part: os-configuration; pre-cluster-verification) | OS ~Network; ~RemoteManagement | read-as-part |
-| `networking.vlans[].name` | string, required | operator | os_configuration; trailwright; ranger; draftsman | pre-cluster-verification | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
+| `networking.vlans[].name` | string, required | operator | os_configuration; trailwright; ranger; draftsman | pre-cluster-verification; toolkit-legacy-scripts | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
 | `networking.vlans[].id` | integer, required | operator | os_configuration; trailwright; ranger; draftsman | pre-cluster-verification | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
-| `networking.vlans[].subnet` | string (cidr) | operator | os_configuration; trailwright | pre-cluster-verification | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
-| `networking.vlans[].purpose` | string | operator | os_configuration; draftsman | pre-cluster-verification | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
+| `networking.vlans[].subnet` | string (cidr) | operator | os_configuration; trailwright | pre-cluster-verification; toolkit-legacy-scripts | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
+| `networking.vlans[].purpose` | string | operator | os_configuration; draftsman | pre-cluster-verification; toolkit-legacy-scripts | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
 | `networking.logical_networks[].name` | string, required | operator | deployment; trailwright | pre-cluster-verification; toolkit-legacy-scripts | OS ~Network; ~RemoteManagement; Gate NW-015 | read |
 | `networking.logical_networks[].enabled` | boolean, default `true` | operator; default | deployment | toolkit-legacy-scripts | OS ~Network; ~RemoteManagement | read |
 | `networking.logical_networks[].ip_allocation_method` | string, default `Static`, one of `Static`, `Dynamic` | operator; default | deployment | toolkit-legacy-scripts | OS ~Network; ~RemoteManagement | read |
@@ -1685,7 +1685,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `operations.security_logging.security_audit` | string, default `success_and_failure`, one of `success_and_failure`, `failure` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `operations.security_logging.event_levels` | array, default `[critical, error, warning]`, one of `critical`, `error`, `warning`, `information`, `verbose` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `operations.post_cluster.enabled` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
-| `operations.post_cluster.skip_steps` | array, one of `sdn`, `quorum`, `security-groups`, `ssh`, `storage-volumes`, `storage-paths`, ... (12) | operator |  | toolkit-legacy-scripts |  | read |
+| `operations.post_cluster.skip_steps` | array, one of `sdn`, `sdn-test`, `quorum`, `security-groups`, `ssh`, `storage-volumes`, ... (13) | operator |  | toolkit-legacy-scripts |  | read |
 | `operations.post_cluster.allow_node_restarts` | boolean, default `false` | operator; default |  |  |  | placeholder |
 
 ### os_configuration

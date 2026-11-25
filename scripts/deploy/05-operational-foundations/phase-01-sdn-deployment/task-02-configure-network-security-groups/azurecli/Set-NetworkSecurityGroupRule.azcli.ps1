@@ -31,6 +31,11 @@
         networking.network_security_groups[]: name
             rules[]: name, priority, direction, access, protocol, source_address_prefixes, destination_address_prefixes,
                      source_port_ranges, destination_port_ranges, description
+        networking.management.subnet, networking.vlans[] (name, subnet, purpose), networking.logical_networks[] (name, address_prefix)
+            only when a rule names a network instead of an address. source_address_prefixes and destination_address_prefixes take *, an IPv4 address or
+            range, or a reference that is replaced by the subnet the file already holds: management (networking.management.subnet); oob, automation,
+            compute or storage (every networking.vlans[] entry with that purpose); vlan:<name> (that VLAN's subnet); logical-network:<name> (that logical
+            network's address_prefix). The run prints each reference with the address and the variable it came from.
 
     Characters az.cmd cannot carry. On Windows az is a batch file (az.cmd): cmd.exe reads & | < > ^ in an argument as operators, and %NAME% as a variable, and
     a double quote or a line break breaks the argument (Microsoft Learn: Considerations for running the Azure CLI in a PowerShell scripting language). The
@@ -75,6 +80,7 @@ $logFile = $LogPath
 
 $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
 Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'sdn', 'AzlSdn.psm1')) -Force
 Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
@@ -126,6 +132,14 @@ function ConvertTo-StringList($Value, [string[]]$Default) {
     , @(@($Value) | ForEach-Object { ([string]$_).Trim() })
 }
 function Test-AddressPrefix([string]$Value) { $Value -eq '*' -or $Value -match $Ipv4 -or $Value -match $Cidr }
+# A source or destination may name a network the file already holds (management, storage, vlan:<name>, ...): it is replaced by that subnet, and the
+# line says which variable it came from. Literal addresses stay as written. See Resolve-AzlNsgAddressPrefix in scripts/common/sdn/AzlSdn.psm1.
+function Resolve-NetworkReference([string]$At, [string[]]$List) {
+    $resolved = Resolve-AzlNsgAddressPrefix -Infrastructure $infra -Value $List
+    if ($resolved.Problem) { Exit-InputProblem "${At}: $($resolved.Problem)" }
+    foreach ($note in $resolved.Notes) { Write-Line "$At`: $note" }
+    , @($resolved.Addresses)
+}
 function Test-PortRange([string]$Value) {
     if ($Value -eq '*') { return $true }
     if ($Value -notmatch '^(?<a>[0-9]{1,5})(-(?<b>[0-9]{1,5}))?$') { return $false }
@@ -212,6 +226,8 @@ foreach ($entry in $groupList) {
         if (-not $ProtocolName.ContainsKey($protocol)) { Exit-InputProblem "$ruleAt.protocol must be *, Tcp, Udp or Icmp; found '$protocol'." }
         $sourceAddress = ConvertTo-StringList (Get-Field $rule 'source_address_prefixes') @('*')
         $destinationAddress = ConvertTo-StringList (Get-Field $rule 'destination_address_prefixes') @('*')
+        $sourceAddress = Resolve-NetworkReference "$ruleAt.source_address_prefixes" $sourceAddress
+        $destinationAddress = Resolve-NetworkReference "$ruleAt.destination_address_prefixes" $destinationAddress
         $sourcePort = ConvertTo-StringList (Get-Field $rule 'source_port_ranges') @('*')
         if ($null -eq (Get-Field $rule 'destination_port_ranges')) { Exit-InputProblem "$ruleAt.destination_port_ranges is missing. List the ports the rule matches, or * for any port." }
         $destinationPort = ConvertTo-StringList (Get-Field $rule 'destination_port_ranges') @()

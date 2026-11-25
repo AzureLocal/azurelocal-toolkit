@@ -31,10 +31,11 @@ BeforeAll {
         $g
     }
     function New-InfraFile {
-        param([object[]]$Groups = @((New-Group)), [object]$Sdn = $true, [hashtable]$Azure = @{}, [object]$Tags = $null)
+        param([object[]]$Groups = @((New-Group)), [object]$Sdn = $true, [hashtable]$Azure = @{}, [object]$Tags = $null, [hashtable]$Networking = @{})
         $az = [ordered]@{ tenant_id = $global:AzlNsgTenant; subscription_id = $global:AzlNsgSub; resource_group = 'rg-azl-01'; location = 'eastus'; custom_location = 'cl-azl-01' }
         foreach ($k in $Azure.Keys) { if ($null -eq $Azure[$k]) { $az.Remove($k) } else { $az[$k] = $Azure[$k] } }
         $doc = [ordered]@{ azure = $az; networking = [ordered]@{} }
+        foreach ($k in $Networking.Keys) { $doc.networking[$k] = $Networking[$k] }
         if ($Groups) { $doc.networking.network_security_groups = @($Groups) }
         if ($null -ne $Sdn) { $doc.sdn = [ordered]@{ enabled = $Sdn } }
         if ($Tags) { $doc.tags = $Tags }
@@ -225,6 +226,64 @@ Describe 'New-NetworkSecurityGroup.ps1' {
         }
     }
 
+    Context 'a rule that names a network of the file instead of an address' {
+        BeforeAll {
+            $script:Net = @{
+                management = [ordered]@{ subnet = '192.0.2.0/24' }
+                vlans      = @([ordered]@{ name = 'storage-1'; id = 712; subnet = '198.51.100.0/25'; purpose = 'storage' }, [ordered]@{ name = 'storage-2'; id = 713; subnet = '198.51.100.128/25'; purpose = 'storage' })
+                logical_networks = @([ordered]@{ name = 'lnet-apps'; address_prefix = '203.0.113.0/24' })
+            }
+        }
+
+        It 'sends the subnet of the file for management, a purpose, vlan:<name> and logical-network:<name>, and prints the variable each came from' {
+            $rule = New-Rule @{ source_address_prefixes = @('management'); destination_address_prefixes = @('storage', 'logical-network:lnet-apps', '*') }
+            $r = Invoke-Nsg (New-InfraFile -Groups @(New-Group @{ rules = @($rule) }) -Networking $script:Net)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $sent = (Get-Call 'stack-hci-vm network nsg rule create')[0]
+            @($sent.Options['--source-address-prefixes']) | Should -Be @('192.0.2.0/24')
+            @($sent.Options['--destination-address-prefixes']) | Should -Be @('198.51.100.0/25', '198.51.100.128/25', '203.0.113.0/24', '*')
+            $r.Text | Should -Match 'source_address_prefixes: management = 192\.0\.2\.0/24 \(networking\.management\.subnet\)'
+            $r.Text | Should -Match 'networking\.vlans\[\] with purpose storage: storage-1, storage-2'
+            $r.Text | Should -Match 'logical-network:lnet-apps = 203\.0\.113\.0/24 \(networking\.logical_networks\[\]\.address_prefix'
+        }
+
+        It 'plans the same under -WhatIf and changes nothing' {
+            $rule = New-Rule @{ source_address_prefixes = @('vlan:storage-1') }
+            $r = Invoke-Nsg (New-InfraFile -Groups @(New-Group @{ rules = @($rule) }) -Networking $script:Net) -DryRun
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Text | Should -Match 'vlan:storage-1 = 198\.51\.100\.0/25'
+            @(Get-Call 'stack-hci-vm network nsg rule create').Count | Should -Be 0
+        }
+
+        It 'compares the resolved subnet with a rule that exists, and reports a difference' {
+            Add-ExistingRule 'nsg-workloads' @{ priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; sourceAddressPrefixes = @('198.51.100.0/24'); destinationAddressPrefixes = @('*'); sourcePortRanges = @('*'); destinationPortRanges = @('443', '8000-8100') }
+            $global:AzlNsgState.Groups['nsg-workloads'] = $true
+            $rule = New-Rule @{ source_address_prefixes = @('management') }
+            $r = Invoke-Nsg (New-InfraFile -Groups @(New-Group @{ rules = @($rule) }) -Networking $script:Net)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            (@($r.Rows | Where-Object Item -Match 'rule').Detail -join ' ') | Should -Match 'sourceAddressPrefixes differ'
+        }
+
+        It 'stops with exit code 2 and sends nothing to Azure when the file cannot answer: <Why>' -ForEach @(
+            @{ Why = 'a purpose no VLAN has'; Value = 'compute'; Match = 'networking\.vlans\[\] with purpose compute' }
+            @{ Why = 'a VLAN that is not there'; Value = 'vlan:nothing'; Match = "names 'nothing'" }
+            @{ Why = 'a word that is not a reference'; Value = 'Internet'; Match = 'is not usable' }
+        ) {
+            $rule = New-Rule @{ source_address_prefixes = @($Value) }
+            $r = Invoke-Nsg (New-InfraFile -Groups @(New-Group @{ rules = @($rule) }) -Networking $script:Net)
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match $Match
+            $r.Text | Should -Match 'rules\[0\]\.source_address_prefixes'
+            Should -Invoke az -Times 0 -Exactly
+        }
+
+        It 'stops with exit code 2 for management when the file has no networking.management.subnet' {
+            $rule = New-Rule @{ source_address_prefixes = @('management') }
+            $r = Invoke-Nsg (New-InfraFile -Groups @(New-Group @{ rules = @($rule) }))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'networking\.management\.subnet, which the file does not set'
+        }
+    }
     Context '-WhatIf and nothing to do' {
         It 'reads Azure, plans the group and the rules, and creates nothing' {
             $r = Invoke-Nsg (New-InfraFile) -DryRun

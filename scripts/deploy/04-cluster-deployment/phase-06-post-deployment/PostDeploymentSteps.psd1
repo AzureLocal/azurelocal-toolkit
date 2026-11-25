@@ -14,7 +14,7 @@
 #   Title         What the step does, for the summary.
 #   Script        The PowerShell script, relative to the repository root. AzureCliScript is its Azure CLI twin (the other tab of the page), run with -Route AzureCli;
 #                 absent when the page has none (or when the twin is only part of what the script does).
-#   ScriptOnPage  false when the page does not name the script (task 10 describes the steps by hand; the script does them).
+#   ScriptOnPage  false when the page does not name the script (task 10 describes the steps by hand; the script does them; sdn-test runs Test-ArcSdn.ps1, which the page does not name yet).
 #   Plan          WhatIf: Plan mode passes -WhatIf (the script reads Azure and the cluster and changes nothing).
 #                 Run: the script changes nothing at all and has no -WhatIf, so Plan runs it as it is (the SBE import plan only prints commands).
 #   NeedsCluster  true when the script connects to the machines: the orchestrator probes once, before the first step, that the cluster answers.
@@ -37,6 +37,13 @@
                 @{ Key = 'sdn.acknowledge_maintenance_window'; Is = $true }
                 @{ Key = 'sdn.acknowledge_dns_record'; Is = $true; When = @{ Key = 'sdn.dns_records'; Is = 'static' } }
             )
+        }
+        @{
+            Id = 'sdn-test'; Task = 'task-01-deploy-sdn'; Title = 'Check the Network Controller after SDN enabled by Azure Arc'
+            Script = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Test-ArcSdn.ps1'
+            ScriptOnPage = $false
+            Plan = 'WhatIf'; NeedsCluster = $true
+            Applies = @(@{ Key = 'sdn.enabled'; Is = $true })
         }
         @{
             Id = 'quorum'; Task = 'task-02-cluster-quorum-configuration'; Title = 'Set the cluster witness'

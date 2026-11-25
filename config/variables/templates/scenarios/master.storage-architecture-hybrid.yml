@@ -1,13 +1,13 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.storage_architecture = hybrid with every variable. Schema 5.6.36. Scenario: storage_architecture=hybrid.
+# Template for infrastructure.yml for scenario.storage_architecture = hybrid with every variable. Schema 5.6.37. Scenario: storage_architecture=hybrid.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
-  schema_version: "5.6.36"
+  schema_version: "5.6.37"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "full"
@@ -958,12 +958,12 @@ networking:
           # Protocol the rule matches: * (any, the default), Tcp, Udp or Icmp (az stack-hci-vm network nsg rule create --protocol).
           # one of: * | Tcp | Udp | Icmp; default: "*"; used by: deployment
           protocol: "*"
-          # Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form.
+          # Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of the...
           # used by: deployment
-          source_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
-          # Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form.
+          source_address_prefixes: ["management", "192.0.2.0/24"]
+          # Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form, or a reference to a network of...
           # used by: deployment
-          destination_address_prefixes: ["203.0.113.0/24", "198.51.100.0/24"]
+          destination_address_prefixes: ["203.0.113.0/24", "storage"]
           # Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535.
           # used by: deployment
           source_port_ranges: ["*", "1024-2048"]
@@ -1426,7 +1426,7 @@ sdn:
   # true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE.
   # required; used by: deployment, trailwright, ranger
   enabled: false
-  # The SDN prefix (Add-EceFeature -SDNPrefix).
+  # OPTIONAL.
   # used by: deployment, trailwright, ranger
   prefix: "iic01"
   # How the A record <prefix>-NC of the Network Controller REST URL comes about. dynamic: Active Directory integrated dynamic DNS creates it wh...

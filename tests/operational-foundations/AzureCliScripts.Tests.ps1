@@ -341,6 +341,19 @@ Describe 'Set-NetworkSecurityGroupRule.azcli.ps1' {
         Get-K6Call 'stack-hci-vm network nsg create' | Should -BeNullOrEmpty
     }
 
+    It 'sends the subnet a rule names by reference, and says which variable it came from' {
+        $r = Invoke-K6 $script:S (New-K6Infra @{ 'networking.management' = [ordered]@{ subnet = '198.51.100.0/24' }; 'networking.network_security_groups' = @([ordered]@{ name = 'nsg-workloads'; rules = @([ordered]@{ name = 'allow-mgmt'; priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; source_address_prefixes = @('management'); destination_port_ranges = @('3389') }) }) })
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        @((Get-K6Call 'stack-hci-vm network nsg rule create')[0].Options['--source-address-prefixes']) | Should -Be @('198.51.100.0/24')
+        $r.Text | Should -Match 'management = 198\.51\.100\.0/24 \(networking\.management\.subnet\)'
+    }
+
+    It 'stops with exit code 2 when a reference cannot be answered by the file' {
+        $r = Invoke-K6 $script:S (New-K6Infra @{ 'networking.network_security_groups' = @([ordered]@{ name = 'nsg-workloads'; rules = @([ordered]@{ name = 'allow-x'; priority = 100; direction = 'Inbound'; access = 'Allow'; source_address_prefixes = @('vlan:nothing'); destination_port_ranges = @('443') }) }) })
+        $r.ExitCode | Should -Be 2
+        $r.Text | Should -Match 'names ''nothing'''
+    }
+
     It 'changes nothing when the rules are already as the file says' {
         Add-AzRule 'allow-https-in' 100
         Add-AzRule 'deny-all-in' 4000 -Access 'Deny' -Ports @('*') -Sources @('*') -Protocol '*'
@@ -443,6 +456,17 @@ Describe 'Test-NetworkSecurityGroupRule.azcli.ps1' {
         @($global:K6Calls.Command | Sort-Object -Unique) | Should -Be @('account show', 'extension show', 'stack-hci-vm network nsg rule list', 'stack-hci-vm network nsg show')
     }
 
+    It 'compares the subnet a rule names by reference with the rule in Azure, and says which variable it came from' {
+        $groups = @([ordered]@{ name = 'nsg-workloads'; rules = @(
+                    [ordered]@{ name = 'allow-https-in'; priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; source_address_prefixes = @('management'); destination_port_ranges = @('443') }
+                    [ordered]@{ name = 'deny-all-in'; priority = 4000; direction = 'Inbound'; access = 'Deny'; destination_port_ranges = @('*') }) })
+        $r = Invoke-K6 $script:S (New-K6Infra @{ 'networking.management' = [ordered]@{ subnet = '192.0.2.0/24' }; 'networking.network_security_groups' = $groups })
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $r.Text | Should -Match 'management = 192\.0\.2\.0/24 \(networking\.management\.subnet\)'
+        $r2 = Invoke-K6 $script:S (New-K6Infra @{ 'networking.management' = [ordered]@{ subnet = '198.51.100.0/24' }; 'networking.network_security_groups' = $groups })
+        $r2.ExitCode | Should -Be 1
+        (@($r2.Rows | Where-Object Action -EQ 'Differs').Detail) | Should -Match 'sourceAddressPrefixes'
+    }
     It 'ends with exit code 1 and names a rule that is missing' {
         $global:K6Rules = @($global:K6Rules[0])
         $r = Invoke-K6 $script:S (New-K6Infra)

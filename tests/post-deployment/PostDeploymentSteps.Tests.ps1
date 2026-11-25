@@ -58,6 +58,21 @@ Describe 'The step table' {
         $sdn = $script:Steps | Where-Object Id -EQ 'sdn'
         @($sdn.Requires | ForEach-Object { $_.Key }) | Should -Contain 'sdn.acknowledge_maintenance_window'
     }
+    It 'sdn-test runs Test-ArcSdn.ps1 right after the sdn step, only when sdn.enabled is true, in the same task, and is not irreversible' {
+        $ids = @($script:Steps | ForEach-Object { $_.Id })
+        $ids.IndexOf('sdn-test') | Should -Be ($ids.IndexOf('sdn') + 1)
+        $step = $script:Steps | Where-Object Id -EQ 'sdn-test'
+        $sdn = $script:Steps | Where-Object Id -EQ 'sdn'
+        $step.Task | Should -Be $sdn.Task
+        $step.Script | Should -BeLike '*/task-01-deploy-sdn/powershell/Test-ArcSdn.ps1'
+        $step.Plan | Should -Be 'WhatIf'
+        @($step.Applies).Count | Should -Be 1
+        $step.Applies[0].Key | Should -Be 'sdn.enabled'
+        $step.Applies[0].Is | Should -BeTrue
+        $step.ContainsKey('Irreversible') | Should -BeFalse
+        # the page task-01 does not name Test-ArcSdn.ps1 yet; when it does, drop ScriptOnPage here (the test of the pages then asks for the name)
+        $step.ScriptOnPage | Should -BeFalse
+    }
     It 'every condition has a known operator, and every key it reads is a key of the infrastructure schema' {
         $schema = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'infrastructure.schema.json')) -Raw | ConvertFrom-Json -AsHashtable
         $conditions = @(foreach ($s in $script:Steps) {
