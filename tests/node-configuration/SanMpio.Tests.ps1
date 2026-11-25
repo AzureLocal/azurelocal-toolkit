@@ -597,3 +597,98 @@ Describe 'Validation: a hybrid file whose SAN block is incomplete is allowed (AZ
         @($f | Where-Object { $_.Severity -eq 'error' -and "$($_.Path)$($_.Message)" -match 'san' }).Count | Should -BeGreaterThan 0
     }
 }
+
+Describe 'iSCSI network of a hybrid attachment (Microsoft Learn, Connect an external storage array to Azure Local, step 3)' {
+    BeforeEach {
+        $infra = Get-HybridInfra -Type iscsi -Vendor 'Dell' -Model 'PowerStore 1200T' -Incomplete
+        $infra.storage.san.iscsi = [ordered]@{
+            targets      = @(
+                [ordered]@{ iqn = 'iqn.2010-06.com.example:array-a'; portals = @('198.51.100.10'); fabric = 'A' }
+                [ordered]@{ iqn = 'iqn.2010-06.com.example:array-b'; portals = @('203.0.113.74'); fabric = 'B' })
+            jumbo_packet = 9014
+            networks     = @(
+                [ordered]@{ fabric = 'A'; vlan_id = 500; subnet = '198.51.100.0/26' }
+                [ordered]@{ fabric = 'B'; vlan_id = 600; subnet = '203.0.113.64/26'; next_hop = '203.0.113.65' })
+            qos          = [ordered]@{ enabled = $true; priority = 4 }
+        }
+        $adapters = $infra.nodes[0].network_adapters
+        $adapters[2].roles = @('iscsi:a'); $adapters[2].ip_assignment = 'static'; $adapters[2].ip_address = '198.51.100.21'; $adapters[2].prefix_length = 26
+        $adapters[3].roles = @('iscsi:b'); $adapters[3].ip_assignment = 'static'; $adapters[3].ip_address = '203.0.113.85'; $adapters[3].prefix_length = 26
+        $script:MacA = ($adapters[2].mac_address -replace '[-:\.]', '').ToLowerInvariant()
+        $script:MacB = ($adapters[3].mac_address -replace '[-:\.]', '').ToLowerInvariant()
+        $script:Spec = Get-SpecOf $infra
+    }
+    BeforeAll {
+        function New-IscsiNic([string]$Mac, [string]$Name, [string[]]$Ips = @(), [string[]]$Gw = @(), $Vlan = 0, $Mtu = 1514, [string[]]$Routes = @()) {
+            [pscustomobject]@{ n = $Name; mac = $Mac; st = 'Up'; pci = ''; drv = ''; desc = ''; dhcp = 'Disabled'; ips = @($Ips); gw = @($Gw); dns = @(); vlan = $Vlan; mtu = $Mtu; routes = @($Routes); hwif = $true; loc = $null }
+        }
+        function New-IscsiState([object[]]$Nic, [string[]]$Intent = @(), [string[]]$Qos = @()) {
+            $state = New-SanState -Hw @('DellEMC|PowerStore') -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Running/Automatic' -IscsiClaim 'True'
+            $state.nics = @($Nic)
+            $state.san | Add-Member -NotePropertyName intentAdapters -NotePropertyValue @($Intent)
+            $state.san | Add-Member -NotePropertyName intentsRead -NotePropertyValue $true
+            $state.san | Add-Member -NotePropertyName qos -NotePropertyValue @($Qos)
+            $state
+        }
+    }
+    It 'asks the node to read the iSCSI ports (frame size, VLAN, routes) by MAC' {
+        $p = Get-AzlNodeReadParameter -Spec $script:Spec
+        @($p.iscsiMacs) | Should -Be @($script:MacA, $script:MacB)
+    }
+    It 'plans the address, frame size, VLAN, /32 routes and the QoS policies for ports that have nothing yet' {
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A'), (New-IscsiNic $script:MacB 'iSCSI-B'))
+        $plan = Get-Plan $script:Spec $state
+        $kinds = @($plan | Where-Object { $_.Apply } | ForEach-Object { $_.Apply.kind })
+        foreach ($k in 'iscsi-nic', 'iscsi-mtu', 'iscsi-vlan', 'iscsi-route', 'iscsi-qos') { $kinds | Should -Contain $k }
+        @($plan | Where-Object { $_.Apply.kind -eq 'iscsi-nic' }).Count | Should -Be 2
+        @($plan | Where-Object { $_.Apply.kind -eq 'iscsi-qos' }).Count | Should -Be 3
+        $a = $plan | Where-Object { $_.Apply.kind -eq 'iscsi-nic' -and $_.Apply.mac -eq $script:MacA }
+        $a.Apply.ip | Should -Be '198.51.100.21'
+        $a.Apply.prefix | Should -Be 26
+        ($plan | Where-Object { $_.Apply.kind -eq 'iscsi-mtu' })[0].Apply.mtu | Should -Be 9014
+        (@($plan | Where-Object { $_.Apply.kind -eq 'iscsi-vlan' }) | Where-Object { $_.Apply.mac -eq $script:MacB }).Apply.vlan | Should -Be 600
+    }
+    It 'sends each portal to itself when the network has no next_hop, and to the next_hop when it has one' {
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A'), (New-IscsiNic $script:MacB 'iSCSI-B'))
+        $routes = @(Get-Plan $script:Spec $state | Where-Object { $_.Apply.kind -eq 'iscsi-route' })
+        $routes.Count | Should -Be 2
+        ($routes | Where-Object { $_.Apply.mac -eq $script:MacA }).Apply.nexthop | Should -Be '198.51.100.10'
+        ($routes | Where-Object { $_.Apply.mac -eq $script:MacB }).Apply.nexthop | Should -Be '203.0.113.65'
+    }
+    It 'changes nothing on a port that is already right (idempotent)' {
+        $state = New-IscsiState @(
+            (New-IscsiNic $script:MacA 'iSCSI-A' -Ips @('198.51.100.21/26/Manual') -Vlan 500 -Mtu 9014 -Routes @('198.51.100.10/32|198.51.100.10')),
+            (New-IscsiNic $script:MacB 'iSCSI-B' -Ips @('203.0.113.85/26/Manual') -Vlan 600 -Mtu 9014 -Routes @('203.0.113.74/32|203.0.113.65'))) -Qos @('iSCSI', 'CSV-LiveMigration', 'ClusterHeartbeat')
+        $change = @(Get-Plan $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -in 'iscsi-nic', 'iscsi-mtu', 'iscsi-vlan', 'iscsi-route', 'iscsi-qos' })
+        $change | Should -BeNullOrEmpty
+    }
+    It 'blocks a port that is in a Network ATC intent, and does not touch it' {
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A'), (New-IscsiNic $script:MacB 'iSCSI-B')) -Intent @('iSCSI-A')
+        $plan = Get-Plan $script:Spec $state
+        @($plan | Where-Object { $_.Item -like '*outside Network ATC' -and $_.Action -eq 'Blocked' }).Count | Should -Be 1
+        @($plan | Where-Object { $_.Apply -and $_.Apply.mac -eq $script:MacA -and $_.Apply.kind -like 'iscsi-*' }) | Should -BeNullOrEmpty
+    }
+    It 'does not touch an iSCSI port when the node could not say whether it is in a Network ATC intent' {
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A'), (New-IscsiNic $script:MacB 'iSCSI-B'))
+        $state.san.intentsRead = $false
+        $plan = Get-Plan $script:Spec $state
+        @($plan | Where-Object { $_.Item -like '*outside Network ATC' -and $_.Action -eq 'Blocked' }).Count | Should -Be 2
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -in 'iscsi-nic', 'iscsi-mtu', 'iscsi-vlan', 'iscsi-route' }) | Should -BeNullOrEmpty
+    }
+    It 'changes a port that holds a default gateway: no gateway on an iSCSI port (Learn step 3.2)' {
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A' -Ips @('198.51.100.21/26/Manual') -Gw @('198.51.100.1')), (New-IscsiNic $script:MacB 'iSCSI-B'))
+        @(Get-Plan $script:Spec $state | Where-Object { $_.Apply.kind -eq 'iscsi-nic' -and $_.Apply.mac -eq $script:MacA }).Count | Should -Be 1
+    }
+    It 'leaves frame size, VLAN and QoS alone when the file does not name them' {
+        $infra = Get-HybridInfra -Type iscsi -Vendor 'Dell' -Model 'PowerStore 1200T' -Incomplete
+        $infra.storage.san.iscsi = [ordered]@{ targets = @([ordered]@{ iqn = 'iqn.2010-06.com.example:array-a'; portals = @('198.51.100.10'); fabric = 'A' }) }
+        $adapters = $infra.nodes[0].network_adapters
+        $adapters[2].roles = @('iscsi:a'); $adapters[2].ip_assignment = 'static'; $adapters[2].ip_address = '198.51.100.21'; $adapters[2].prefix_length = 26
+        $spec = Get-SpecOf $infra
+        $state = New-IscsiState @((New-IscsiNic $script:MacA 'iSCSI-A' -Ips @('198.51.100.21/26/Manual')))
+        $kinds = @(Get-Plan $spec $state | Where-Object { $_.Apply } | ForEach-Object { $_.Apply.kind })
+        $kinds | Should -Not -Contain 'iscsi-mtu'
+        $kinds | Should -Not -Contain 'iscsi-vlan'
+        $kinds | Should -Not -Contain 'iscsi-qos'
+    }
+}

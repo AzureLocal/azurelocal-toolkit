@@ -5,25 +5,32 @@
 
 .DESCRIPTION
     Phase 06 (post-deployment), Task 10 (enable external storage, hybrid). Hybrid is a day 2 operation: the instance is deployed with Storage Spaces Direct
-    first, then the SAN is added. The steps of the page, and the script of the toolkit that does each one (this script holds no logic of its own for them):
+    first, then the SAN is added. The script runs ALONE (only -InfrastructureFile, and -WhatIf, -LogPath, -ComputerName, -Credential), checks its own
+    preconditions, keeps no state between runs and never asks. The steps of the page, and the script of the toolkit that does each one (this script holds no
+    logic of its own for them):
 
       Checks    scenario.storage_architecture is hybrid (s2d: nothing to do, exit 0; san: the SAN-only route of phases 03 and 05, exit 2);
                 scenario.topology is not rack_aware (Learn: rack aware instances are not supported with external SAN storage on hyperconverged deployments);
                 storage.san.type is fibre_channel or iscsi. On a node (read only): the instance is a cluster, its solution release is 2604 or later, and no
                 solution update is running (the page: check for a running update before you start).
-      Steps 1-3, 5  MPIO, the array in MSDSM, the load balance policy and vendor MPIO timers, the iSCSI service, auto-claim, portals and persistent
-                multipath sessions: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1 -Step Mpio -NoRestart
-                (-Execute unless -WhatIf). It reads storage.san (type, array vendor and model, iSCSI targets) and nodes[].san, and config/san/msdsm-vendors.json.
-                The iSCSI network itself (static addresses, MTU, VLAN, /32 routes of page step 3) is the Network step of the same script from nodes[].
-      Step 4    On the array and the fabric (zoning, LUN masking). Not a script: the page lists what to ask the storage administrator.
-      Step 6    MPIO changes take effect after a restart. With -RollingRestart, each node in turn is drained, restarted and resumed by
+      Step 1.3  The initiator identifiers of every node (the WWPNs of the Fibre Channel ports, the IQN of the iSCSI initiator), read from the nodes and printed, for
+                the storage administrator (Learn step 4: host entries and LUN masking on the array).
+      Steps 1-3, 5  MPIO, the array in MSDSM, the load balance policy and vendor MPIO timers, the iSCSI service, auto-claim, the iSCSI network (a static address
+                without a gateway, the frame size, the VLAN and the persistent /32 routes of every iSCSI port, which must be outside Network ATC; optional QoS), portals
+                and persistent multipath sessions: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1 -Step Mpio
+                -NoRestart (-Execute unless -WhatIf). It reads storage.san (type, array vendor and model, iSCSI targets, networks, jumbo_packet, qos), nodes[].san,
+                the iscsi:a and iscsi:b ports of nodes[].network_adapters, and config/san/msdsm-vendors.json.
+      Step 4    On the array and the fabric (zoning, LUN masking). Not a script: the page lists what to ask the storage administrator; the identifiers are printed
+                at Step 1.3, and Step 7 says which LUN of storage.san.luns a node does not see yet.
+      Step 6    MPIO changes take effect after a restart. When the file approves restarts (operations.post_cluster.allow_node_restarts true, or -RollingRestart),
+                each node in turn is drained, restarted and resumed by
                 scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1 (one node at a time, so the cluster
-                stays up), then the MPIO step runs again to finish what waited for the restart. Without -RollingRestart, a node that needs a restart stops the
-                run with exit code 1 and the message says what to run.
+                stays up), then the MPIO step runs again to finish what waited for the restart. Without that approval, a node that needs a restart stops the
+                run with exit code 1 and the message says what to set or run.
       Step 7    Every node sees the same SAN disks: Set-AzureLocalNodeConfiguration.ps1 -Step SanVerify (read only).
       Steps 8-9 The LUNs of storage.san.luns become NTFS Cluster Shared Volumes: scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
                 task-05-storage-configuration/powershell/New-SanVolume.ps1 (finds each disk by UniqueId and refuses any disk that is not exactly the LUN).
-                With -ValidateStorage, Test-Cluster -Include Storage then runs on a node (Learn, step 9).
+                Test-Cluster -Include Storage then runs on a node (Learn, step 9) unless -SkipStorageValidation is given.
       Step 10   The SAN CSVs become storage paths in Azure: .../task-05-storage-configuration/powershell/New-StoragePath.ps1.
 
     A step that ends with exit code 2 stops the run with 2; exit code 1 stops it with 1. -WhatIf is passed to every step, which then reads and changes
@@ -37,23 +44,31 @@
     scripts/common/secrets/AzlSecret.psm1. -Credential is passed to the steps that take it. The script never asks.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure); the steps read their own keys:
-        scenario.storage_architecture, scenario.topology, storage.san.type, scenario.identity, nodes[].name, nodes[].management.ip_address
+        scenario.storage_architecture, scenario.topology, storage.san.type, scenario.identity, nodes[].name, nodes[].management.ip_address,
+        operations.post_cluster.allow_node_restarts
         identity.active_directory.netbios_name, identity.active_directory.lcm_user (username, password), identity.local_admin (username, password)
 
     Exit codes: 0 every step ended with 0 (or planned under -WhatIf), or the design is not hybrid; 1 a check or a step failed, or a restart is needed and
-    -RollingRestart was not given; 2 a value in the file is missing or not usable, or the design does not allow this task.
+    the file does not approve it; 2 a value in the file is missing or not usable, or the design does not allow this task.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5).
+
+.PARAMETER ComputerName
+    Optional. The machine for the read only checks and for Test-Cluster, instead of the first node of nodes[] that answers.
 
 .PARAMETER Credential
     Optional. The account for the remoting sessions to the nodes. Without it the account of the file is used (see above).
 
 .PARAMETER RollingRestart
-    Optional. Restart the nodes one at a time (drain, restart, resume) after the MPIO step, as page step 6 asks, then run the MPIO step again.
+    Optional. Restart the nodes one at a time (drain, restart, resume) after the MPIO step, as page step 6 asks, then run the MPIO step again. The file approves
+    the same with operations.post_cluster.allow_node_restarts true; this switch approves it for one run.
 
 .PARAMETER ValidateStorage
-    Optional. Run Test-Cluster -Include Storage on a node after the volumes are created (page step 9).
+    Optional. Kept for older callers: Test-Cluster -Include Storage runs by default now (page step 9), so this switch changes nothing.
+
+.PARAMETER SkipStorageValidation
+    Optional. Leave Test-Cluster -Include Storage out (page step 9).
 
 .PARAMETER LogPath
     Optional. Passed to the steps that take it; the progress lines of this script are appended to it. Keep it out of the repository.
@@ -62,15 +77,17 @@
     ./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
 .EXAMPLE
-    ./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -RollingRestart -ValidateStorage
+    ./Invoke-ExternalStorageHybrid-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -RollingRestart
 #>
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
+    [string]$ComputerName,
     [pscredential]$Credential,
     [switch]$RollingRestart,
     [switch]$ValidateStorage,
+    [switch]$SkipStorageValidation,
     [string]$LogPath
 )
 Set-StrictMode -Version Latest
@@ -104,7 +121,16 @@ $Remote = @{
         try { $running = @(Get-SolutionUpdate -ErrorAction Stop | Where-Object { [string]$_.State -match 'Installing|Preparing|Downloading|HealthChecking' } | ForEach-Object { "$($_.Version) $($_.State)" }) } catch { $running = @() }
         $cluster = ''
         try { $cluster = [string](Get-Cluster -ErrorAction Stop).Name } catch { $cluster = '' }
-        @{ Computer = [string]$env:COMPUTERNAME; SolutionVersion = $version; RunningUpdates = $running; Cluster = $cluster }
+        # Learn step 1.3: the identifiers the storage administrator needs for the host entries and the LUN masking.
+        $initiators = @()
+        try {
+            $initiators = @(Get-InitiatorPort -ErrorAction Stop | ForEach-Object {
+                    if ([string]$_.ConnectionType -eq 'Fibre Channel') { 'FC WWPN ' + [string]$_.PortAddress }
+                    elseif ([string]$_.ConnectionType -eq 'iSCSI') { 'iSCSI IQN ' + [string]$_.NodeAddress }
+                })
+        }
+        catch { $initiators = @() }
+        @{ Computer = [string]$env:COMPUTERNAME; SolutionVersion = $version; RunningUpdates = $running; Cluster = $cluster; Initiators = $initiators }
     }
     ValidateStore = {
         param($Step)
@@ -147,6 +173,9 @@ $sanType = (Get-Text 'storage.san.type').ToLowerInvariant()
 if ($sanType -notin 'fibre_channel', 'iscsi') { Exit-InputProblem "storage.san.type must be fibre_channel or iscsi; found '$sanType'." }
 $nodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
 if ($nodes.Count -eq 0) { Exit-InputProblem 'nodes[] is empty.' }
+# The restarts of page step 6 need the approval of the file (or of this run): the nodes restart one at a time.
+$restartApproved = ($RollingRestart.IsPresent -or ((Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.post_cluster.allow_node_restarts') -eq $true))
+$validateStorage = ($ValidateStorage.IsPresent -or -not $SkipStorageValidation.IsPresent)
 
 # ---- the login for the checks
 $remoteCredential = $Credential
@@ -165,11 +194,20 @@ if (-not $remoteCredential) {
 
 Write-Warning 'Adding external storage starts a 30-day trial, then the instance is billed at Azure Local (L2); Azure Hybrid Benefit does not apply to L2.'
 
-# ---- checks on a node (read only)
+# ---- checks on a node (read only), and the initiator identifiers of every node (page step 1.3)
 $state = $null; $target = ''
-foreach ($n in $nodes) {
-    $address = if ($n.ManagementIp) { $n.ManagementIp } else { $n.Name }
-    try { $state = Invoke-Node $address 'ReadState'; $target = $address; break } catch { Write-Line "  $($n.Name): $($_.Exception.Message)" }
+$candidates = [System.Collections.Generic.List[object]]::new()
+if ($ComputerName) { $candidates.Add([pscustomobject]@{ Name = $ComputerName; Address = $ComputerName }) }
+foreach ($n in $nodes) { $candidates.Add([pscustomobject]@{ Name = [string]$n.Name; Address = $(if ($n.ManagementIp) { [string]$n.ManagementIp } else { [string]$n.Name }) }) }
+$read = @{}
+$initiatorText = [System.Collections.Generic.List[string]]::new()
+foreach ($c in $candidates) {
+    if ($read.ContainsKey($c.Address)) { continue }
+    $read[$c.Address] = $true
+    try { $one = Invoke-Node $c.Address 'ReadState' } catch { Write-Line "  $($c.Name): $($_.Exception.Message)"; continue }
+    if (-not $state) { $state = $one; $target = $c.Address }
+    $ids = @($(if ($one -is [System.Collections.IDictionary]) { $one['Initiators'] } else { $one.PSObject.Properties['Initiators']?.Value }) | Where-Object { $_ })
+    $initiatorText.Add("$($c.Name): $(if ($ids.Count) { $ids -join ', ' } else { 'none read' })")
 }
 if (-not $state) { Add-Step 'Checks' 'Failed' 'no node answered over PowerShell remoting'; Complete-Run 1 }
 if (-not $state.Cluster) { Add-Step 'Checks' 'Failed' "'$target' is not a member of a cluster: deploy the instance first (hybrid is a day 2 operation)"; Complete-Run 1 }
@@ -179,18 +217,20 @@ if ($parts.Count -ge 2) { $null = [int]::TryParse($parts[1], [ref]$release) }
 if ($release -lt $MinimumRelease) { Add-Step 'Checks' 'Failed' "the solution version is '$($state.SolutionVersion)'; external storage on a hyperconverged instance needs $MinimumRelease or later"; Complete-Run 1 }
 if (@($state.RunningUpdates).Count) { Add-Step 'Checks' 'Failed' "a solution update is running ($(@($state.RunningUpdates) -join ', ')); start this task after it ends"; Complete-Run 1 }
 Add-Step 'Checks' 'Passed' "cluster $($state.Cluster), solution $($state.SolutionVersion), no update running, $sanType"
+Add-Step 'Step 1.3: initiator identifiers' 'Info' ($initiatorText -join '; ')
+Add-Step 'Step 4: array and fabric' 'Info' 'on the array, not on the nodes: give the storage administrator the identifiers above, the number and size of the LUNs (storage.san.luns) and the node names; the LUN IDs must be the same on every node; Fibre Channel zoning is done now, after the deployment'
 
-# ---- steps 1-3 and 5: MPIO, MSDSM, iSCSI
+# ---- steps 1-3 and 5: MPIO, MSDSM, the iSCSI network, iSCSI
 $nodeArgs = @{ InfrastructureFile = $InfrastructureFile; Step = @('Mpio'); NoRestart = $true; Credential = $remoteCredential }
 if (-not $WhatIfPreference) { $nodeArgs.Execute = $true }
-$mpioCode = Invoke-StepScript 'Steps 1-3, 5: MPIO, MSDSM, iSCSI (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio)' $NodeConfigScript $nodeArgs -ContinueOnFailure
+$mpioCode = Invoke-StepScript 'Steps 1-3, 5: MPIO, MSDSM, iSCSI network, iSCSI (Set-AzureLocalNodeConfiguration.ps1 -Step Mpio)' $NodeConfigScript $nodeArgs -ContinueOnFailure
 if ($mpioCode -eq 2) { Complete-Run 2 }
 
 # ---- step 6: restart, one node at a time
 if ($WhatIfPreference) {
-    Add-Step 'Step 6: rolling restart' 'Plan' $(if ($RollingRestart) { "each of $($nodes.Count) node(s) in turn: drain, restart, resume (Invoke-NodeMaintenanceReboot.ps1)" } else { 'not asked for (-RollingRestart)' })
+    Add-Step 'Step 6: rolling restart' 'Plan' $(if ($restartApproved) { "each of $($nodes.Count) node(s) in turn: drain, restart, resume (Invoke-NodeMaintenanceReboot.ps1)" } else { 'not approved (operations.post_cluster.allow_node_restarts is not true, no -RollingRestart): a node that needs a restart stops the run' })
 }
-elseif ($RollingRestart) {
+elseif ($restartApproved) {
     foreach ($n in $nodes) {
         $rebootArgs = @{ InfrastructureFile = $InfrastructureFile; TargetNode = $n.Name; Credential = $remoteCredential }
         if ($LogPath) { $rebootArgs.LogPath = $LogPath }
@@ -200,7 +240,7 @@ elseif ($RollingRestart) {
     if ($mpioCode -ne 0) { Complete-Run $(if ($mpioCode -eq 2) { 2 } else { 1 }) }
 }
 elseif ($mpioCode -ne 0) {
-    Add-Step 'Step 6: rolling restart' 'Failed' 'the MPIO step is not finished: MPIO changes take effect after a restart. Run this script again with -RollingRestart, or restart each node in turn with Invoke-NodeMaintenanceReboot.ps1 and run it again.'
+    Add-Step 'Step 6: rolling restart' 'Failed' 'the MPIO step is not finished: MPIO changes take effect after a restart. Set operations.post_cluster.allow_node_restarts to true in the file (or run this script again with -RollingRestart) so the nodes restart one at a time, or restart each node in turn with Invoke-NodeMaintenanceReboot.ps1 and run it again.'
     Complete-Run 1
 }
 else { Add-Step 'Step 6: rolling restart' 'Skipped' 'the MPIO step reports nothing left to do; restart the nodes in turn if you changed MPIO by hand' }
@@ -213,13 +253,14 @@ $null = Invoke-StepScript 'Step 7: SAN disks on every node (Set-AzureLocalNodeCo
 $volumeArgs = @{ InfrastructureFile = $InfrastructureFile; WhatIf = [bool]$WhatIfPreference; Credential = $remoteCredential }
 if ($LogPath) { $volumeArgs.LogPath = $LogPath }
 $null = Invoke-StepScript 'Steps 8-9: SAN CSVs (New-SanVolume.ps1)' $SanVolumeScript $volumeArgs
-if ($ValidateStorage) {
+if ($validateStorage) {
     if ($WhatIfPreference) { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Plan' "would run on '$target'" }
     else {
         try { $v = Invoke-Node $target 'ValidateStore'; Add-Step 'Step 9: Test-Cluster -Include Storage' 'Passed' "report $($v.Report)" }
         catch { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Failed' $_.Exception.Message; Complete-Run 1 }
     }
 }
+else { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Skipped' '-SkipStorageValidation' }
 
 # ---- step 10: storage paths in Azure
 $pathArgs = @{ InfrastructureFile = $InfrastructureFile; WhatIf = [bool]$WhatIfPreference }

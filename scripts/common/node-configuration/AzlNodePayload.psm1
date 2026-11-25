@@ -150,10 +150,19 @@ Invoke-Section 'nics' {
             if ($a.PnPDeviceID -match '^(PCI\\VEN_[0-9A-Fa-f]{4}&DEV_[0-9A-Fa-f]{4})') { $pci = $Matches[1].ToUpperInvariant() }
             $vlan = $null
             # The management port, and (D62) the storage-only ports: a VLAN ID left on one of those is cleared before Network ATC.
-            $vlanMacs = @(@([string](Get-P $P 'mgmtMac' '')) + @(Get-P $P 'storageMacs' @()) | ForEach-Object { Get-MacKey ([string]$_) })
+            $iscsiMacs = @(Get-P $P 'iscsiMacs' @() | ForEach-Object { Get-MacKey ([string]$_) })
+            $vlanMacs = @(@([string](Get-P $P 'mgmtMac' '')) + @(Get-P $P 'storageMacs' @()) + $iscsiMacs | ForEach-Object { Get-MacKey ([string]$_) })
             if ($vlanMacs -contains (Get-MacKey $a.MacAddress)) {
                 $vp = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -ErrorAction SilentlyContinue
                 if ($vp) { $vlan = [int](@($vp.RegistryValue)[0]) }
+            }
+            # An iSCSI port (Learn step 3): its frame size and its persistent /32 routes, as 'prefix|next hop'.
+            $mtu = $null
+            $routes = @()
+            if ($iscsiMacs -contains (Get-MacKey $a.MacAddress)) {
+                $jp = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword '*JumboPacket' -ErrorAction SilentlyContinue
+                if ($jp) { $mtu = [int](@($jp.RegistryValue)[0]) }
+                $routes = @(Get-NetRoute -InterfaceIndex $idx -AddressFamily IPv4 -PolicyStore PersistentStore -ErrorAction SilentlyContinue | Where-Object { [string]$_.DestinationPrefix -like '*/32' } | ForEach-Object { '{0}|{1}' -f $_.DestinationPrefix, $_.NextHop })
             }
             $dhcpState = ''
             if ($ipif) { $dhcpState = [string]$ipif.Dhcp }
@@ -172,7 +181,7 @@ Invoke-Section 'nics' {
                 }
             } catch { $loc = $null }
             [pscustomobject]@{ n = $a.Name; mac = (Get-MacKey $a.MacAddress); st = [string]$a.Status; pci = $pci; drv = [string]$a.DriverVersionString
-                desc = [string]$a.InterfaceDescription; dhcp = $dhcpState; ips = $ips; gw = $gw; dns = $dns; vlan = $vlan; hwif = $hwif; loc = $loc }
+                desc = [string]$a.InterfaceDescription; dhcp = $dhcpState; ips = $ips; gw = $gw; dns = $dns; vlan = $vlan; mtu = $mtu; routes = $routes; hwif = $hwif; loc = $loc }
         })
 }
 
@@ -310,6 +319,9 @@ Invoke-Section 'san' {
     $iscsiClaim = ''
     $portals = @()
     $sessions = @()
+    $intentAdapters = @()
+    $intentsRead = $false
+    $qos = @()
     if ($declared) {
         try { $feature = [string](Get-WindowsOptionalFeature -Online -FeatureName MultipathIO).State } catch { $feature = 'Unknown' }
         if (Get-Command Get-MSDSMSupportedHW -ErrorAction SilentlyContinue) {
@@ -337,6 +349,15 @@ Invoke-Section 'san' {
             $svc = Get-Service MSiSCSI -ErrorAction SilentlyContinue
             if ($svc) { $iscsiSvc = ('{0}/{1}' -f $svc.Status, $svc.StartType) }
             if (Get-Command Get-MSDSMAutomaticClaimSettings -ErrorAction SilentlyContinue) { $iscsiClaim = [string](Get-MSDSMAutomaticClaimSettings).iSCSI }
+            # Learn step 3.1: the iSCSI ports stay outside Network ATC. The adapters of every intent, when the node answers (a node without Network ATC reads nothing).
+            if (-not (Get-Command Get-NetIntent -ErrorAction SilentlyContinue)) { $intentsRead = $true }   # no Network ATC on this node: no adapter is in an intent
+            else {
+                try {
+                    $intentAdapters = @(Get-NetIntent -ErrorAction Stop | ForEach-Object { ([string]$_.NetAdapterNameCsv) -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+                    $intentsRead = $true
+                } catch { $intentAdapters = @() }
+            }
+            if (Get-Command Get-NetQosPolicy -ErrorAction SilentlyContinue) { $qos = @(Get-NetQosPolicy -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.Name }) }
             if ($svc -and [string]$svc.Status -eq 'Running' -and (Get-Command Get-IscsiTargetPortal -ErrorAction SilentlyContinue)) {
                 try { $portals = @(Get-IscsiTargetPortal -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ addr = [string]$_.TargetPortalAddress; port = [int]$_.TargetPortalPortNumber; init = [string]$_.InitiatorPortalAddress } }) } catch { $portals = @() }
                 try {
@@ -350,7 +371,7 @@ Invoke-Section 'san' {
             }
         }
     }
-    $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim; portals = $portals; sessions = $sessions; avail = $avail; mpdev = $mpdev; mpdevRead = $mpdevRead; mpioRead = $mpioRead }
+    $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim; portals = $portals; sessions = $sessions; intentAdapters = $intentAdapters; intentsRead = $intentsRead; qos = $qos; avail = $avail; mpdev = $mpdev; mpdevRead = $mpdevRead; mpioRead = $mpioRead }
 }
 
 #AZL-HOOK:DomainJoinRead
@@ -618,6 +639,56 @@ function Invoke-Action($a) {
             # Learn step 2.5: LUNs that are already visible are claimed only after a restart.
             if ([bool](Get-P $a 'restart' $false)) { $Az.reboot = $true; return 'MSDSM claims iSCSI disks automatically (restart so the visible LUNs are claimed)' }
             return 'MSDSM claims iSCSI disks automatically'
+        }
+        'iscsi-nic' {
+            # Learn step 3.2: a static address on the iSCSI port, DHCP off, no default gateway. Other addresses of the port go (a link-local one stays).
+            $nic = Get-NicByMac ([string]$a.mac)
+            if (-not $nic) { throw ('AdapterMissing: no port with MAC ' + $a.mac) }
+            if ([string]$nic.Status -eq 'Disabled') { Enable-NetAdapter -Name $nic.Name -Confirm:$false }
+            Set-NetIPInterface -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -Dhcp Disabled
+            Get-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+            $have = Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -eq [string]$a.ip -and $_.PrefixLength -eq [int]$a.prefix -and $_.PrefixOrigin -eq 'Manual' }
+            if (-not $have) {
+                Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254.*' } | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+                New-NetIPAddress -InterfaceIndex $nic.ifIndex -IPAddress ([string]$a.ip) -PrefixLength ([int]$a.prefix) | Out-Null
+            }
+            return ($nic.Name + ': static ' + $a.ip + '/' + $a.prefix + ', no gateway')
+        }
+        'iscsi-mtu' {
+            # Learn step 3.3: the JumboPacket of the iSCSI port (the same frame size on the whole path).
+            $nic = Get-NicByMac ([string]$a.mac)
+            if (-not $nic) { throw ('AdapterMissing: no port with MAC ' + $a.mac) }
+            Set-NetAdapterAdvancedProperty -Name $nic.Name -RegistryKeyword '*JumboPacket' -RegistryValue ([int]$a.mtu)
+            return ($nic.Name + ': JumboPacket ' + $a.mtu)
+        }
+        'iscsi-vlan' {
+            # Learn step 3.3: the VLAN of the iSCSI port, only when the file names one (0 is untagged).
+            $nic = Get-NicByMac ([string]$a.mac)
+            if (-not $nic) { throw ('AdapterMissing: no port with MAC ' + $a.mac) }
+            Set-NetAdapterAdvancedProperty -Name $nic.Name -RegistryKeyword 'VlanID' -RegistryValue ([int]$a.vlan)
+            return ($nic.Name + ': VLAN ' + $a.vlan)
+        }
+        'iscsi-route' {
+            # Learn step 3.4: a persistent /32 route to the target portal on this iSCSI port.
+            $nic = Get-NicByMac ([string]$a.mac)
+            if (-not $nic) { throw ('AdapterMissing: no port with MAC ' + $a.mac) }
+            $prefix = ([string]$a.portal) + '/32'
+            $have = Get-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix $prefix -PolicyStore PersistentStore -ErrorAction SilentlyContinue | Where-Object { [string]$_.NextHop -eq [string]$a.nexthop }
+            if ($have) { return ($nic.Name + ': route ' + $prefix + ' already there') }
+            New-NetRoute -DestinationPrefix $prefix -InterfaceIndex $nic.ifIndex -NextHop ([string]$a.nexthop) -PolicyStore PersistentStore | Out-Null
+            return ($nic.Name + ': route ' + $prefix + ' via ' + $a.nexthop)
+        }
+        'iscsi-qos' {
+            # Learn step 3.5 (optional): the three QoS policies, exactly as Learn lists them. A policy that is there is left alone.
+            $name = [string]$a.policy
+            if (Get-NetQosPolicy -Name $name -ErrorAction SilentlyContinue) { return ('QoS policy ' + $name + ' already there') }
+            switch ($name) {
+                'iSCSI' { New-NetQosPolicy -Name $name -IPDstPortStart 3260 -IPDstPortEnd 3260 -IPProtocol TCP -PriorityValue8021Action ([int]$a.priority) | Out-Null }
+                'CSV-LiveMigration' { New-NetQosPolicy -Name $name -Cluster -PriorityValue8021Action ([int]$a.priority) | Out-Null }
+                'ClusterHeartbeat' { New-NetQosPolicy -Name $name -IPProtocol UDP -IPDstPortStart 3343 -IPDstPortEnd 3343 -PriorityValue8021Action ([int]$a.priority) | Out-Null }
+                default { throw ('Unknown QoS policy ' + $name) }
+            }
+            return ('QoS policy ' + $name + ' priority ' + $a.priority)
         }
         'iscsi-portal' {
             # Learn step 5: discover the target portal from this initiator address.

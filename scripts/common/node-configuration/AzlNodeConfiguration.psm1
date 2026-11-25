@@ -326,6 +326,8 @@ function Get-AzlNodeSpec {
             IpAddress    = $(if ($p.Contains('ip_address')) { [string]$p['ip_address'] } else { $null })
             PrefixLength = $(if ($p.Contains('prefix_length')) { [int]$p['prefix_length'] } elseif ($isMgmt) { $mgmt.PrefixLength } else { $null })
             Gateway      = $(if ($isMgmt) { $mgmt.Gateway } else { $null })
+            VlanId       = $(if ($p.Contains('vlan_id') -and $null -ne $p['vlan_id'] -and "$($p['vlan_id'])" -ne '') { [int]$p['vlan_id'] } else { $null })
+            VlanMode     = $(if ($p.Contains('vlan_mode')) { [string]$p['vlan_mode'] } else { '' })
             IsManagement = $isMgmt
             # D62: a storage port that carries no management traffic; the OS configuration clears a VLAN ID left on it before the deployment.
             StorageOnly  = ((-not $carriesManagement) -and ($storageIntentPorts.ContainsKey($portKey) -or ($roles -contains 'storage')))
@@ -353,8 +355,14 @@ function Get-AzlNodeSpec {
                 [pscustomobject]@{ Iqn = [string](Get-AzlProp $t 'iqn' ''); Fabric = ([string](Get-AzlProp $t 'fabric' '')).Trim().ToUpperInvariant(); Portals = @(ConvertTo-List (Get-AzlProp $t 'portals') | ForEach-Object { [string]$_ }) }
             })
         $initiators = @(foreach ($p in $ports) {
-                foreach ($role in $p.Roles) { if ($role -in 'iscsi:a', 'iscsi:b') { [pscustomobject]@{ Name = $p.Name; Role = $role; Fabric = $role.Substring(6).ToUpperInvariant(); Ip = [string]$p.IpAddress } } }
+                foreach ($role in $p.Roles) { if ($role -in 'iscsi:a', 'iscsi:b') { [pscustomobject]@{ Name = $p.Name; Role = $role; Fabric = $role.Substring(6).ToUpperInvariant(); Ip = [string]$p.IpAddress; Mac = [string]$p.Mac; Prefix = $p.PrefixLength; VlanId = $p.VlanId; VlanMode = [string]$p.VlanMode } } }
             })
+        # The iSCSI network of the file (Learn step 3): the networks of the two paths (VLAN, subnet, next hop), the frame size and the optional QoS. A key that is not in the file leaves that setting alone.
+        $iscsiNetworks = @(foreach ($net in ConvertTo-List (Get-AzlProp $Infrastructure 'storage.san.iscsi.networks')) {
+                [pscustomobject]@{ Fabric = ([string](Get-AzlProp $net 'fabric' '')).Trim().ToUpperInvariant(); VlanId = $(if ($null -ne (Get-AzlProp $net 'vlan_id')) { [int](Get-AzlProp $net 'vlan_id') } else { $null }); Subnet = [string](Get-AzlProp $net 'subnet' ''); NextHop = [string](Get-AzlProp $net 'next_hop' '') }
+            })
+        $jumboValue = Get-AzlProp $Infrastructure 'storage.san.iscsi.jumbo_packet'
+        $qosBlock = Get-AzlProp $Infrastructure 'storage.san.iscsi.qos'
         # The Azure Local release of the deployment (the second part of the solution version, 12.2610.1004.50 is 2610): deployment.solution_version, else the ZTP handoff, else provisioning.os_version
         # when that is a solution version. 0 when none gives one. From 2610 a SAN-only iSCSI design is configured by the deployment, so the OS configuration must not enable iSCSI before it.
         $solutionVersion = ''
@@ -374,6 +382,9 @@ function Get-AzlNodeSpec {
             IscsiTargets = $targets
             IscsiChap    = [bool](Get-AzlProp $Infrastructure 'storage.san.iscsi.chap.enabled' $false)
             IscsiPorts   = $initiators
+            IscsiNetworks = $iscsiNetworks
+            IscsiJumbo   = $(if ($null -ne $jumboValue -and "$jumboValue" -ne '') { [int]$jumboValue } else { $null })
+            IscsiQos     = [pscustomobject]@{ Enabled = [bool](Get-AzlProp $qosBlock 'enabled' $false); Priority = [int](Get-AzlProp $qosBlock 'priority' 4) }
             SolutionVersion = $solutionVersion
             ReleaseTrain = $releaseTrain
             InfraLunId   =[string](Get-AzlProp $Infrastructure 'storage.san.infra_volume_lun_id' '')
@@ -435,6 +446,11 @@ function Get-AzlNodeReadParameter {
     # D62: the node also reads the VlanID advanced property of the storage-only ports, so a VLAN ID left on one is found and cleared before Network ATC.
     $storageMacs = @($Spec.Ports | Where-Object { $_.PSObject.Properties['StorageOnly'] -and $_.StorageOnly -and $_.Mac } | ForEach-Object { [string]$_.Mac })
     if ($storageMacs.Count) { $p.storageMacs = $storageMacs }
+    # The iSCSI ports (Learn step 3): the node also reads their frame size, VLAN and persistent routes, and which Network ATC intents and QoS policies exist.
+    if ($Spec.San -and $Spec.San.Type -eq 'iscsi') {
+        $iscsiMacs = @($Spec.San.IscsiPorts | Where-Object { $_.Mac } | ForEach-Object { [string]$_.Mac })
+        if ($iscsiMacs.Count) { $p.iscsiMacs = $iscsiMacs }
+    }
     if ($Spec.Sbe) {
         $p.sbeDir = $Spec.Sbe.Dir
         $p.sbeZip = $Spec.Sbe.ZipName
@@ -925,6 +941,54 @@ function Compare-AzlNodeState {
                 & $add (New-AzlPlanItem $n 'Mpio' 'MSiSCSI service' $sanState.iscsiSvc 'Running/Automatic' $(if ($svcOk) { 'Ok' } else { 'Change' }) '' $(if (-not $svcOk) { @{ id = 'Mpio/iscsi-service'; kind = 'iscsi-service' } }))
                 $claimOk = [string]$sanState.iscsiClaim -eq 'True'
                 & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI auto-claim' $sanState.iscsiClaim 'True' $(if ($claimOk) { 'Ok' } else { 'Change' }) 'Restart the node if LUNs are already visible.' $(if (-not $claimOk) { @{ id = 'Mpio/iscsi-claim'; kind = 'iscsi-claim'; restart = ($sanDisks.Count -gt 0) } }))
+                # Learn step 3: the iSCSI ports are dedicated physical ports OUTSIDE Network ATC, each with a static address and no default gateway; the frame size and the VLAN when the file says
+                # (storage.san.iscsi.jumbo_packet, the port's or the network's vlan_id); a persistent /32 route to every target portal of the port's path; QoS only when the file asks (storage.san.iscsi.qos).
+                $intentAdapters = @(Get-AzlProp $sanState 'intentAdapters' @() | Where-Object { $_ })
+                $intentsRead = [bool](Get-AzlProp $sanState 'intentsRead' $false)
+                foreach ($ini in @($Spec.San.IscsiPorts)) {
+                    $label = "iSCSI port $($ini.Name) ($($ini.Role))"
+                    $net = @($Spec.San.IscsiNetworks | Where-Object { $_.Fabric -eq $ini.Fabric }) | Select-Object -First 1
+                    $nic = @($nics | Where-Object { $_.mac -eq $ini.Mac }) | Select-Object -First 1
+                    if (-not $nic) { & $add (New-AzlPlanItem $n 'Mpio' $label 'no port has the MAC' "a port with MAC $($ini.Mac)" Blocked 'No adapter on the node has the MAC of this iSCSI port in the file.'); continue }
+                    if (-not $intentsRead) { & $add (New-AzlPlanItem $n 'Mpio' "$label outside Network ATC" 'the intents could not be read' 'outside every intent' Blocked 'Get-NetIntent did not answer, so it is not known whether this port is in a Network ATC intent; the port is not changed. Read the node again.'); continue }
+                    if ($intentsRead -and @($intentAdapters | Where-Object { $_ -ieq [string]$nic.n }).Count) { & $add (New-AzlPlanItem $n 'Mpio' "$label outside Network ATC" "in a Network ATC intent ($($nic.n))" 'outside every intent' Blocked 'Learn step 3.1: keep the iSCSI NICs outside Network ATC and configure them by hand. Remove the adapter from its intent (Remove-NetIntent, or Set-NetIntent without it) yourself: the toolkit does not change a Network ATC intent of a deployed instance.'); continue }
+                    $prefix = $(if ($null -ne $ini.Prefix) { [int]$ini.Prefix } elseif ($net -and $net.Subnet -match '/(\d+)$') { [int]$Matches[1] } else { $null })
+                    if (-not $ini.Ip -or $null -eq $prefix) { & $add (New-AzlPlanItem $n 'Mpio' "$label address" 'not in the file' 'ip_address and prefix_length' Info "The port has no address or no prefix in the file (nodes[].network_adapters ip_address and prefix_length; the prefix may come from storage.san.iscsi.networks[].subnet), so its address is left as it is."); continue }
+                    $want = "$($ini.Ip)/$prefix"
+                    $addressOk = (@($nic.ips | Where-Object { $_ -eq "$want/Manual" }).Count -gt 0) -and -not @($nic.gw).Count
+                    & $add (New-AzlPlanItem $n 'Mpio' "$label address" (@($nic.ips) -join ',') "static $want, no gateway" $(if ($addressOk) { 'Ok' } else { 'Change' }) 'Learn step 3.2: a static address on the storage subnet, no default gateway.' $(if (-not $addressOk) { @{ id = "Mpio/iscsi-nic-$($ini.Mac)"; kind = 'iscsi-nic'; mac = $ini.Mac; ip = $ini.Ip; prefix = $prefix } }))
+                    if ($null -ne $Spec.San.IscsiJumbo) {
+                        $mtuHave = $(if ($null -ne (Get-AzlProp $nic 'mtu')) { [string]$nic.mtu } else { '' })
+                        if (-not $mtuHave) { & $add (New-AzlPlanItem $n 'Mpio' "$label frame size" 'not readable' ([string]$Spec.San.IscsiJumbo) Info 'The driver did not report the JumboPacket property; set it by hand (Learn step 3.3).') }
+                        else { & $add (New-AzlPlanItem $n 'Mpio' "$label frame size (JumboPacket)" $mtuHave ([string]$Spec.San.IscsiJumbo) $(if ($mtuHave -eq [string]$Spec.San.IscsiJumbo) { 'Ok' } else { 'Change' }) 'Learn step 3.3: the same frame size on the whole iSCSI path. The adapter restarts for a moment.' $(if ($mtuHave -ne [string]$Spec.San.IscsiJumbo) { @{ id = "Mpio/iscsi-mtu-$($ini.Mac)"; kind = 'iscsi-mtu'; mac = $ini.Mac; mtu = [int]$Spec.San.IscsiJumbo } })) }
+                    }
+                    $vlanWant = $null
+                    if ($ini.VlanMode -eq 'access') { $vlanWant = 0 } elseif ($null -ne $ini.VlanId) { $vlanWant = [int]$ini.VlanId } elseif ($net -and $null -ne $net.VlanId) { $vlanWant = [int]$net.VlanId }
+                    if ($null -ne $vlanWant) {
+                        if ($null -eq (Get-AzlProp $nic 'vlan')) { & $add (New-AzlPlanItem $n 'Mpio' "$label VLAN" 'not readable' ([string]$vlanWant) Info 'The driver did not report a VLAN ID for this port; set it by hand (Learn step 3.3) when the switch port is a trunk.') }
+                        else { & $add (New-AzlPlanItem $n 'Mpio' "$label VLAN" ([string]$nic.vlan) ([string]$vlanWant) $(if ([int]$nic.vlan -eq $vlanWant) { 'Ok' } else { 'Change' }) 'Learn step 3.3: the host tags the VLAN only when the switch port is a trunk (0 means untagged). The link goes down for a moment.' $(if ([int]$nic.vlan -ne $vlanWant) { @{ id = "Mpio/iscsi-vlan-$($ini.Mac)"; kind = 'iscsi-vlan'; mac = $ini.Mac; vlan = $vlanWant } })) }
+                    }
+                    # Learn step 3.4: a persistent /32 route for every target portal of this port's path, next hop the router of that iSCSI network (storage.san.iscsi.networks[].next_hop); the template of Microsoft sends each portal to itself when the file names none.
+                    $routesHave = @(Get-AzlProp $nic 'routes' @() | Where-Object { $_ })
+                    foreach ($t in @($Spec.San.IscsiTargets | Where-Object { $_.Iqn })) {
+                        if ($t.Fabric -and $ini.Fabric -ne $t.Fabric) { continue }
+                        foreach ($rawPortal in $t.Portals) {
+                            $portalIp = ($rawPortal -split ':', 2)[0]
+                            $hop = $(if ($net -and $net.NextHop) { $net.NextHop } else { $portalIp })
+                            $routeOk = @($routesHave | Where-Object { [string]$_ -eq "$portalIp/32|$hop" }).Count -gt 0
+                            & $add (New-AzlPlanItem $n 'Mpio' "$label route $portalIp/32" $(if ($routeOk) { "via $hop" } else { 'absent' }) "persistent route via $hop" $(if ($routeOk) { 'Ok' } else { 'Change' }) '' $(if (-not $routeOk) { @{ id = "Mpio/iscsi-route-$($ini.Mac)-$portalIp"; kind = 'iscsi-route'; mac = $ini.Mac; portal = $portalIp; nexthop = $hop } }))
+                        }
+                    }
+                }
+                # Learn step 3.5, optional and only when iSCSI shares Ethernet infrastructure with other traffic: the three QoS policies. Opt-in with storage.san.iscsi.qos.enabled (default false).
+                if ($Spec.San.IscsiQos.Enabled) {
+                    $qosHave = @(Get-AzlProp $sanState 'qos' @() | Where-Object { $_ })
+                    foreach ($policy in @('iSCSI', 'CSV-LiveMigration', 'ClusterHeartbeat')) {
+                        $priority = switch ($policy) { 'iSCSI' { [int]$Spec.San.IscsiQos.Priority } 'CSV-LiveMigration' { 3 } default { 7 } }
+                        $has = @($qosHave | Where-Object { $_ -ieq $policy }).Count -gt 0
+                        & $add (New-AzlPlanItem $n 'Mpio' "QoS policy $policy" $(if ($has) { 'present' } else { 'absent' }) "priority $priority" $(if ($has) { 'Ok' } else { 'Change' }) 'Learn step 3.5 (storage.san.iscsi.qos.enabled).' $(if (-not $has) { @{ id = "Mpio/iscsi-qos-$policy"; kind = 'iscsi-qos'; policy = $policy; priority = $priority } }))
+                    }
+                }
                 # Learn step 5: a target portal and a persistent, multipath session from every iSCSI initiator port to every portal of every target (fabric A with iscsi:a, B with iscsi:b).
                 $targets = @($Spec.San.IscsiTargets | Where-Object { $_.Iqn })
                 if (-not $targets.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI targets' 'none in the file' 'storage.san.iscsi.targets' Info 'Portals and sessions are not made: list the array''s targets (iqn and portals) in storage.san.iscsi.targets and the OS configuration connects the node (Learn step 5).') }

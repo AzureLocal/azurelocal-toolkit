@@ -132,6 +132,25 @@ Describe 'Invoke-ExternalStorageHybrid-Orchestrated.ps1' {
         $global:AzlHybRemote | Should -Contain 'ValidateStore'
     }
 
+    It 'runs Test-Cluster -Include Storage by default, and leaves it out with -SkipStorageValidation' {
+        (Invoke-Hyb (New-InfraFile)).ExitCode | Should -Be 0
+        $global:AzlHybRemote | Should -Contain 'ValidateStore'
+        $global:AzlHybRemote.Clear()
+        (Invoke-Hyb (New-InfraFile) -Extra @{ SkipStorageValidation = $true }).ExitCode | Should -Be 0
+        $global:AzlHybRemote | Should -Not -Contain 'ValidateStore'
+    }
+
+    It 'restarts the nodes one at a time when the file approves it (operations.post_cluster.allow_node_restarts), without -RollingRestart' {
+        $global:AzlHybCodes['Set-AzureLocalNodeConfiguration.ps1|Mpio'] = @(1, 0)
+        $doc = ConvertFrom-Yaml -Ordered (Get-Content -LiteralPath (New-InfraFile) -Raw)
+        $doc.operations = [ordered]@{ post_cluster = [ordered]@{ allow_node_restarts = $true } }
+        $file = Join-Path $TestDrive "approved-$([guid]::NewGuid().ToString('N').Substring(0, 6)).yml"
+        Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
+        $r = Invoke-Hyb $file
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        @($global:AzlHybSteps | Where-Object Name -EQ 'Invoke-NodeMaintenanceReboot.ps1').Count | Should -Be 2
+    }
+
     It 'refuses to start while a solution update is running, before any step' {
         $global:AzlHybState.RunningUpdates = @('12.2611.1001.10 Installing')
         $r = Invoke-Hyb (New-InfraFile)
