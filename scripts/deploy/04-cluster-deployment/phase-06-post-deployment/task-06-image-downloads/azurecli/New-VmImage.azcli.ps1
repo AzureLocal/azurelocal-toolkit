@@ -311,7 +311,7 @@ foreach ($plan in $plans) {
             }
             if ($plan.Version -ne 'latest' -and $haveVersion -and $haveVersion -ne $plan.Version) { $differences.Add("version is $haveVersion") }
             $haveTags = Get-Prop $existing @('tags')
-            if ($tagArguments.Count -and $null -ne $haveTags) {
+            if ($tagArguments.Count) {
                 $missingTags = @(foreach ($pair in $tagArguments) { $key, $value = $pair -split '=', 2; if ([string](Get-Prop $haveTags @($key)) -ne $value) { $key } })
                 if ($missingTags.Count) { $differences.Add("tags differ from the file's tags: $($missingTags -join ', ')") }
             }

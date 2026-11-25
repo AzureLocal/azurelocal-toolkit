@@ -278,7 +278,8 @@ try {
                     }
                     if ($plan.Version -ne 'latest' -and $haveVersion -and $haveVersion -ne $plan.Version) { $differences.Add("version is $haveVersion") }
                     $haveTags = Get-Property $existing 'Tag'
-                    if ($tags.Count -and $haveTags -is [System.Collections.IDictionary]) {
+                    if ($tags.Count -and ($null -eq $haveTags -or $haveTags -is [System.Collections.IDictionary])) {
+                        if ($null -eq $haveTags) { $haveTags = @{} }
                         $missingTags = @($tags.Keys | Where-Object { -not $haveTags.Contains($_) -or [string]$haveTags[$_] -ne [string]$tags[$_] } | Sort-Object)
                         if ($missingTags.Count) { $differences.Add("tags differ from the file's tags: $($missingTags -join ', ')") }
                     }
