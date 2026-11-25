@@ -16,10 +16,10 @@
       4. Custom location: azure.custom_location exists and its provisioning state is Succeeded.
       5. Cloud witness: with cluster.witness.type cloud, the storage account cluster.witness.storage_account exists in azure.resource_group and
          is Succeeded.
-      6. Storage paths: the number of storage paths in Azure is not below the number in storage.paths[].
+      6. Storage paths: the number of storage paths in Azure that Succeeded is not below the number in storage.paths[].
       7. VM images: the number of images that Succeeded is not below the number in storage.vm_images[].
       8. Logical networks: the number that Succeeded is not below the number of enabled entries of networking.logical_networks[].
-      9. Network security groups: the number of groups in Azure is not below the number in networking.network_security_groups[].
+      9. Network security groups: with sdn.enabled true, the number of groups in Azure is not below the number in networking.network_security_groups[]; skipped, with the reason, when sdn.enabled is not true.
 
     -WhatIf lists the checks and runs none. The script does not sign in: run az login --tenant <azure.tenant_id> first. It needs the Azure CLI
     extensions connectedmachine, stack-hci, stack-hci-vm and customlocation, and does not install them. It does not change the Azure CLI default
@@ -134,6 +134,7 @@ $expectedPaths = @(@(Get-Field $storage 'paths' @()) | Where-Object { $null -ne 
 $expectedImages = @(@(Get-Field $storage 'vm_images' @()) | Where-Object { $null -ne $_ }).Count
 $expectedNetworks = @(@(Get-Field $networking 'logical_networks' @()) | Where-Object { $_ -is [System.Collections.IDictionary] -and (Get-Field $_ 'enabled' $true) -ne $false }).Count
 $expectedGroups = @(@(Get-Field $networking 'network_security_groups' @()) | Where-Object { $null -ne $_ }).Count
+$sdnEnabled = (Get-Text 'sdn.enabled') -ieq 'true'
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder.' }
@@ -234,12 +235,13 @@ else { Add-Check 'cloud witness storage account' 'Skipped' "cluster.witness.type
 
 # 6 to 9. What the tasks of this phase create
 $counts = @(
-    @{ Label = 'storage paths'; Command = @('stack-hci-vm', 'storagepath', 'list'); Expected = $expectedPaths; Succeeded = $false }
+    @{ Label = 'storage paths'; Command = @('stack-hci-vm', 'storagepath', 'list'); Expected = $expectedPaths; Succeeded = $true }
     @{ Label = 'VM images'; Command = @('stack-hci-vm', 'image', 'list'); Expected = $expectedImages; Succeeded = $true }
     @{ Label = 'logical networks'; Command = @('stack-hci-vm', 'network', 'lnet', 'list'); Expected = $expectedNetworks; Succeeded = $true }
     @{ Label = 'network security groups'; Command = @('stack-hci-vm', 'network', 'nsg', 'list'); Expected = $expectedGroups; Succeeded = $false }
 )
 foreach ($count in $counts) {
+    if ($count.Label -eq 'network security groups' -and -not $sdnEnabled) { Add-Check $count.Label 'Skipped' 'sdn.enabled is not true (the network security groups belong to the SDN task)'; continue }
     if ($count.Expected -eq 0) { Add-Check $count.Label 'Skipped' 'the file lists none'; continue }
     $list = Read-Az (@($count.Command) + $scope)
     if ($null -eq $list) { Add-Check $count.Label 'Failed' $script:ReadError; continue }

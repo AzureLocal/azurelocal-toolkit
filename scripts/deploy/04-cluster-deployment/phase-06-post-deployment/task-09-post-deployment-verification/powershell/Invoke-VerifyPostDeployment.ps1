@@ -20,10 +20,12 @@
       5. SSH: sshd runs on each node and TCP 22 answers (the WindowsOpenSSH extension of Phase 06 task 04 puts it there). A node where sshd is
          not installed or not running is reported as skipped (SSH is an optional task and the file has no key for it); a node where sshd runs
          but TCP 22 does not answer fails.
-      6. Storage: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online.
+      6. Storage: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online; every virtual disk is Healthy;
+         every volume of storage.volumes (Storage Spaces Direct) and every LUN of storage.san.luns (SAN, with scenario.storage_architecture san or hybrid) is a
+         cluster shared volume of that name and is Online (the checklist: the CSV count matches the design).
       7. VM images in Azure: the number of images that Succeeded is not below the number in storage.vm_images[]. Skipped when the file lists none.
-      8. Logical networks in Azure: the number that Succeeded is not below the number in networking.logical_networks[]. Skipped when the file
-         lists none.
+      8. Logical networks in Azure: the number that Succeeded is not below the number in networking.logical_networks[], and each network of the file that gives a
+         vlan_id exists in Azure with that VLAN ID (the checklist: VLAN IDs validated against the site network plan). Skipped when the file lists none.
 
     The cluster questions (checks 1, 3 and 6) are asked on a node over PowerShell remoting, at the node's management address of the file: the host
     that runs the script needs neither the failover clustering tools nor the cluster's domain or DNS.
@@ -39,7 +41,8 @@
         scenario.identity, identity.active_directory.domain_fqdn, .netbios_name, .lcm_user (username, password)
         identity.local_admin (username, password)
         azure.subscription_id, azure.resource_group
-        storage.vm_images[], networking.logical_networks[], identity.active_directory.security_groups[].local_groups
+        storage.vm_images[], networking.logical_networks[] (name, vlan_id), identity.active_directory.security_groups[].local_groups
+        scenario.storage_architecture, storage.volumes[].name, storage.san.luns[].name
 
     Exit codes: 0 every check passed (or planned under -WhatIf); 1 a check failed; 2 a value in the file is missing or unusable, or there is no
     login (nothing was checked).
@@ -126,6 +129,11 @@ if ($nodesToCheck.Count -eq 0) { Exit-InputProblem 'No node to check: nodes[] is
 
 $logicalNetworkValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'networking.logical_networks'
 $logicalNetworks = @(@($logicalNetworkValue) | Where-Object { $null -ne $_ })
+$architecture = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.storage_architecture')).Trim().ToLowerInvariant()
+$volumeValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'storage.volumes'
+$volumeNames = @(if ($architecture -ne 'san') { @($volumeValue) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { ([string]$_['name']).Trim() } | Where-Object { $_ } })
+$lunValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'storage.san.luns'
+$lunNames = @(if ($architecture -in 'san', 'hybrid') { @($lunValue) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { ([string]$_['name']).Trim() } | Where-Object { $_ } })
 $vmImageValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'storage.vm_images'
 $vmImages = @(@($vmImageValue) | Where-Object { $null -ne $_ })
 
@@ -175,6 +183,7 @@ $ReadStorage = {
     @{
         Pools = @(Get-StoragePool -IsPrimordial $false -ErrorAction Stop | ForEach-Object { [string]$_.HealthStatus })
         Csv   = @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } })
+        VirtualDisks = @(Get-VirtualDisk -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.FriendlyName; Health = [string]$_.HealthStatus } })
     }
 }
 # The local groups the file puts an Active Directory group in (identity.active_directory.security_groups[].local_groups).
@@ -198,6 +207,12 @@ function Get-ProvisioningState($Resource) {
     if ($Resource.PSObject.Properties['properties'] -and $Resource.properties -and $Resource.properties.PSObject.Properties['provisioningState']) { return [string]$Resource.properties.provisioningState }
     if ($Resource.PSObject.Properties['provisioningState']) { return [string]$Resource.provisioningState }
     return ''
+}
+
+function Get-NestedProperty($Object, [string[]]$Path) {
+    $node = $Object
+    foreach ($part in $Path) { if ($null -eq $node -or -not $node.PSObject.Properties[$part]) { return $null }; $node = $node.PSObject.Properties[$part].Value }
+    $node
 }
 
 # 1. Cluster nodes
@@ -323,6 +338,20 @@ else {
         $csvVolumes = @($storage.Csv)
         Write-Check -Pass ($csvVolumes.Count -ge $MinimumCsvVolumes) -Check 'CSV volumes mounted' -Detail "$($csvVolumes.Count) volume(s)"
         foreach ($csv in $csvVolumes) { Write-Check -Pass ([string]$csv.State -eq 'Online') -Check "  $($csv.Name)" -Detail ([string]$csv.State) }
+        # The design: every volume of the file is a cluster shared volume of that name (an S2D volume is "Cluster Virtual Disk (<name>)"; a SAN LUN is named as in the file).
+        foreach ($volumeName in $volumeNames) {
+            $csv = $csvVolumes | Where-Object { [string]$_.Name -eq "Cluster Virtual Disk ($volumeName)" } | Select-Object -First 1
+            Write-Check -Pass ([bool]$csv -and [string]$csv.State -eq 'Online') -Check "Volume $volumeName (storage.volumes) is an Online cluster shared volume" -Detail $(if ($csv) { [string]$csv.State } else { 'not found' })
+        }
+        foreach ($lunName in $lunNames) {
+            $csv = $csvVolumes | Where-Object { [string]$_.Name -eq $lunName } | Select-Object -First 1
+            Write-Check -Pass ([bool]$csv -and [string]$csv.State -eq 'Online') -Check "SAN LUN $lunName (storage.san.luns) is an Online cluster shared volume" -Detail $(if ($csv) { [string]$csv.State } else { 'not found' })
+        }
+        $virtualDisks = @(if ($storage -is [System.Collections.IDictionary] -and $storage.Contains('VirtualDisks')) { $storage['VirtualDisks'] | Where-Object { $null -ne $_ } })
+        if ($virtualDisks.Count -gt 0) {
+            $sick = @($virtualDisks | Where-Object { [string]$_.Health -ne 'Healthy' })
+            Write-Check -Pass ($sick.Count -eq 0) -Check 'Virtual disk health' -Detail $(if ($sick.Count) { ($sick | ForEach-Object { "$($_.Name) $($_.Health)" }) -join ', ' } else { "$($virtualDisks.Count) disk(s) Healthy" })
+        }
     }
     catch { Write-Failure "Storage check failed: $($_.Exception.Message)" }
 }
@@ -353,6 +382,14 @@ else {
         $lnets = @(if ($lnetsText) { $lnetsText | ConvertFrom-Json })
         $succeeded = @($lnets | Where-Object { (Get-ProvisioningState $_) -eq 'Succeeded' })
         Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check 'All expected networks Succeeded' -Detail "$($succeeded.Count) Succeeded of $($lnets.Count) in $resourceGroup, the file lists $($logicalNetworks.Count)"
+        # The VLAN IDs of the site plan (the file) against Azure: only for a network that gives a vlan_id.
+        foreach ($planned in @($logicalNetworks | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('vlan_id') -and "$($_['vlan_id'])" -ne '' })) {
+            $plannedName = ([string]$planned['name']).Trim()
+            $inAzure = @($lnets | Where-Object { [string]$_.name -eq $plannedName }) | Select-Object -First 1
+            if (-not $inAzure) { Write-Check -Pass $false -Check "Logical network $plannedName VLAN ID" -Detail 'not found in Azure'; continue }
+            $vlans = @(@(Get-NestedProperty $inAzure @('properties', 'subnets')) | ForEach-Object { "$(Get-NestedProperty $_ @('properties', 'vlan'))" } | Where-Object { $_ })
+            Write-Check -Pass ($vlans.Count -gt 0 -and $vlans -contains "$($planned['vlan_id'])") -Check "Logical network $plannedName VLAN ID is $($planned['vlan_id']) (the file)" -Detail "Azure: $(if ($vlans.Count) { $vlans -join ', ' } else { 'no VLAN ID reported' })"
+        }
     }
     else { Write-Failure "Could not query logical networks (az sign-in, or the stack-hci-vm extension): $(($lnetsText -split "`n")[0])" }
 }

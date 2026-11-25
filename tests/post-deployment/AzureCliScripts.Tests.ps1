@@ -475,7 +475,7 @@ Describe 'Invoke-VerifyPostDeployment.azcli.ps1' {
         Set-AzHandler 'stack-hci cluster list' { '[{"name":"azl-cl-01","provisioningState":"Succeeded","status":"ConnectedRecently"}]' }
         Set-AzHandler 'customlocation show' { '{"name":"cl-azl-01","provisioningState":"Succeeded"}' }
         Set-AzHandler 'storage account show' { '{"name":"stazlwitness01","provisioningState":"Succeeded"}' }
-        Set-AzHandler 'stack-hci-vm storagepath list' { '[{"name":"sp-workloads-01"}]' }
+        Set-AzHandler 'stack-hci-vm storagepath list' { '[{"name":"sp-workloads-01","properties":{"provisioningState":"Succeeded"}}]' }
         Set-AzHandler 'stack-hci-vm image list' { if ($global:AzlVerifyState.Images -gt 0) { '[{"name":"img-ws2025","properties":{"provisioningState":"Succeeded"}}]' } else { '[]' } }
         Set-AzHandler 'stack-hci-vm network lnet list' { '[{"name":"lnet-workloads","properties":{"provisioningState":"Succeeded"}}]' }
         Set-AzHandler 'stack-hci-vm network nsg list' { '[{"name":"nsg-workloads"}]' }
@@ -491,6 +491,15 @@ Describe 'Invoke-VerifyPostDeployment.azcli.ps1' {
         (Get-AzCall 'customlocation show')[0].Options['--name'] | Should -Be 'cl-azl-01'
         (Get-AzCall 'storage account show')[0].Options['--name'] | Should -Be 'stazlwitness01'
         @(Get-AzWriteCall).Count | Should -Be 0
+    }
+
+    It 'skips the network security group count with the reason when sdn.enabled is not true, and does not ask Azure for them' {
+        $r = Invoke-AzTool $script:Verify (New-AzTestInfraFile { param($d) $d.sdn.enabled = $false })
+        $r.ExitCode | Should -Be 0 -Because $r.Text
+        $nsg = @($r.Rows | Where-Object Check -Like 'network security groups*')[0]
+        $nsg.Result | Should -Be 'Skipped'
+        $nsg.Detail | Should -Match 'sdn.enabled is not true'
+        @(Get-AzCall 'stack-hci-vm network nsg list').Count | Should -Be 0
     }
 
     It 'ends with exit code 1 and names the extension that is not Succeeded' {
