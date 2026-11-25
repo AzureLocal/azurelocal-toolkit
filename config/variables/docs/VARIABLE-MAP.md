@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.75. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.76. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 787 | 533 | 87 | 5 | 160 | 2 |
-| Owned by a tool (`tools.*`) | 4988 | 4785 | 0 | 0 | 203 | 0 |
+| Owned by a tool (`tools.*`) | 5045 | 4842 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7148 | 5320 | 98 | 5 | 1713 | 12 |
+| All registry leaves | 7205 | 5377 | 98 | 5 | 1713 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -96,7 +96,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1099 |
 | sonar | Sonar | 19 | 0 | 267 |
-| cicd-infra | Outside the flow | 91 | 0 | 890 |
+| cicd-infra | Outside the flow | 91 | 0 | 947 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 262 | 0 | 0 |
@@ -1915,10 +1915,10 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | beacon | config_keys | 30 | 30 | 0 |
 | beacon | parameters | 52 | 52 | 0 |
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
-| cicd_infra | env_vars | 156 | 156 | 0 |
+| cicd_infra | env_vars | 170 | 170 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 324 | 324 | 0 |
-| cicd_infra | pipeline_variables | 201 | 201 | 0 |
+| cicd_infra | pipeline_inputs | 357 | 357 | 0 |
+| cicd_infra | pipeline_variables | 211 | 211 | 0 |
 | cicd_infra | secret_names | 30 | 30 | 0 |
 | cicd_infra | terraform_variables | 121 | 121 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |

@@ -1,0 +1,193 @@
+# Azure Local post-deployment (phase 06 of the cluster deployment: SDN, witness, security groups, SSH, storage, images, network security groups, logical networks,
+# verification, external storage, SBE import), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/post-deployment.yml) or copy it. It declares its own stages, so it is NOT
+# included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline (the same as arm-deployment.yml and the day 2
+# stages). It runs the command an operator runs by hand and nothing else; the logic (the eleven task scripts, their order, which step applies, the stop at the
+# first failure) is in the script and in its step table PostDeploymentSteps.psd1, not here:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1 ...
+# Run it after the ARM deployment succeeded. Every task script also runs alone; this pipeline runs them together, in the order of the pages of the Implementation
+# guide, or one task, or a range of them.
+#
+# Jobs
+#   post-deployment-validate  stage post-deployment-validate  Read only. Checks the master file against the schema (Test-InfrastructureFile.ps1) before anything reads
+#                             Azure or the cluster. Always runs.
+#   post-deployment-plan      stage post-deployment-plan      Read only, and always before an apply. The orchestrator with -Mode Plan: every selected step runs
+#                             with -WhatIf, reads Azure and the cluster and changes nothing. The person who plays the apply job reads this job's report. The job
+#                             FAILS (exit code 1 a step failed, 2 bad input or a refusal, 3 stopped after a step with warnings), and the report is kept even then.
+#                             SDN enabled by Azure Arc cannot be undone: the script refuses the run (exit code 2, in the plan too) unless the master file carries
+#                             sdn.acknowledge_maintenance_window (and sdn.acknowledge_dns_record with static DNS). The pipeline overrides none of it.
+#   post-deployment-apply     stage post-deployment-apply     A MANUAL job, only for POST_DEPLOYMENT_MODE Apply: someone allowed to run jobs in the protected
+#                             environment named by AZL_ENVIRONMENT_OPERATIONS plays it. The same selection for real (-Mode Apply), the steps the plan job showed.
+# The selection. No variable names a task: the run covers every step the master file turns on. POST_DEPLOYMENT_ONLY runs just those steps or tasks (a step id such as
+# storage-paths, a task such as task-05, comma-separated), POST_DEPLOYMENT_FROM and POST_DEPLOYMENT_TO run a range (the first and the last step or task; either may
+# stay empty). A failed run is repeated from the step that failed: POST_DEPLOYMENT_FROM <that step>. POST_DEPLOYMENT_CONTINUE_ON_WARNING true keeps the run going
+# after a step that ended with warnings (the default stops there, so a person reads them).
+#
+# One change at a time. The apply job, the update, the node maintenance, the changing operations and the storage performance test of this project share the
+# resource_group azure-local-day2-changes: the SBE import and the SDN change never run beside an update or a node reboot. This is the approval environment of the
+# other changes to the cluster on purpose: one set of approvers and one lock for everything that changes the cluster.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name expand CI/CD variables
+# (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  azure.automation_identity, azure.tenant_id, azure.subscription_id
+#   AZL_AUTH_METHOD        devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                          or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (the protected environment of the apply job)
+#   AZL_INFRASTRUCTURE_FILE     devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# Run variables (a pipeline run from the web form offers them):
+#   POST_DEPLOYMENT_MODE   Plan | Apply
+#   POST_DEPLOYMENT_ONLY, POST_DEPLOYMENT_FROM, POST_DEPLOYMENT_TO   the selection (empty: every step the file turns on)
+#   POST_DEPLOYMENT_CONTINUE_ON_WARNING   false | true
+# The node login is never in this file or in a variable of this project: it is the secret reference of the master file, and the toolkit secret resolver reads it
+# from Key Vault at run time with the Azure sign-in of the job.
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7, a route to the nodes (WinRM, TCP 5985 or 5986) and to Azure (HTTPS).
+# The report: report.json and summary.md (what each step found), run.log, the log of each step and post-deployment-events.jsonl (the events of the run, the feed
+# azurelocal-sonar reads from the events folder of the master file) are the artifact of the plan and apply jobs.
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+#
+# No approval environment, no change. While the project variable AZL_ENVIRONMENT_OPERATIONS is empty, the job that changes something is not created (its rule needs the
+# variable), and the job named approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
+
+# Started by hand (D126: one design on GitHub, GitLab and Azure DevOps): GitLab creates a pipeline only from the web form or the API, never from
+# a push or a merge request, as GitHub starts it with workflow_dispatch and Azure DevOps with trigger: none.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+
+stages:
+  - post-deployment-validate
+  - post-deployment-plan
+  - post-deployment-apply
+
+variables:
+  POST_DEPLOYMENT_SCRIPT: scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1
+  POST_DEPLOYMENT_MODE:
+    value: Plan
+    options: [Plan, Apply]
+    description: 'Plan: read only, every step with -WhatIf. Apply: the plan first, then the same steps for real in a manual job.'
+  POST_DEPLOYMENT_ONLY:
+    value: ''
+    description: 'Run only these steps or tasks, comma-separated (a step id such as storage-paths, or a task such as task-05). Leave empty for every step the file turns on.'
+  POST_DEPLOYMENT_FROM:
+    value: ''
+    description: 'A range: the first step or task to run (leave empty to start at the first). A failed run is repeated with the step that failed.'
+  POST_DEPLOYMENT_TO:
+    value: ''
+    description: 'A range: the last step or task to run (leave empty to run to the last).'
+  POST_DEPLOYMENT_CONTINUE_ON_WARNING:
+    value: 'false'
+    options: ['false', 'true']
+    description: 'Keep going after a step that ended with warnings (false: the run stops there so a person reads them).'
+  REPORT_DIRECTORY: post-deployment-report
+
+# The sign-in of the jobs that read Azure and the cluster: the method of devops.authentication.method.
+.post-deployment:
+  tags: [$AZL_RUNNER_LABEL]
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    ARM_OIDC_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null }
+        else { Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null }
+      '
+
+# The job scripts: one pwsh block each. POST_DEPLOYMENT_STEP_MODE and POST_DEPLOYMENT_STEP_DIRECTORY are set by each job.
+.post-deployment-scripts:
+  run: &post-deployment-run
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:POST_DEPLOYMENT_STEP_MODE; LogPath = "$env:REPORT_DIRECTORY/$env:POST_DEPLOYMENT_STEP_DIRECTORY" }
+        if ($env:POST_DEPLOYMENT_ONLY) { $p.Only = @($env:POST_DEPLOYMENT_ONLY -split "\s*,\s*" | Where-Object { $_ }) }
+        if ($env:POST_DEPLOYMENT_FROM) { $p.From = $env:POST_DEPLOYMENT_FROM }
+        if ($env:POST_DEPLOYMENT_TO) { $p.To = $env:POST_DEPLOYMENT_TO }
+        if ($env:POST_DEPLOYMENT_CONTINUE_ON_WARNING -eq "true") { $p.ContinueOnWarning = $true }
+        & $env:POST_DEPLOYMENT_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  summary: &post-deployment-summary
+    - pwsh -NoProfile -Command '$s = "$env:REPORT_DIRECTORY/$env:POST_DEPLOYMENT_STEP_DIRECTORY/summary.md"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+
+post-deployment-validate:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: post-deployment-validate
+  # Reads and checks one file: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 15 minutes
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+        exit $LASTEXITCODE
+      '
+
+post-deployment-plan:
+  extends: .post-deployment
+  stage: post-deployment-plan
+  needs: [post-deployment-validate]
+  # Every selected step with -WhatIf reads Azure and the cluster and changes nothing: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 60 minutes
+  variables:
+    POST_DEPLOYMENT_STEP_MODE: Plan
+    POST_DEPLOYMENT_STEP_DIRECTORY: plan
+  script: *post-deployment-run
+  after_script: *post-deployment-summary
+  artifacts:
+    when: always
+    # The plan a reviewer read: 30 days is the toolkit's retention for reports, long enough to compare with the run that followed it.
+    expire_in: 30 days
+    name: post-deployment-plan
+    paths:
+      - $REPORT_DIRECTORY/plan/
+
+post-deployment-apply:
+  extends: .post-deployment
+  stage: post-deployment-apply
+  needs: [post-deployment-plan]
+  # One change at a time on the cluster (GitHub: concurrency group; Azure DevOps: lockBehavior and the Exclusive lock check of the environment).
+  resource_group: azure-local-day2-changes
+  # The longest steps wait for Azure (a VM image download, the import of the solution builder extension): the toolkit's limit, not a figure from Microsoft.
+  timeout: 8 hours
+  environment:
+    name: $AZL_ENVIRONMENT_OPERATIONS
+  # The approval gate: the job waits until someone allowed in the protected environment plays it, after reading the plan job's report.
+  rules:
+    - if: '$POST_DEPLOYMENT_MODE == "Apply" && $AZL_ENVIRONMENT_OPERATIONS != null && $AZL_ENVIRONMENT_OPERATIONS != ""'
+      when: manual
+      allow_failure: false
+  variables:
+    POST_DEPLOYMENT_STEP_MODE: Apply
+    POST_DEPLOYMENT_STEP_DIRECTORY: apply
+  script: *post-deployment-run
+  after_script: *post-deployment-summary
+  artifacts:
+    when: always
+    # The record of a change to the cluster: 90 days is the toolkit's retention for it.
+    expire_in: 90 days
+    name: post-deployment-report
+    paths:
+      - $REPORT_DIRECTORY/apply/
+
+# A change was asked for, but the approval environment is not set: the job that changes something does not run (its rule needs the variable named below), and this job fails and says why.
+# Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+post-deployment-approval-environment-not-set:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: post-deployment-apply
+  needs: [post-deployment-plan]
+  # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+  timeout: 5 minutes
+  rules:
+    - if: '$POST_DEPLOYMENT_MODE == "Apply" && ($AZL_ENVIRONMENT_OPERATIONS == null || $AZL_ENVIRONMENT_OPERATIONS == "")'
+  script:
+    - pwsh -NoProfile -Command 'Write-Error "AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) is empty, and the post-deployment-apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed." -ErrorAction Continue; exit 1'

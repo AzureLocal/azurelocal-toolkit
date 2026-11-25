@@ -641,7 +641,7 @@
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                 },
                 "operations": {
-                  "description": "Schema 5.6.28. The environment that gates every day 2 job that changes the cluster: the update (pipelines/github-actions/day2-update.yml, pipelines/gitlab/stages/day2-update.yml, pipelines/azure-devops/day2-update.yml), the node maintenance, the changing operations of the cluster operations pipeline, and the storage performance test of the validation pipeline. One environment for all of them on purpose: on Azure DevOps its Exclusive lock check then keeps an update and a node reboot from running on the cluster at the same time. Give it the approvers of your change process.",
+                  "description": "Schema 5.6.28. The environment that gates every day 2 job that changes the cluster: the update (pipelines/github-actions/day2-update.yml, pipelines/gitlab/stages/day2-update.yml, pipelines/azure-devops/day2-update.yml), the node maintenance, the changing operations of the cluster operations pipeline, the storage performance test of the validation pipeline and the Apply of the post-deployment pipeline (pipelines/github-actions/post-deployment.yml, pipelines/gitlab/stages/post-deployment.yml, pipelines/azure-devops/post-deployment.yml). One environment for all of them on purpose: on Azure DevOps its Exclusive lock check then keeps an update and a node reboot from running on the cluster at the same time. Give it the approvers of your change process.",
                   "type": "string",
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                 }

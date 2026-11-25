@@ -80,7 +80,7 @@ BeforeAll {
         DISCOVERY_SCRIPT = '^scripts/'; PRECLUSTER_SCRIPT = '^scripts/'; preClusterScript = '^scripts/'
         TF_ROOT = '^(\$\{CI_PROJECT_DIR\}/)?src/'; ANSIBLE_ROOT = '^(\$\{CI_PROJECT_DIR\}/)?src/'; CICD_TF_ROOT = '^\$\{CI_PROJECT_DIR\}/src/'
         CICD_WORK = '^\$\{CI_PROJECT_DIR\}/\.cicd-infra$'; WORK = '^\$\(Pipeline\.Workspace\)/'; IAC_DIRECTORY = '^\$\{CI_BUILDS_DIR\}/azl-iac-\$\{CI_JOB_ID\}$'
-        REPORT_DIRECTORY = '^(os-configuration-report|arm-deployment-report|discovery-report|pre-cluster-report)$'; OS_CONFIGURATION_REPORT = '^os-configuration-report$'
+        REPORT_DIRECTORY = '^(os-configuration-report|arm-deployment-report|discovery-report|pre-cluster-report|post-deployment-report)$'; OS_CONFIGURATION_REPORT = '^os-configuration-report$'
         ANSIBLE_HOST_KEY_CHECKING = '^False$'; TF_IN_AUTOMATION = '^true$'; APPROVED_BOOTSTRAP = '^false$'; ARM_RESUME = '^false$'; ARM_ACKNOWLEDGE = '^$'
         DISCOVERY_SCOPE = '^all$'; DISCOVERY_MANAGEMENT_PORT = '^$'; DISCOVERY_WRITE_BACK = '^false$'; DISCOVERY_INCLUDE_RBAC = '^false$'
         PRECLUSTER_MODE = '^Plan$'; PRECLUSTER_ACCEPT_SKIPPED = '^$'; PRECLUSTER_ALLOW_REVALIDATE = '^false$'; PRECLUSTER_FIX = '^false$'
@@ -94,6 +94,9 @@ BeforeAll {
         OPERATIONS_SCRIPT = '^scripts/'; OPERATIONS_ACTION = '^HealthCheck$'; OPERATIONS_NODE = '^$'; OPERATIONS_ENABLE = '^false$'; OPERATIONS_LOG_DIRECTORY = '^day2-cluster-operations$'
         VALIDATION_HEALTH_SCRIPT = '^scripts/'; VALIDATION_ARC_SCRIPT = '^scripts/'; VALIDATION_NETWORK_SCRIPT = '^scripts/'; VALIDATION_STORAGE_SCRIPT = '^scripts/'
         VALIDATION_RUN_PERFORMANCE_TEST = '^false$'; VALIDATION_REPORT_DIRECTORY = '^validation-reports$'
+        # the post-deployment pipelines (phase 06): the toolkit's own script path, the safe first choice of each run variable and the report folders
+        POST_DEPLOYMENT_SCRIPT = '^scripts/'; postDeploymentScript = '^scripts/'; POST_DEPLOYMENT_MODE = '^Plan$'; POST_DEPLOYMENT_ONLY = '^$'; POST_DEPLOYMENT_FROM = '^$'; POST_DEPLOYMENT_TO = '^$'
+        POST_DEPLOYMENT_CONTINUE_ON_WARNING = '^false$'; POST_DEPLOYMENT_STEP_MODE = '^(Plan|Apply)$'; POST_DEPLOYMENT_STEP_DIRECTORY = '^(plan|apply)$'
         checkAzureScript = '^scripts/'; checkClusterScript = '^scripts/'; updateScript = '^scripts/'; maintenanceScript = '^scripts/'; operationsScript = '^scripts/'
         healthScript = '^scripts/'; arcScript = '^scripts/'; networkScript = '^scripts/'; storageScript = '^scripts/'
         AZL_ENVIRONMENT_OS_CONFIGURATION = '^$'; AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE = '^$'; AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'

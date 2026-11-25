@@ -1,0 +1,267 @@
+# Azure Local post-deployment (phase 06 of the cluster deployment: SDN, witness, security groups, SSH, storage, images, network security groups, logical networks,
+# verification, external storage, SBE import), Azure DevOps.
+#
+# Copy to your pipeline repository or point a pipeline at this file. It runs the command an operator runs by hand and nothing else; the logic (the eleven task
+# scripts, their order, which step applies, the stop at the first failure) is in the script and in its step table PostDeploymentSteps.psd1, not here:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1 ...
+# Run it after the ARM deployment succeeded. Every task script also runs alone; this pipeline runs them together, in the order of the pages of the Implementation
+# guide, or one task, or a range of them.
+#
+# Stages
+#   Validate  Read only. Checks the master file against the schema (Test-InfrastructureFile.ps1) before anything reads Azure or the cluster. Always runs.
+#   Plan      Read only, and always before an apply. The orchestrator with -Mode Plan: every selected step runs with -WhatIf, reads Azure and the cluster and
+#             changes nothing. The approver reads this stage's summary. The run FAILS (exit code 1 a step failed, 2 bad input or a refusal, 3 stopped after a step
+#             with warnings), and the report is published even then.
+#             SDN enabled by Azure Arc cannot be undone: the script refuses the run (exit code 2, in the plan too) unless the master file carries
+#             sdn.acknowledge_maintenance_window (and sdn.acknowledge_dns_record with static DNS). The pipeline overrides none of it.
+#   Apply     The same selection for real (-Mode Apply), only for the parameter mode Apply, as a deployment job in the approval environment (add an Approvals
+#             check to it). The environment is fixed when the pipeline is compiled (the variable AZL_ENVIRONMENT_OPERATIONS of variables/approval-environments.yml),
+#             never a run parameter: whoever queues the run cannot pick an environment that has no approval. While the variable is empty, the stage
+#             ApprovalEnvironmentNotSet fails and nothing is changed.
+# The selection. No parameter names a task: the run covers every step the master file turns on. only runs just those steps or tasks (a step id such as storage-paths,
+# a task such as task-05, comma-separated; none for every step), from and to run a range (the first and the last step or task; none for the first and the last).
+# A failed run is repeated from the step that failed: from <that step>. continue_on_warning keeps the run going after a step that ended with warnings (the default
+# stops there, so a person reads them).
+#
+# One change at a time. The update, the node maintenance, the changing operations, the storage performance test and the post-deployment deploy to the same
+# environment, and the Exclusive lock check of that environment keeps two of them from running on the cluster together; the Apply stage also sets lockBehavior:
+# sequential. This is the approval environment of the other changes to the cluster on purpose: one set of approvers and one lock for everything that changes the
+# cluster.
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup writes every value below into variables/pipeline-settings.yml and variables/approval-environments.yml (Set-CicdVariables.ps1, from infrastructure.yml; commit both in a pull request).
+#   Service connection  an Azure Resource Manager service connection, named by AZL_SERVICE_CONNECTION (devops.pipelines.service_connection). Task 05 creates it
+#                       with workload identity federation (no client secret) when devops.authentication.method is oidc; the AzurePowerShell task signs in with
+#                       whatever scheme it has.
+#   Variable group      AZL_VARIABLE_GROUP (devops.pipelines.variable_group: the group of the repository). Task 05 writes to it the tool versions this file reads:
+#                       AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION (devops.pipelines.tool_versions.*). The node login is
+#                       the secret reference of the master file, which the toolkit secret resolver reads from Key Vault at run time with the sign-in of the task.
+#   Agent pool          a self-hosted pool with pwsh 7, a route to the nodes (WinRM, TCP 5985 or 5986) and to Azure (HTTPS): AZL_AGENT_POOL: devops.runners[].pool of
+#                       the general runner.
+#   Environment         the name in variables/approval-environments.yml (AZL_ENVIRONMENT_OPERATIONS: devops.pipelines.environments.operations; task 05 lists the
+#                       value to write there, once, in a pull request): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it
+#                       from devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a run
+#                       parameter (Learn: a template expression sees only the variables of the YAML files).
+#   Infrastructure file AZL_INFRASTRUCTURE_FILE: devops.pipelines.infrastructure_file.
+#   Settings file   the deployment values are not run parameters: the pool, the service connection, the variable group and the file paths are compile-time
+#                   variables of variables/pipeline-settings.yml, generated from infrastructure.yml (D126). Learn: the pool of a job and a service connection take
+#                   template expressions, and ${{ variables.name }} sees the variables of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So no run form asks for them.
+# The report: report.json and summary.md (what each step found), run.log, the log of each step and post-deployment-events.jsonl (the events of the run, the feed
+# azurelocal-sonar reads from the events folder of the master file) are the artifact of the Plan and Apply stages.
+#
+# AZL_INFRASTRUCTURE_FILE names a file on the branch the run starts from: keep the infrastructure files under review (a branch policy on the protected default
+# branch) and run changes from that branch.
+name: post-deployment-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# lockBehavior does not queue runs by itself. Learn: it only says how runs behave when they meet an Exclusive lock check (sequential: every run waits its turn;
+# runLatest, the default: only the latest run goes on), and a stage that sets it gets a lock of its own (https://learn.microsoft.com/azure/devops/pipelines/process/approvals#exclusive-lock).
+# At the pipeline level it makes the Exclusive lock check on the approval environment queue the runs instead of cancelling the older ones.
+lockBehavior: sequential
+
+parameters:
+  - name: mode
+    displayName: 'Plan: read only, every step with -WhatIf. Apply: the plan first, then the same steps for real after approval'
+    type: string
+    default: Plan
+    values:
+      - Plan
+      - Apply
+  - name: only
+    displayName: 'Run only these steps or tasks, comma-separated (a step id such as storage-paths, or a task such as task-05). none: every step the file turns on'
+    type: string
+    default: none
+  - name: from
+    displayName: 'A range: the first step or task to run (none: start at the first). A failed run is repeated with the step that failed'
+    type: string
+    default: none
+  - name: to
+    displayName: 'A range: the last step or task to run (none: run to the last)'
+    type: string
+    default: none
+  - name: continue_on_warning
+    displayName: 'Keep going after a step that ended with warnings (off: the run stops there so a person reads them)'
+    type: boolean
+    default: false
+
+variables:
+  # AZL_AGENT_POOL, AZL_SERVICE_CONNECTION, AZL_INFRASTRUCTURE_FILE, AZL_HANDOFF_PATH and the variable group: generated from infrastructure.yml, bound at compile time.
+  - template: variables/pipeline-settings.yml
+  # AZL_ENVIRONMENT_OPERATIONS: the approval environment of the Apply stage, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
+  - name: postDeploymentScript
+    value: scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1
+
+stages:
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Validate
+    displayName: 'Validate the master file (read only)'
+    jobs:
+      - job: Validate
+        displayName: 'Validate the master file'
+        pool:
+          name: ${{ variables.AZL_AGENT_POOL }}
+          demands:
+            - pwsh
+        # Reads and checks one file: the toolkit's limit for a read-only check, not a figure from Microsoft.
+        timeoutInMinutes: 15
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+              foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+            displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+          - pwsh: |
+              Set-StrictMode -Version Latest
+              $ErrorActionPreference = 'Stop'
+              ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:POST_DEPLOYMENT_INFRASTRUCTURE_FILE
+              if ($LASTEXITCODE -ne 0) { throw "Test-InfrastructureFile.ps1 exited with code $LASTEXITCODE." }
+            displayName: 'Check the master file'
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              POST_DEPLOYMENT_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Plan
+    displayName: 'Plan (read only)'
+    dependsOn: Validate
+    jobs:
+      - job: Plan
+        displayName: 'Plan (nothing is changed)'
+        pool:
+          name: ${{ variables.AZL_AGENT_POOL }}
+          demands:
+            - pwsh
+        # Every selected step with -WhatIf reads Azure and the cluster and changes nothing: the toolkit's limit for a read-only check, not a figure from Microsoft.
+        timeoutInMinutes: 60
+        steps:
+          - checkout: self
+
+          - task: AzurePowerShell@5
+            displayName: 'Plan (nothing is changed)'
+            inputs:
+              azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
+              azurePowerShellVersion: OtherVersion
+              preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+              pwsh: true
+              ScriptType: InlineScript
+              Inline: |
+                $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                $p = @{ InfrastructureFile = $env:POST_DEPLOYMENT_INFRASTRUCTURE_FILE; Mode = 'Plan'; LogPath = "$(Agent.TempDirectory)/post-deployment-plan" }
+                if ($env:POST_DEPLOYMENT_ONLY -and $env:POST_DEPLOYMENT_ONLY -ne 'none') { $p.Only = @($env:POST_DEPLOYMENT_ONLY -split '\s*,\s*' | Where-Object { $_ }) }
+                if ($env:POST_DEPLOYMENT_FROM -and $env:POST_DEPLOYMENT_FROM -ne 'none') { $p.From = $env:POST_DEPLOYMENT_FROM }
+                if ($env:POST_DEPLOYMENT_TO -and $env:POST_DEPLOYMENT_TO -ne 'none') { $p.To = $env:POST_DEPLOYMENT_TO }
+                if ($env:POST_DEPLOYMENT_CONTINUE_ON_WARNING -eq 'True') { $p.ContinueOnWarning = $true }
+                & '$(postDeploymentScript)' @p
+                exit $LASTEXITCODE
+            env:
+              POST_DEPLOYMENT_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+              POST_DEPLOYMENT_ONLY: ${{ parameters.only }}
+              POST_DEPLOYMENT_FROM: ${{ parameters.from }}
+              POST_DEPLOYMENT_TO: ${{ parameters.to }}
+              POST_DEPLOYMENT_CONTINUE_ON_WARNING: ${{ parameters.continue_on_warning }}
+
+          - pwsh: |
+              $s = "$(Agent.TempDirectory)/post-deployment-plan/summary.md"
+              if (Test-Path -LiteralPath $s) { Write-Host "##vso[task.uploadsummary]$s" }
+            displayName: 'Summary (the approver reads this)'
+            condition: always()
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish the plan report and the event feed'
+            condition: always()
+            inputs:
+              targetPath: $(Agent.TempDirectory)/post-deployment-plan
+              artifact: post-deployment-plan
+              publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  # A change was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is changed, and the run says why.
+  - ${{ if and(eq(parameters.mode, 'Apply'), eq(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Apply: no approval environment is set'
+        dependsOn: Plan
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ variables.AZL_AGENT_POOL }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The Apply stage changes the cluster, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if and(eq(parameters.mode, 'Apply'), ne(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: Apply
+        displayName: 'Apply (needs approval)'
+        dependsOn: Plan
+        lockBehavior: sequential
+        jobs:
+          # A deployment job: the environment's Approvals check is the gate.
+          - deployment: Apply
+            displayName: 'Apply'
+            # The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_OPERATIONS }}
+            pool:
+              name: ${{ variables.AZL_AGENT_POOL }}
+              demands:
+                - pwsh
+            # The longest steps wait for Azure (a VM image download, the import of the solution builder extension): the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 480
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
+
+                    - task: AzurePowerShell@5
+                      displayName: 'Change the cluster'
+                      inputs:
+                        azureSubscription: ${{ variables.AZL_SERVICE_CONNECTION }}
+                        azurePowerShellVersion: OtherVersion
+                        preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
+                        pwsh: true
+                        ScriptType: InlineScript
+                        Inline: |
+                          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                          # the one selection the approver approved: the same steps the Plan stage read
+                          $p = @{ InfrastructureFile = $env:POST_DEPLOYMENT_INFRASTRUCTURE_FILE; Mode = 'Apply'; LogPath = "$(Agent.TempDirectory)/post-deployment-apply" }
+                          if ($env:POST_DEPLOYMENT_ONLY -and $env:POST_DEPLOYMENT_ONLY -ne 'none') { $p.Only = @($env:POST_DEPLOYMENT_ONLY -split '\s*,\s*' | Where-Object { $_ }) }
+                          if ($env:POST_DEPLOYMENT_FROM -and $env:POST_DEPLOYMENT_FROM -ne 'none') { $p.From = $env:POST_DEPLOYMENT_FROM }
+                          if ($env:POST_DEPLOYMENT_TO -and $env:POST_DEPLOYMENT_TO -ne 'none') { $p.To = $env:POST_DEPLOYMENT_TO }
+                          if ($env:POST_DEPLOYMENT_CONTINUE_ON_WARNING -eq 'True') { $p.ContinueOnWarning = $true }
+                          & '$(postDeploymentScript)' @p
+                          exit $LASTEXITCODE
+                      env:
+                        POST_DEPLOYMENT_INFRASTRUCTURE_FILE: ${{ variables.AZL_INFRASTRUCTURE_FILE }}
+                        POST_DEPLOYMENT_ONLY: ${{ parameters.only }}
+                        POST_DEPLOYMENT_FROM: ${{ parameters.from }}
+                        POST_DEPLOYMENT_TO: ${{ parameters.to }}
+                        POST_DEPLOYMENT_CONTINUE_ON_WARNING: ${{ parameters.continue_on_warning }}
+
+                    - pwsh: |
+                        $s = "$(Agent.TempDirectory)/post-deployment-apply/summary.md"
+                        if (Test-Path -LiteralPath $s) { Write-Host "##vso[task.uploadsummary]$s" }
+                      displayName: 'Summary'
+                      condition: always()
+
+                    - task: PublishPipelineArtifact@1
+                      displayName: 'Publish the report and the event feed'
+                      condition: always()
+                      inputs:
+                        targetPath: $(Agent.TempDirectory)/post-deployment-apply
+                        artifact: post-deployment-report
+                        publishLocation: pipeline

@@ -48,7 +48,7 @@ Describe 'The generated parity table (pipelines/PARITY.md)' {
     }
     It 'every pipeline is Equal on GitHub Actions, GitLab CI and Azure DevOps' {
         $rows = @((Get-Text 'pipelines/PARITY.md') -split "`r?`n" | Where-Object { $_ -match '^\| [a-z0-9-]+ \| `scripts/|^\| [a-z0-9-]+ \| `config/|^\| [a-z0-9-]+ \| none \|' })
-        $rows.Count | Should -Be 11
+        $rows.Count | Should -Be 12
         @($rows | Where-Object { $_ -notmatch '\| Equal \|$' }) | Should -BeNullOrEmpty
     }
     It 'lists every pipeline file: none is left out of the table' {
@@ -197,7 +197,7 @@ Describe 'Every pipeline starts by hand on every platform (D126)' {
         }
     }
     It 'GitLab: every pipeline file has a workflow rule for the web form and the API (and the schedule for the check for updates only)' {
-        foreach ($f in 'pipelines/gitlab/.gitlab-ci.yml', 'pipelines/gitlab/os-configuration.gitlab-ci.yml', 'pipelines/gitlab/stages/discovery.yml', 'pipelines/gitlab/stages/pre-cluster-verification.yml', 'pipelines/gitlab/stages/arm-deployment.yml', 'pipelines/gitlab/stages/validation.yml', 'pipelines/gitlab/stages/day2-update.yml', 'pipelines/gitlab/stages/day2-node-maintenance.yml', 'pipelines/gitlab/stages/day2-cluster-operations.yml') {
+        foreach ($f in 'pipelines/gitlab/.gitlab-ci.yml', 'pipelines/gitlab/os-configuration.gitlab-ci.yml', 'pipelines/gitlab/stages/discovery.yml', 'pipelines/gitlab/stages/pre-cluster-verification.yml', 'pipelines/gitlab/stages/arm-deployment.yml', 'pipelines/gitlab/stages/post-deployment.yml', 'pipelines/gitlab/stages/validation.yml', 'pipelines/gitlab/stages/day2-update.yml', 'pipelines/gitlab/stages/day2-node-maintenance.yml', 'pipelines/gitlab/stages/day2-cluster-operations.yml') {
             $doc = Get-Yaml $f
             [string]@($doc['workflow']['rules'])[0]['if'] | Should -Be '$CI_PIPELINE_SOURCE =~ /^(web|api)$/' -Because $f
         }

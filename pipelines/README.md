@@ -32,6 +32,7 @@ toolkit and nothing else.
 | OS configuration (phase 03) | `Invoke-AzureLocalOsConfiguration.ps1` | `os-configuration.yml` | `os-configuration.gitlab-ci.yml` | `os-configuration.yml` |
 | Pre-cluster verification (the gate) | `Invoke-AzureLocalPreClusterVerification.ps1` | `pre-cluster-verification.yml` | `stages/pre-cluster-verification.yml` | `pre-cluster-verification.yml` |
 | ARM Validate and Deploy | `Invoke-AzureLocalArmDeployment.ps1` | `arm-deployment.yml` | `stages/arm-deployment.yml` | `arm-deployment.yml` |
+| Post-deployment (phase 06, the eleven tasks in one run) | `Invoke-AzureLocalPostDeployment.ps1` | `post-deployment.yml` | `stages/post-deployment.yml` | `post-deployment.yml` |
 | Terraform foundation and Ansible configuration (the older chain, below) | Terraform, `ansible-playbook` | `azure-local-deploy.yml` | `.gitlab-ci.yml` with `stages/*.yml` | `azure-local-deploy.yml` |
 
 After the deployment come the validation and the day 2 pipelines (stage 07 and stage 08, [below](#validation-and-day-2-stages-07-and-08)). They are
@@ -76,7 +77,7 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 ### GitLab CI/CD
 
-- **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`, `gitlab/stages/validation.yml` and `gitlab/stages/day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`
+- **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/post-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`, `gitlab/stages/validation.yml` and `gitlab/stages/day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`
 - **Features**: manual approval gates, protected environments, `resource_group`
 - **Start**: every pipeline file has `workflow: rules:` that create a pipeline only from the web form or the API (and, for the check for updates,
   the project schedule task 05 creates), never from a push or a merge request
@@ -84,7 +85,7 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 ### GitHub Actions
 
-- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `cicd-infra.yml`, `discovery.yml`, `pre-cluster-verification.yml`, `validation.yml`, `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`). This is the only folder of GitHub pipelines: the workflows of this repository's own CI are in `.github/workflows` (K7 removed `archive/github-actions`: see below)
+- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `post-deployment.yml`, `cicd-infra.yml`, `discovery.yml`, `pre-cluster-verification.yml`, `validation.yml`, `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`). This is the only folder of GitHub pipelines: the workflows of this repository's own CI are in `.github/workflows` (K7 removed `archive/github-actions`: see below)
 - **Features**: environment protection rules, OIDC or client secret sign-in, artifact passing
 - **Copy to**: `.github/workflows/` in your repository
 
@@ -159,6 +160,32 @@ Deploy. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
 - **GitHub Actions**: `github-actions/arm-deployment.yml` (the environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`)
 - **GitLab CI**: `gitlab/stages/arm-deployment.yml` (declares its own stages; include it from a pipeline of its own)
 - **Azure DevOps**: `azure-devops/arm-deployment.yml` (the environment named by the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, with an Approvals check; while it is empty, a Deploy fails in the stage `ApprovalEnvironmentNotSet` and nothing is changed)
+
+## Post-deployment (phase 06, the eleven tasks in one run)
+
+After the ARM deployment succeeded, the post-deployment phase turns on SDN enabled by Azure Arc (when the file asks for it), sets the cluster witness, adds the
+security groups to the local groups of the nodes, turns on SSH, creates the volumes and the storage paths, downloads the VM images, creates the network security
+groups and the logical networks, verifies the cluster, configures external storage and plans the SBE import. One entry point runs all of it, in the order of the
+pages of the Implementation guide: `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1`. The steps, their order
+and what makes each one apply are one table, `PostDeploymentSteps.psd1`, next to it. Every task script also runs alone.
+
+- **GitHub Actions**: `github-actions/post-deployment.yml` (the environment of `AZL_ENVIRONMENT_OPERATIONS`)
+- **GitLab CI**: `gitlab/stages/post-deployment.yml` (declares its own stages; include it from a pipeline of its own)
+- **Azure DevOps**: `azure-devops/post-deployment.yml` (the environment named by the variable `AZL_ENVIRONMENT_OPERATIONS` of `azure-devops/variables/approval-environments.yml`, with an Approvals check; while it is empty, an Apply fails in the stage `ApprovalEnvironmentNotSet` and nothing is changed)
+
+| Stage | What it does |
+| --- | --- |
+| Validate | `Test-InfrastructureFile.ps1` checks the master file. Read only |
+| Plan | The orchestrator with `-Mode Plan`: every selected step runs with `-WhatIf`, reads Azure and the cluster and changes nothing. Always runs; the approver reads its summary |
+| Approval | The environment of `devops.pipelines.environments.operations`, the one of every change to the cluster, with the lock that keeps two changes from running together. No environment, no Apply |
+| Apply | The orchestrator with `-Mode Apply`, only for the input `mode` Apply, the same selection as the plan |
+
+The inputs are the same on the three platforms: `mode` (Plan or Apply), `only` (the steps or tasks to run, such as `task-05` or `storage-paths`), `from` and `to`
+(a range) and `continue_on_warning`. Empty (GitHub, GitLab) or `none` (Azure DevOps) selects every step the master file turns on. The infrastructure file is the
+variable `AZL_INFRASTRUCTURE_FILE`, never an input. SDN enabled by Azure Arc cannot be undone: the script refuses the run (exit code 2, plan included) unless the
+master file carries `sdn.acknowledge_maintenance_window` (and `sdn.acknowledge_dns_record` with static DNS). The run publishes `report.json`, `summary.md`,
+`run.log`, the log of each step and `post-deployment-events.jsonl` (the events of the run) as the artifact `post-deployment-plan` or `post-deployment-report`.
+Exit codes: 0 every selected step passed, was planned or was skipped; 1 a step failed; 2 bad input or a refusal; 3 the run stopped after a step with warnings.
 
 ## Validation and day 2 (stages 07 and 08)
 
@@ -299,7 +326,7 @@ Azure DevOps refuses to compile a pipeline with an empty pool, so nothing runs u
 | `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `devops.pipelines.environments.arm_deployment` | `arm-deployment.yml`, stage `Deploy`; `pre-cluster-verification.yml`, stage `VerifyWithChanges` |
 | `AZL_ENVIRONMENT_CICD_INFRA` | `devops.pipelines.environments.cicd_infra` | `cicd-infra.yml`, stage `Apply` (when `apply` is on) |
 | `AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.terraform_deployment` | `azure-local-deploy.yml`, stages `DeployFoundation`, `ConfigureOnPrem` and `ConfigureOperations` |
-| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance` |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` | `day2-update.yml`, `day2-node-maintenance.yml` and `day2-cluster-operations.yml`, stage `Apply`; `validation.yml`, stage `StoragePerformance`; `post-deployment.yml`, stage `Apply` |
 
 While a variable is empty and the run would change something, a guard stage (`ApprovalEnvironmentNotSet`; `ConfirmStorageWipe` for the wipe approval) fails with a message that names the file and changes nothing. The stages that only read (`Plan`, `Validate`, `Preconditions`, `Verify`) run as before and have no environment.
 The parameters left are choices of one run (mode, nodes, steps, resume, an artifact run ID, the node of a day 2 operation) and default to the

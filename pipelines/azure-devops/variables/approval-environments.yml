@@ -25,9 +25,10 @@
 #                                                                       that runs -Fix and -InstallEnvironmentChecker)
 #   AZL_ENVIRONMENT_CICD_INFRA                                          cicd-infra.yml (the stage Apply)
 #   AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT                                azure-local-deploy.yml (the stages DeployFoundation, ConfigureOnPrem and ConfigureOperations)
-#   AZL_ENVIRONMENT_OPERATIONS                                          day2-update.yml, day2-node-maintenance.yml, day2-cluster-operations.yml (the stage Apply) and
-#                                                                       validation.yml (the stage StoragePerformance): one environment for all of them, so that its
-#                                                                       Exclusive lock check keeps two changes from running on the cluster together
+#   AZL_ENVIRONMENT_OPERATIONS                                          day2-update.yml, day2-node-maintenance.yml, day2-cluster-operations.yml and
+#                                                                       post-deployment.yml (the stage Apply) and validation.yml (the stage StoragePerformance): one
+#                                                                       environment for all of them, so that its Exclusive lock check keeps two changes from running on
+#                                                                       the cluster together
 variables:
   - name: AZL_ENVIRONMENT_OS_CONFIGURATION
     value: ''

@@ -50,6 +50,7 @@ $Catalog = [ordered]@{
     'os-configuration'         = @{ GitHub = @('pipelines/github-actions/os-configuration.yml'); GitLab = @('pipelines/gitlab/os-configuration.gitlab-ci.yml'); AzureDevOps = @('pipelines/azure-devops/os-configuration.yml') }
     'pre-cluster-verification' = @{ GitHub = @('pipelines/github-actions/pre-cluster-verification.yml'); GitLab = @('pipelines/gitlab/stages/pre-cluster-verification.yml'); AzureDevOps = @('pipelines/azure-devops/pre-cluster-verification.yml') }
     'arm-deployment'           = @{ GitHub = @('pipelines/github-actions/arm-deployment.yml'); GitLab = @('pipelines/gitlab/stages/arm-deployment.yml'); AzureDevOps = @('pipelines/azure-devops/arm-deployment.yml') }
+    'post-deployment'          = @{ GitHub = @('pipelines/github-actions/post-deployment.yml'); GitLab = @('pipelines/gitlab/stages/post-deployment.yml'); AzureDevOps = @('pipelines/azure-devops/post-deployment.yml') }
     'azure-local-deploy'       = @{
         GitHub      = @('pipelines/github-actions/azure-local-deploy.yml')
         GitLab      = @('pipelines/gitlab/.gitlab-ci.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml', 'pipelines/gitlab/stages/configure-onprem.yml', 'pipelines/gitlab/stages/configure-operations.yml')

@@ -1,0 +1,259 @@
+# Azure Local post-deployment (phase 06 of the cluster deployment: SDN, witness, security groups, SSH, storage, images, network security groups, logical networks,
+# verification, external storage, SBE import), GitHub Actions.
+#
+# Copy to .github/workflows/post-deployment.yml. It runs the command an operator runs by hand and nothing else; the logic (the eleven task scripts, their order,
+# which step applies, the stop at the first failure) is in the script and in its step table PostDeploymentSteps.psd1, not here:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1 ...
+# Run it after the ARM deployment succeeded. Every task script also runs alone; this workflow runs them together, in the order of the pages of the Implementation
+# guide, or one task, or a range of them.
+#
+# Jobs
+#   validate  Read only. Checks the master file against the schema (Test-InfrastructureFile.ps1) before anything reads Azure or the cluster. Always runs.
+#   plan      Read only, and always before an apply. The orchestrator with -Mode Plan: every selected step runs with -WhatIf, reads Azure and the cluster and changes
+#             nothing. The reviewer reads this job's summary. The run FAILS (exit code 1 a step failed, 2 bad input or a refusal, 3 stopped after a step with
+#             warnings), and the report is published even then.
+#             SDN enabled by Azure Arc cannot be undone: the script refuses the run (exit code 2, in the plan too) unless the master file carries
+#             sdn.acknowledge_maintenance_window (and sdn.acknowledge_dns_record with static DNS). The workflow overrides none of it.
+#   apply     The same selection for real (-Mode Apply), only for the input mode Apply, after the plan, and only after a reviewer of the GitHub environment named
+#             by the repository variable AZL_ENVIRONMENT_OPERATIONS approved it. It runs the steps the reviewer read in the plan, in the same order.
+# The selection. No input names a task: the run covers every step the master file turns on. only runs just those steps or tasks (a step id such as storage-paths, a
+# task such as task-05, comma-separated), from and to run a range (the first and the last step or task; either may stay empty). A failed run is repeated from the
+# step that failed: from <that step>. continue_on_warning keeps the run going after a step that ended with warnings (the default stops there, so a person reads them).
+#
+# One change at a time. The apply job, the update, the node maintenance, the changing operations and the storage performance test of this repository share the
+# concurrency group azure-local-day2-changes (with the infrastructure file as part of its name, so another instance in the same repository has its own): the SBE
+# import and the SDN change never run beside an update or a node reboot. This is the approval environment of the other changes to the cluster on purpose: one set
+# of approvers and one lock for everything that changes the cluster. GitHub keeps at most one waiting run per group: a third one cancels the waiting second.
+#
+# Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets every variable below
+# from infrastructure.yml. GitHub reads runs-on, the environment name and env from the vars context
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  the app registration of azure.automation_identity, azure.tenant_id, azure.subscription_id
+#   AZL_AUTH_METHOD                   devops.authentication.method: oidc (a federated credential, no secret) or client_secret (the secret
+#                                     ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_OS, AZL_RUNNER_LABEL   devops.runners[].os_type of the general runner and devops.pipelines.runner_label
+#   AZL_ENVIRONMENT_OPERATIONS        devops.pipelines.environments.operations (the approval environment of the apply job)
+#   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# The node login is never in this file or in a variable of this repository: it is the secret reference of the master file, and the toolkit secret resolver reads it
+# from Key Vault at run time with the Azure sign-in of the job.
+# Runner: the general self-hosted runner with pwsh 7, a route to the nodes (WinRM, TCP 5985 or 5986) and to Azure (HTTPS). The steps that read or change the
+# cluster connect to the nodes over PowerShell remoting; the others call Azure.
+# The report: report.json and summary.md (what each step found), run.log, the log of each step and post-deployment-events.jsonl (the events of the run, the feed
+# azurelocal-sonar reads from the events folder of the master file) are the artifact of the job.
+#
+# No approval environment, no change. While the repository variable AZL_ENVIRONMENT_OPERATIONS is empty, the job that changes something does not run (its if needs the
+# variable), and the job approval-environment-not-set fails with a message that names the variable and its key and changes nothing, the same as the stage
+# ApprovalEnvironmentNotSet of Azure DevOps. A job with an empty environment name would otherwise run with no approval.
+name: Azure Local post-deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Plan: read only, every step with -WhatIf. Apply: the plan first, then the same steps for real after approval'
+        type: choice
+        options:
+          - Plan
+          - Apply
+        default: Plan
+      only:
+        description: 'Run only these steps or tasks, comma-separated (a step id such as storage-paths, or a task such as task-05). Leave empty for every step the file turns on'
+        required: false
+        default: ''
+      from:
+        description: 'A range: the first step or task to run (leave empty to start at the first). A failed run is repeated with the step that failed'
+        required: false
+        default: ''
+      to:
+        description: 'A range: the last step or task to run (leave empty to run to the last)'
+        required: false
+        default: ''
+      continue_on_warning:
+        description: 'Keep going after a step that ended with warnings (off: the run stops there so a person reads them)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+# Every run step is PowerShell 7.
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  POST_DEPLOYMENT_SCRIPT: scripts/deploy/04-cluster-deployment/phase-06-post-deployment/Invoke-AzureLocalPostDeployment.ps1
+  AZL_INFRASTRUCTURE_FILE: ${{ vars.AZL_INFRASTRUCTURE_FILE }}
+  AZL_POWERSHELL_YAML_VERSION: ${{ vars.AZL_POWERSHELL_YAML_VERSION }}
+  AZL_AZ_POWERSHELL_VERSION: ${{ vars.AZL_AZ_POWERSHELL_VERSION }}
+  AZL_AZ_KEYVAULT_VERSION: ${{ vars.AZL_AZ_KEYVAULT_VERSION }}
+  POST_DEPLOYMENT_ONLY: ${{ inputs.only }}
+  POST_DEPLOYMENT_FROM: ${{ inputs.from }}
+  POST_DEPLOYMENT_TO: ${{ inputs.to }}
+  POST_DEPLOYMENT_CONTINUE_ON_WARNING: ${{ inputs.continue_on_warning }}
+
+jobs:
+  validate:
+    name: Validate the infrastructure file (read only)
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Reads and checks one file: the toolkit's limit for a read-only check, not a figure from Microsoft.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Check the infrastructure file
+        shell: pwsh
+        run: |
+          ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+          exit $LASTEXITCODE
+
+  plan:
+    name: Plan (read only)
+    needs: validate
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Every selected step with -WhatIf reads Azure and the cluster and changes nothing: the toolkit's limit for a read-only check, not a figure from Microsoft.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":{0},"clientSecret":{1},"subscriptionId":{2},"tenantId":{3}}}', toJSON(vars.ARM_CLIENT_ID), toJSON(secrets.ARM_CLIENT_SECRET), toJSON(vars.ARM_SUBSCRIPTION_ID), toJSON(vars.ARM_TENANT_ID)) }}
+          enable-AzPSSession: true
+
+      - name: Plan (nothing is changed)
+        shell: pwsh
+        run: |
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = 'Plan'; LogPath = "$env:RUNNER_TEMP/post-deployment-plan" }
+          if ($env:POST_DEPLOYMENT_ONLY) { $p.Only = @($env:POST_DEPLOYMENT_ONLY -split '\s*,\s*' | Where-Object { $_ }) }
+          if ($env:POST_DEPLOYMENT_FROM) { $p.From = $env:POST_DEPLOYMENT_FROM }
+          if ($env:POST_DEPLOYMENT_TO) { $p.To = $env:POST_DEPLOYMENT_TO }
+          if ($env:POST_DEPLOYMENT_CONTINUE_ON_WARNING -eq 'true') { $p.ContinueOnWarning = $true }
+          & $env:POST_DEPLOYMENT_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary (the reviewer reads this)
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $summary = "$env:RUNNER_TEMP/post-deployment-plan/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
+
+      - name: Publish the plan report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deployment-plan
+          path: ${{ runner.temp }}/post-deployment-plan
+          # The plan a reviewer read: 30 days is the toolkit's retention for reports, long enough to compare with the run that followed it.
+          retention-days: 30
+          if-no-files-found: warn
+
+  apply:
+    name: Apply (needs approval)
+    needs: plan
+    if: ${{ inputs.mode == 'Apply' && vars.AZL_ENVIRONMENT_OPERATIONS != '' }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Required reviewers on this environment are the approval gate.
+    environment: ${{ vars.AZL_ENVIRONMENT_OPERATIONS }}
+    # One change at a time on the cluster: the update, the node maintenance, the changing operations, the storage performance test and the post-deployment share this group.
+    concurrency:
+      group: azure-local-day2-changes-${{ vars.AZL_INFRASTRUCTURE_FILE }}
+      cancel-in-progress: false
+    # The longest steps wait for Azure (a VM image download, the import of the solution builder extension): the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 480
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":{0},"clientSecret":{1},"subscriptionId":{2},"tenantId":{3}}}', toJSON(vars.ARM_CLIENT_ID), toJSON(secrets.ARM_CLIENT_SECRET), toJSON(vars.ARM_SUBSCRIPTION_ID), toJSON(vars.ARM_TENANT_ID)) }}
+          enable-AzPSSession: true
+
+      - name: Change the cluster
+        shell: pwsh
+        run: |
+          # the one selection the reviewer approved: the same steps the plan job read
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = 'Apply'; LogPath = "$env:RUNNER_TEMP/post-deployment-apply" }
+          if ($env:POST_DEPLOYMENT_ONLY) { $p.Only = @($env:POST_DEPLOYMENT_ONLY -split '\s*,\s*' | Where-Object { $_ }) }
+          if ($env:POST_DEPLOYMENT_FROM) { $p.From = $env:POST_DEPLOYMENT_FROM }
+          if ($env:POST_DEPLOYMENT_TO) { $p.To = $env:POST_DEPLOYMENT_TO }
+          if ($env:POST_DEPLOYMENT_CONTINUE_ON_WARNING -eq 'true') { $p.ContinueOnWarning = $true }
+          & $env:POST_DEPLOYMENT_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary (result)
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $summary = "$env:RUNNER_TEMP/post-deployment-apply/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
+
+      - name: Publish the report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deployment-report
+          path: ${{ runner.temp }}/post-deployment-apply
+          # The record of a change to the cluster: 90 days is the toolkit's retention for it.
+          retention-days: 90
+          if-no-files-found: warn
+
+  # A change was asked for, but the approval environment is not set: the job that changes something does not run (it needs the variable named below), and this job fails and says why.
+  # Nothing is sent to any machine. Azure DevOps does the same with the stage ApprovalEnvironmentNotSet.
+  approval-environment-not-set:
+    name: Refuse, no approval environment is set
+    needs: plan
+    if: ${{ inputs.mode == 'Apply' && vars.AZL_ENVIRONMENT_OPERATIONS == '' }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 5
+    steps:
+      - name: No approval environment is set, so nothing is changed
+        shell: pwsh
+        run: |
+          Write-Error 'AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) is empty, and the apply job changes a system, so it does not run without an approval environment. Set the variable with task 05 of the CI/CD setup, then run again. Nothing was changed.' -ErrorAction Continue
+          exit 1
