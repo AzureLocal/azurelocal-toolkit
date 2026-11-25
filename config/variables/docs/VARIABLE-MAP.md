@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.77. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.78. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 787 | 533 | 87 | 6 | 159 | 2 |
-| Owned by a tool (`tools.*`) | 5046 | 4843 | 0 | 0 | 203 | 0 |
+| Owned by a tool (`tools.*`) | 5066 | 4863 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7206 | 5378 | 98 | 6 | 1712 | 12 |
+| All registry leaves | 7226 | 5398 | 98 | 6 | 1712 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -1927,9 +1927,9 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | draftsman | env_vars | 1 | 1 | 0 |
 | draftsman | url_parameters | 6 | 6 | 0 |
 | loadtools | ansible_variables | 10 | 10 | 0 |
-| loadtools | config_keys | 301 | 108 | 193 |
+| loadtools | config_keys | 287 | 94 | 193 |
 | loadtools | env_vars | 4 | 4 | 0 |
-| loadtools | parameters | 259 | 259 | 0 |
+| loadtools | parameters | 293 | 293 | 0 |
 | loadtools | pipeline_inputs | 6 | 6 | 0 |
 | os_configuration | config_keys | 83 | 83 | 0 |
 | os_configuration | env_vars | 1 | 1 | 0 |
