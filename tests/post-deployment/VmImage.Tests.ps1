@@ -50,7 +50,7 @@ BeforeAll {
     }
     function Invoke-Image([string]$File, [switch]$DryRun) {
         $global:LASTEXITCODE = $null
-        $all = if ($DryRun) { & $script:Script -InfrastructureFile $File -WhatIf 6>&1 3>&1 2>&1 } else { & $script:Script -InfrastructureFile $File 6>&1 3>&1 2>&1 }
+        $all = if ($DryRun) { & $script:Script -InfrastructureFile $File -MaxWaitMinutes 0 -WhatIf 6>&1 3>&1 2>&1 } else { & $script:Script -InfrastructureFile $File -MaxWaitMinutes 0 6>&1 3>&1 2>&1 }
         $code = $LASTEXITCODE
         [pscustomobject]@{
             ExitCode = $code

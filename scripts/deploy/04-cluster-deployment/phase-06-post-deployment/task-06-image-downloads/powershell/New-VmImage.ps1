@@ -17,6 +17,10 @@
     version it got in the Version column. It never writes that version, or anything else, to the infrastructure file: pin the version in
     storage.vm_images[].version yourself when you need to.
 
+    Download progress and wait. New-AzStackHCIVMImage returns when Azure has accepted the image; when the image is not Succeeded yet, the script reads it again every
+    -PollSeconds, prints the state and the percent, and waits up to -MaxWaitMinutes (the same wait for an image that an earlier run left downloading). Past that
+    time the image is reported as InProgress; a later run reads it again. -WhatIf does not wait.
+
     Idempotent. An image that exists is reported as AlreadyExists and left alone, also when the file now asks for another version or SKU (the
     difference is reported; a newer Marketplace image is a new image with a new name). An image that is still downloading is reported as
     InProgress. An image that failed is reported as Failed with the error Azure gives, and is NOT deleted or recreated: read the error, delete the
@@ -45,6 +49,13 @@
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
 
+.PARAMETER MaxWaitMinutes
+    The longest time to wait for an image that is still downloading to reach Succeeded, in minutes (0 to 600; 0 does not wait). Default: 60, the time after which the
+    guide page calls a download stuck. After that the image is reported as InProgress (not a failure) and a later run reads it again.
+
+.PARAMETER PollSeconds
+    Seconds between two reads of the image while the script waits (1 to 600). Default: 30. Each read prints the state and the percent Azure reports.
+
 .PARAMETER LogPath
     Optional. Also append the progress lines to this file. Keep it out of the repository.
 
@@ -63,6 +74,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
+    [ValidateRange(0, 600)][int]$MaxWaitMinutes = 60,
+    [ValidateRange(1, 600)][int]$PollSeconds = 30,
     [string]$LogPath
 )
 Set-StrictMode -Version Latest
@@ -187,6 +200,19 @@ function Get-ImageState($Image) {
     }
     ''
 }
+# Waits for an image that is still downloading (the page: a 40 to 60 GB image takes 15 to 30 minutes; stuck after 60). Prints the state and the percent on every read.
+# Returns the last image read. Not called under -WhatIf (a plan reads and waits for nothing).
+function Wait-Image([string]$Name, $Image) {
+    $deadline = (Get-Date).AddMinutes($MaxWaitMinutes)
+    $last = $Image
+    while ((Get-ImageState $last) -notin 'Succeeded', 'Failed', 'Canceled' -and (Get-Date) -lt $deadline) {
+        $percent = [string](Get-Property $last 'StatusProgressPercentage')
+        Write-Line ("[waiting] '{0}': {1}{2}" -f $Name, (Get-ImageState $last), $(if ($percent) { ", $percent percent" } else { '' }))
+        Start-Sleep -Seconds $PollSeconds
+        $last = Get-AzStackHCIVMImage -Name $Name -ResourceGroupName $group -SubscriptionId $subscriptionId -ErrorAction Stop
+    }
+    $last
+}
 function Get-ImageError($Image) {
     $parts = @('StatusErrorCode', 'StatusErrorMessage') | ForEach-Object { [string](Get-Property $Image $_) } | Where-Object { $_ }
     if ($parts) { $parts -join ': ' } else { 'Azure gave no error text.' }
@@ -234,6 +260,12 @@ try {
                         Add-Row $plan.Name 'Failed' $haveVersion "The image is in the $state state: $(Get-ImageError $existing) It is left in place. Delete it (portal or az stack-hci-vm image delete) after you read the error, then run the script again."
                         continue
                     }
+                    if ($state -and $state -ne 'Succeeded' -and $MaxWaitMinutes -gt 0 -and -not $WhatIfPreference) {
+                        $existing = Wait-Image $plan.Name $existing
+                        $state = Get-ImageState $existing
+                        $haveVersion = [string](Get-Property $existing 'VersionName')
+                        if ($state -in 'Failed', 'Canceled') { Add-Row $plan.Name 'Failed' $haveVersion "The image is in the $state state: $(Get-ImageError $existing) It is left in place. Delete it (portal or az stack-hci-vm image delete) after you read the error, then run the script again."; continue }
+                    }
                     if ($state -and $state -ne 'Succeeded') {
                         $percent = [string](Get-Property $existing 'StatusProgressPercentage')
                         Add-Row $plan.Name 'InProgress' $haveVersion "state $state$(if ($percent) { ", $percent percent" }); run the script again later to see the result"
@@ -245,6 +277,11 @@ try {
                         if ($got -and $got -ne $pair.Want) { $differences.Add("$($pair.Label) is $got") }
                     }
                     if ($plan.Version -ne 'latest' -and $haveVersion -and $haveVersion -ne $plan.Version) { $differences.Add("version is $haveVersion") }
+                    $haveTags = Get-Property $existing 'Tag'
+                    if ($tags.Count -and $haveTags -is [System.Collections.IDictionary]) {
+                        $missingTags = @($tags.Keys | Where-Object { -not $haveTags.Contains($_) -or [string]$haveTags[$_] -ne [string]$tags[$_] } | Sort-Object)
+                        if ($missingTags.Count) { $differences.Add("tags differ from the file's tags: $($missingTags -join ', ')") }
+                    }
                     $note = if ($differences.Count) { "differs from the file ($($differences -join '; ')); left unchanged. A newer Marketplace image is a new image: use another name." } else { '' }
                     Add-Row $plan.Name 'AlreadyExists' $haveVersion $note
                     continue
@@ -271,6 +308,7 @@ try {
                     # Read it back: the version Azure chose for 'latest', and the state.
                     $created = $null
                     try { $created = Get-AzStackHCIVMImage -Name $plan.Name -ResourceGroupName $group -SubscriptionId $subscriptionId -ErrorAction Stop } catch { Write-Verbose "The image could not be read back: $($_.Exception.Message)" }
+                    if ($created -and (Get-ImageState $created) -notin '', 'Succeeded', 'Failed', 'Canceled' -and $MaxWaitMinutes -gt 0) { $created = Wait-Image $plan.Name $created }
                     $createdState = if ($created) { Get-ImageState $created } else { '' }
                     if ($createdState -in 'Failed', 'Canceled') { Add-Row $plan.Name 'Failed' ([string](Get-Property $created 'VersionName')) "The image is in the $createdState state: $(Get-ImageError $created) It is left in place. Delete it after you read the error, then run the script again." }
                     elseif ($createdState -and $createdState -ne 'Succeeded') { Add-Row $plan.Name 'InProgress' ([string](Get-Property $created 'VersionName')) "state $createdState; run the script again later to see the result" }

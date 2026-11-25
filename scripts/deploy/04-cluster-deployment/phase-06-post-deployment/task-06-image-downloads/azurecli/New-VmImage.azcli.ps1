@@ -52,6 +52,13 @@
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
 
+.PARAMETER MaxWaitMinutes
+    The longest time to wait for an image that is still downloading to reach Succeeded, in minutes (0 to 600; 0 does not wait). Default: 60, the time after which the
+    guide page calls a download stuck. After that the image is reported as InProgress (not a failure) and a later run reads it again.
+
+.PARAMETER PollSeconds
+    Seconds between two reads of the image while the script waits (1 to 600). Default: 30. Each read prints the state and the percent Azure reports.
+
 .PARAMETER LogPath
     Optional. Also append the progress lines to this file. Keep it out of the repository.
 
@@ -70,6 +77,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
+    [ValidateRange(0, 600)][int]$MaxWaitMinutes = 60,
+    [ValidateRange(1, 600)][int]$PollSeconds = 30,
     [string]$LogPath
 )
 Set-StrictMode -Version Latest
@@ -227,6 +236,20 @@ function Get-ImageError($Image) {
     $parts = @('errorCode', 'errorMessage') | ForEach-Object { [string](Get-Prop $Image @('properties', 'status', $_)) } | Where-Object { $_ }
     if ($parts) { $parts -join ': ' } else { 'Azure gave no error text.' }
 }
+# Waits for an image that is still downloading (the page: a 40 to 60 GB image takes 15 to 30 minutes; stuck after 60). Prints the state and the percent on every read.
+# Returns the last image read. Not called under -WhatIf (a plan reads and waits for nothing).
+function Wait-Image([string]$Name, $Image) {
+    $deadline = (Get-Date).AddMinutes($MaxWaitMinutes)
+    $last = $Image
+    while ((Get-ImageState $last) -notin 'Succeeded', 'Failed', 'Canceled' -and (Get-Date) -lt $deadline) {
+        $percent = [string](Get-Prop $last @('properties', 'status', 'progressPercentage'))
+        Write-Line ("[waiting] '{0}': {1}{2}" -f $Name, (Get-ImageState $last), $(if ($percent) { ", $percent percent" } else { '' }))
+        Start-Sleep -Seconds $PollSeconds
+        $next = Read-Image $Name
+        if ($next) { $last = $next }
+    }
+    $last
+}
 function Read-Image([string]$Name) {
     $show = Invoke-AzCli (@('stack-hci-vm', 'image', 'show', '--subscription', $subscriptionId, '--resource-group', $group, '--name', $Name, '--output', 'json', '--only-show-errors'))
     if ($show.ExitCode -eq 0) { return (ConvertFrom-AzJson $show.Output) }
@@ -270,6 +293,12 @@ foreach ($plan in $plans) {
                 Add-Row $plan.Name 'Failed' $haveVersion "The image is in the $state state: $(Get-ImageError $existing) It is left in place. Delete it (portal or az stack-hci-vm image delete) after you read the error, then run the script again."
                 continue
             }
+            if ($state -and $state -ne 'Succeeded' -and $MaxWaitMinutes -gt 0 -and -not $WhatIfPreference) {
+                $existing = Wait-Image $plan.Name $existing
+                $state = Get-ImageState $existing
+                $haveVersion = [string](Get-Prop $existing @('properties', 'version', 'name'))
+                if ($state -in 'Failed', 'Canceled') { Add-Row $plan.Name 'Failed' $haveVersion "The image is in the $state state: $(Get-ImageError $existing) It is left in place. Delete it (portal or az stack-hci-vm image delete) after you read the error, then run the script again."; continue }
+            }
             if ($state -and $state -ne 'Succeeded') {
                 $percent = [string](Get-Prop $existing @('properties', 'status', 'progressPercentage'))
                 Add-Row $plan.Name 'InProgress' $haveVersion "state $state$(if ($percent) { ", $percent percent" }); run the script again later to see the result"
@@ -281,6 +310,11 @@ foreach ($plan in $plans) {
                 if ($got -and $got -ne $pair.Want) { $differences.Add("$($pair.Label) is $got") }
             }
             if ($plan.Version -ne 'latest' -and $haveVersion -and $haveVersion -ne $plan.Version) { $differences.Add("version is $haveVersion") }
+            $haveTags = Get-Prop $existing @('tags')
+            if ($tagArguments.Count -and $null -ne $haveTags) {
+                $missingTags = @(foreach ($pair in $tagArguments) { $key, $value = $pair -split '=', 2; if ([string](Get-Prop $haveTags @($key)) -ne $value) { $key } })
+                if ($missingTags.Count) { $differences.Add("tags differ from the file's tags: $($missingTags -join ', ')") }
+            }
             $note = if ($differences.Count) { "differs from the file ($($differences -join '; ')); left unchanged. A newer Marketplace image is a new image: use another name." } else { '' }
             Add-Row $plan.Name 'AlreadyExists' $haveVersion $note
             continue
@@ -317,6 +351,7 @@ foreach ($plan in $plans) {
             # Read it back: the version Azure chose for 'latest', and the state.
             $created = $null
             try { $created = Read-Image $plan.Name } catch { Write-Verbose "The image could not be read back: $($_.Exception.Message)" }
+            if ($created -and (Get-ImageState $created) -notin '', 'Succeeded', 'Failed', 'Canceled' -and $MaxWaitMinutes -gt 0) { $created = Wait-Image $plan.Name $created }
             $createdState = if ($created) { Get-ImageState $created } else { '' }
             $createdVersion = if ($created) { [string](Get-Prop $created @('properties', 'version', 'name')) } else { '' }
             if ($createdState -in 'Failed', 'Canceled') { Add-Row $plan.Name 'Failed' $createdVersion "The image is in the $createdState state: $(Get-ImageError $created) It is left in place. Delete it after you read the error, then run the script again." }
