@@ -145,6 +145,17 @@ Describe 'A full Plan run' {
         @($e | Where-Object state -EQ 'StepPlanned').Count | Should -Be 13
         ($e | Where-Object { $_.step -eq 'sdn' -and $_.state -eq 'StepStarted' }) | Should -Not -BeNullOrEmpty
     }
+    It 'copies the events of this run (and only this run) next to the report, so a pipeline that publishes the log folder publishes the feed' {
+        $file = New-Infra
+        $first = Invoke-Run -File $file
+        $copy = Join-Path $first.Log 'post-deployment-events.jsonl'
+        $copy | Should -Exist
+        $lines = @(Get-Content -LiteralPath $copy | ForEach-Object { $_ | ConvertFrom-Json })
+        $lines.Count | Should -Be $first.Events.Count
+        @($lines | ForEach-Object { $_.runId } | Sort-Object -Unique) | Should -Be @($first.Result.RunId)
+        $lines[0].state | Should -Be 'RunStarted'
+        $lines[-1].state | Should -Be 'RunCompleted'
+    }
 }
 
 Describe 'Apply' {

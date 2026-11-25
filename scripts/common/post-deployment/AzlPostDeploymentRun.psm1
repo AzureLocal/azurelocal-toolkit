@@ -23,7 +23,8 @@
     steps after it are NotRun. Nothing continues past a failed step.
 
     Outputs: <LogPath>/run.log, <LogPath>/<NN>-<step>.log (the log of each script), <LogPath>/report.json, <LogPath>/summary.md, and one event per
-    state change in post-deployment-events.jsonl of the events folder (deployment.events_directory), in the envelope azurelocal-sonar reads.
+    state change in post-deployment-events.jsonl of the events folder (deployment.events_directory), in the envelope azurelocal-sonar reads. The events of
+    the run are also copied to <LogPath>/post-deployment-events.jsonl, so a pipeline that publishes the log folder publishes the feed.
 
     Exit codes: 0 every selected step passed, was planned or was skipped; 1 a step failed; 2 bad input (the file, the table, an unknown step, a missing
     script), a refusal (an irreversible step without its acknowledgement keys) or a cluster that does not answer; 3 the run stopped after a step with warnings.
@@ -268,6 +269,15 @@ function Invoke-AzlPostDeployment {
         Write-RunLine "Result: $Why (exit code $Code)."
         if ($rows.Count -gt 0) { Write-RunLine ((@($rows | ForEach-Object { [pscustomobject]@{ Step = $_.id; Result = $_.result; Exit = $_.exitCode; Reason = $_.reason } }) | Format-Table -AutoSize | Out-String).TrimEnd()) }
         Send-Event -State RunCompleted -Evidence $Why -Level $(if ($Code -eq 0) { 'Info' } else { 'Error' }) -Data @{ exitCode = $Code; result = $Why }
+        # The events of THIS run are copied next to the report, so a pipeline (or a person) that keeps the log folder keeps the feed too. The feed itself stays in the
+        # events folder, where azurelocal-sonar reads it.
+        if ($runLog -and $feed -and (Test-Path -LiteralPath $feed -PathType Leaf)) {
+            $copy = [IO.Path]::Combine($LogPath, $script:EventFeed)
+            if ([IO.Path]::GetFullPath($copy) -ne [IO.Path]::GetFullPath($feed)) {
+                try { Set-Content -LiteralPath $copy -Value @(Get-Content -LiteralPath $feed | Where-Object { $_ -like "*$runId*" }) -Encoding utf8 }
+                catch { Write-RunLine "The events of this run could not be copied to '$copy': $($_.Exception.Message)" }
+            }
+        }
         [pscustomobject]@{ ExitCode = $Code; Result = $Why; RunId = $runId; Steps = @($rows); ReportPath = [IO.Path]::Combine($LogPath, 'report.json') }
     }
 
