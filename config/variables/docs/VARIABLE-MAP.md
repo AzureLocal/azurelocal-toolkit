@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 383 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 385 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -67,7 +67,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `deployment` |  |  |  | 1 |  |  |  | 3 |
 | `nodes` | 10 | 19 | 27 | 15 | 5 | 6 | 6 | 22 |
 | `hardware` | 20 | 15 | 6 | 4 | 4 | 7 |  | 16 |
-| `storage` | 4 |  |  | 9 | 3 | 15 |  | 30 |
+| `storage` | 4 |  |  | 9 | 3 | 15 |  | 32 |
 | `sdn` | 1 |  |  |  |  |  |  | 5 |
 | `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 6 |
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
@@ -99,7 +99,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 91 | 0 | 890 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 259 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 261 | 0 | 0 |
 
 ### trailwright
 
@@ -307,7 +307,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (259):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (261):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 3 keys
@@ -324,7 +324,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `secrets`: 5 keys
 - `security`: 11 keys
 - `site`: 1 keys
-- `storage`: 30 keys
+- `storage`: 32 keys
 - `tags`: 1 keys
 
 Where in the code (file, function, keys read by name; 151 places, the first 12):
@@ -342,7 +342,7 @@ Where in the code (file, function, keys read by name; 151 places, the first 12):
 | `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | `(script)` | 17 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/azurecli/Deploy-ManagementVMs.azcli.ps1` | `(script)` | 16 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 16 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/azurecli/Test-ManagementConfiguration.azcli.ps1` | `(script)` | 15 |
+| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | `(script)` | 16 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -441,8 +441,8 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `identity.active_directory.ou_path` | Distinguished name of the dedicated OU. | operator by hand; Trailwright questionnaire | arm-deployment; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM adouPath; OS DomainJoin |
 | `identity.active_directory.lcm_user.username` | Name only, no domain. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin; RemoteManagement |
 | `identity.local_admin.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin |
-| `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement |
 | `scenario.storage_architecture` | s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE... | operator by hand; Trailwright questionnaire; default | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 |
+| `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement |
 | `identity.active_directory.lcm_user.password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | operator by hand; Trailwright questionnaire; Key Vault reference (keyvault://) | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminPassword; OS RemoteManagement; ~DomainJoin |
 | `networking.management.dns_servers` | ARM dnsServers. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 |
 | `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  |
@@ -1863,8 +1863,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `storage.vm_images[].storage_path` | string | operator | deployment | toolkit-legacy-scripts |  | read |
 | `storage.san.type` | string, required, one of `fibre_channel`, `iscsi` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | OS Mpio; SanVerify; Gate ST-011 | read |
 | `storage.san.array.name` | string, required | operator |  |  | OS ~Mpio; ~SanVerify | placeholder |
-| `storage.san.array.vendor` | string, required | operator | os_configuration; deployment | os-configuration; pre-cluster-verification | OS Mpio; SanVerify; Gate ST-004; ST-006; ST-007 | read |
-| `storage.san.array.model` | string, required | operator | os_configuration; deployment | os-configuration; pre-cluster-verification | OS Mpio; SanVerify; Gate ST-004; ST-006; ST-007 | read |
+| `storage.san.array.vendor` | string, required | operator | os_configuration; deployment | os-configuration; pre-cluster-verification; toolkit-legacy-scripts | OS Mpio; SanVerify; Gate ST-004; ST-006; ST-007 | read |
+| `storage.san.array.model` | string, required | operator | os_configuration; deployment | os-configuration; pre-cluster-verification; toolkit-legacy-scripts | OS Mpio; SanVerify; Gate ST-004; ST-006; ST-007 | read |
 | `storage.san.array.management_address` | string (ipv4) | operator |  |  | OS ~Mpio; ~SanVerify | placeholder |
 | `storage.san.fibre_channel.fabrics[].name` | string, required | operator | deployment |  | OS ~Mpio; ~SanVerify | validated-only |
 | `storage.san.fibre_channel.fabrics[].switch` | string | operator |  |  | OS ~Mpio; ~SanVerify | placeholder |
