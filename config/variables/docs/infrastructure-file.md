@@ -2,16 +2,21 @@
 
 > **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../schema/master-registry.yaml). The schema, the master file, the one template per tool and the variables reference below are **generated** from it by `./config/variables/scripts/New-InfrastructureArtifacts.ps1`; change the registry, not them. A test regenerates them and fails when one is stale. See [config/variables/README.md](../README.md).
 
-`infrastructure.yml` describes one Azure Local instance: the design choices, the machines, the networks, identity, the Azure targets, how the OS gets onto the machines, and the cluster deployment. Every Azure Local tool reads the same file:
+`infrastructure.yml` describes one Azure Local instance: the design choices, the machines, the networks, identity, the Azure targets, how the OS gets onto the machines, and the cluster deployment. One file feeds the tools of the Azure Local set. Who reads it, and who writes it, today:
 
 | Tool | Reads | Writes |
 | --- | --- | --- |
-| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | No |
+| [azurelocal-trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | Nothing from a file of this layout; it imports a Surveyor sizing handoff or its own project file | **Yes: it produces the file from a guided design** |
+| [azurelocal-surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | Nothing | No. It writes the sizing handoff (`azure-local-sizing-handoff-*.json`) that Trailwright imports; the handoff uses this file's key names |
+| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | Only the discovery write-back: `Update-InfrastructureYml-FromDiscovery.ps1 -Apply` writes serial numbers and port MACs, and nothing else |
 | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) CI/CD infrastructure (`scripts/deploy/01-cicd-infra`) | The `devops` section (schema 5.5), `azure`, `key_vaults`, `landing_zone` | No |
-| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters`, `bios`, `bios_during_provisioning` and `maintenance_address`), `hardware` (with `bios` and `bios_during_provisioning`), `networking.management` (with `static_method` and `provisioning_dhcp_range`), `networking.ntp_servers`, `identity.local_admin`, `provisioning` (with `simplified.maintenance_password`), `tags` |
+| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters`, `bios`, `bios_during_provisioning` and `maintenance_address`), `hardware` (with `bios` and `bios_during_provisioning`), `networking.management` (with `static_method` and `provisioning_dhcp_range`), `provisioning` (with `simplified.maintenance_password`), `tags`. It ignores `identity.local_admin`, `networking.ntp_servers` and `hardware.sbe`, which belong to OS configuration | No. It writes the ZTP handoff, a separate JSON file |
 | ARM and SAN deployment | The ARM parameters (each schema description names its parameter) and the SAN: `storage.san`, `nodes[].san` | No |
-| [Trailwright](https://labs.hybridsolutions.cloud/azurelocal-trailwright/) | The design sections | Yes: it produces the file from a guided design |
-| Beacon, Sonar, Ranger | Addresses, names and identity for their checks and reports | No |
+| [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | `azure`, `cluster.name`, `scenario`, `nodes[]`, `deployment.events_directory`, `provisioning.simplified.evidence_path`, through a small reader of its own (a file cut for ZTP has no `cluster.name` or `scenario.identity` and is not enough) | No |
+| [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger) | The older schema 4 layout only, to compare a design with the as-built cluster. It does not read schema 5 yet. Compare only: it never writes back | No |
+| [azurelocal-beacon](https://github.com/AzureLocal/azurelocal-beacon) | Not yet. It reads its own validation configuration (`validation-config.example.json` is the template) | No. Its results file is shown by Sonar |
+| [azurelocal-s2d-cartographer](https://github.com/AzureLocal/azurelocal-s2d-cartographer), [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | Not yet. Cartographer takes the cluster name as a parameter; LoadTools reads its own `config/clusters/cluster.yml` | No |
+| [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) | No. It is a separate visual design | No |
 
 The ARM parameters for Microsoft's deployment templates come from this file. The schema descriptions name the ARM parameter each key becomes. **Every key, with its type, whether it is required, its default, an example, where to get the value and which tool reads it, is in [`VARIABLES.md`](VARIABLES.md).**
 

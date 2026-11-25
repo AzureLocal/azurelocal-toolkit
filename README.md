@@ -19,7 +19,7 @@ This README is the primary entry point for understanding the repository.
 ## The Azure Local route
 
 ```text
-Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -> ARM Validate -> ARM Deploy -> day 2
+Planning -> Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -> ARM Validate -> ARM Deploy -> day 2
 ```
 
 | # | Step | Tool | Page |
@@ -32,7 +32,21 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 | 6 | ARM Deploy | the same script, `-Mode Deploy` | same |
 | 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/deploy/07-validation-handover`, `scripts/deploy/08-day2-operations` | the Azure Local docs |
 
-[Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 2 to 6 read only.
+[Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 2 to 6 read only. Its Discovery view also shows the results file of Beacon and the files of step 1.
+
+### The tools around the route
+
+Every tool reads or writes the same `infrastructure.yml` ([how](config/variables/docs/infrastructure-file.md)); none keeps a second copy of a variable. These are the tools that come before the route, beside it and after it.
+
+| When | Tool | What it does with the file |
+|------|------|----------------------------|
+| Planning | [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | Sizes the cluster. Writes no `infrastructure.yml`: it exports a sizing handoff (`azure-local-sizing-handoff-*.json`, "Sizing handoff for Trailwright") in the file's key names |
+| Planning | [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | Takes the sizing handoff and your answers and writes a draft `infrastructure.yml`. Check it with `Test-InfrastructureFile.ps1`; MAC addresses come from step 1 |
+| Planning | [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) | Draws the cabling, VLANs and Network ATC intents. A separate visual design: it does not read or write `infrastructure.yml` |
+| Before step 2 | [Beacon](https://azurelocal.cloud/azurelocal-beacon/) | Boots from the BMC or USB and checks network, DNS, Active Directory, Azure endpoints and Arc readiness. It has its own configuration file today and does not read `infrastructure.yml` yet; its results file is shown by Sonar |
+| Day 2 | [Ranger](https://azurelocal.cloud/azurelocal-ranger/) | Collects the as-built cluster and compares it with a design record (compare only, no write-back). It reads the older schema 4 layout, not schema 5, until its reader is updated |
+| Day 2 | [S2D Cartographer](https://azurelocal.cloud/azurelocal-s2d-cartographer/) | Reads the storage stack of a running cluster. Takes the cluster name as a parameter; does not read the file yet |
+| Day 2 | [LoadTools](https://azurelocal.cloud/azurelocal-loadtools/) | VMFleet, fio, iPerf, HammerDB and stress-ng. Reads its own `config/clusters/cluster.yml`, not the file yet |
 
 ### The pre-cluster verification gate
 
@@ -122,7 +136,7 @@ The repository is designed to be configuration-driven.
 |------|---------|
 | `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master file, one template per tool and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
 | `config/variables/schema/` | The registry, the generated `infrastructure.schema.json` and one schema per tool |
-| `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ztp, os-configuration, deployment, cicd-infra, monitoring, discovery) |
+| `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ansible, cicd-infra, deployment, discovery, monitoring, os-configuration, ranger, terraform, trailwright, ztp) |
 | `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) |
 | `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |
 | `config/variables/scripts/` | Validators, the registry reader and the artifact generator |
@@ -171,6 +185,14 @@ Canonical standards are maintained centrally in the Azure Local docs repository 
 | [azurelocal-avd](https://github.com/AzureLocal/azurelocal-avd) | Azure Virtual Desktop on Azure Local |
 | [azurelocal-sofs-fslogix](https://github.com/AzureLocal/azurelocal-sofs-fslogix) | SOFS + FSLogix solution assets |
 | [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | Load generation and benchmarking tools |
+| [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) | Capacity planning and workload sizing; exports the sizing handoff |
+| [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright) | Deployment design; writes a draft `infrastructure.yml` |
+| [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) | Cabling, VLAN and Network ATC diagrams |
+| [azurelocal-beacon](https://github.com/AzureLocal/azurelocal-beacon) | Pre-deployment network, identity and Azure readiness validation |
+| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | Zero-touch provisioning: OS install and Arc registration |
+| [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | Real-time deployment monitor |
+| [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger) | As-built discovery, documentation and design comparison |
+| [azurelocal-s2d-cartographer](https://github.com/AzureLocal/azurelocal-s2d-cartographer) | Storage Spaces Direct inventory and capacity analysis |
 | [azurelocal-vm-conversion-toolkit](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit) | VM conversion tooling |
 
 ## Quick Links
