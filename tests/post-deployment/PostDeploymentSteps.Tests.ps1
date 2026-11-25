@@ -70,8 +70,8 @@ Describe 'The step table' {
         $step.Applies[0].Key | Should -Be 'sdn.enabled'
         $step.Applies[0].Is | Should -BeTrue
         $step.ContainsKey('Irreversible') | Should -BeFalse
-        # the page task-01 does not name Test-ArcSdn.ps1 yet; when it does, drop ScriptOnPage here (the test of the pages then asks for the name)
-        $step.ScriptOnPage | Should -BeFalse
+        # the page task-01 names Test-ArcSdn.ps1, so the step carries no ScriptOnPage flag and the test of the pages asks for the name
+        $step.ContainsKey('ScriptOnPage') | Should -BeFalse
     }
     It 'every condition has a known operator, and every key it reads is a key of the infrastructure schema' {
         $schema = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'infrastructure.schema.json')) -Raw | ConvertFrom-Json -AsHashtable
