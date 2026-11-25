@@ -107,16 +107,16 @@ Describe 'A full Plan run' {
         $script:Plan.Code | Should -Be 0
         $script:Plan.Ran | Should -Be $script:Ids
     }
-    It 'passes -WhatIf to every step whose script has it, and runs the one that changes nothing as it is' {
+    It 'passes -WhatIf to every step whose script has it, and runs every step, the SBE import included (it imports only with -Execute)' {
         foreach ($c in $script:Plan.Calls) {
             $step = @($script:Table.Steps | Where-Object Id -EQ $c.step)[0]
             $c.whatif | Should -Be ($step.Plan -eq 'WhatIf') -Because $c.step
         }
-        (Get-StepRow $script:Plan 'sbe-import-plan').result | Should -Be 'Passed'
+        (Get-StepRow $script:Plan 'sbe-import-plan').result | Should -Be 'Planned'
         (Get-StepRow $script:Plan 'quorum').result | Should -Be 'Planned'
     }
-    It 'passes only the public parameters: InfrastructureFile, WhatIf, Confirm, LogPath' {
-        foreach ($c in $script:Plan.Calls) { @($c.bound | Where-Object { $_ -notin 'InfrastructureFile', 'LogPath', 'WhatIf', 'Confirm' }) | Should -BeNullOrEmpty -Because $c.step }
+    It 'passes only the public parameters: InfrastructureFile, WhatIf, Confirm, LogPath (and -Execute of the SBE import, which -WhatIf keeps a plan)' {
+        foreach ($c in $script:Plan.Calls) { @($c.bound | Where-Object { $_ -notin 'InfrastructureFile', 'LogPath', 'WhatIf', 'Confirm', 'Execute' }) | Should -BeNullOrEmpty -Because $c.step }
     }
     It 'gives each step its own log file in the log folder' {
         foreach ($c in @($script:Plan.Calls | Where-Object { $_.bound -contains 'LogPath' })) { $c.step | Should -Not -BeNullOrEmpty }
@@ -142,7 +142,7 @@ Describe 'A full Plan run' {
             $line.cluster | Should -Be 'clus01'
             foreach ($f in 'timestamp', 'node', 'step', 'state', 'evidence', 'level', 'nextAction', 'runId') { $line.PSObject.Properties.Name | Should -Contain $f }
         }
-        @($e | Where-Object state -EQ 'StepPlanned').Count | Should -Be 12
+        @($e | Where-Object state -EQ 'StepPlanned').Count | Should -Be 13
         ($e | Where-Object { $_.step -eq 'sdn' -and $_.state -eq 'StepStarted' }) | Should -Not -BeNullOrEmpty
     }
 }
@@ -374,7 +374,7 @@ Describe 'What is passed to a script' {
         $r = Invoke-Run -File (New-Infra) -Parameters @{ ComputerName = 'node01'; Credential = $credential }
         ($r.Calls | Where-Object step -EQ 'quorum').bound | Should -Contain 'ComputerName'
         ($r.Calls | Where-Object step -EQ 'quorum').bound | Should -Contain 'Credential'
-        ($r.Calls | Where-Object step -EQ 'sbe-import-plan').bound | Should -Be @('InfrastructureFile')
+        ($r.Calls | Where-Object step -EQ 'sbe-import-plan').bound | Should -Contain 'ComputerName'
         $alone = Invoke-Run -File (New-Infra)
         ($alone.Calls | Where-Object step -EQ 'quorum').bound | Should -Not -Contain 'ComputerName'
         ($alone.Calls | Where-Object step -EQ 'quorum').bound | Should -Not -Contain 'Credential'

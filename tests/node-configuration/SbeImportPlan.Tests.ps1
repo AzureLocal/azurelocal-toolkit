@@ -51,21 +51,30 @@ Describe 'Get-AzureLocalSbeImportPlan.ps1' {
         $j.package | Should -Be 'SBE_Example_GenA-Std_4.1.2610.5'
         @($j.files).Count | Should -Be 3
     }
-    It 'refuses a share that lacks the payload, and says which file' {
+    It 'refuses a share that lacks the payload with exit code 2, and says which file' {
         $file = New-InfraFile "    source_path: '$(New-Share -SkipZip)'"
-        { & $script:Script -InfrastructureFile $file 6>$null } | Should -Throw '*SBE_Example_GenA-Std_4.1.2610.5.zip*'
+        $global:LASTEXITCODE = $null
+        $text = (& $script:Script -InfrastructureFile $file 6>&1 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $LASTEXITCODE | Should -Be 2
+        $text | Should -Match 'SBE_Example_GenA-Std_4.1.2610.5.zip'
     }
-    It 'refuses when no source is configured' {
+    It 'refuses with exit code 2 when no source is configured' {
         $file = New-InfraFile "    delivery: skip"
-        { & $script:Script -InfrastructureFile $file 6>$null } | Should -Throw '*source_path is empty*'
+        $global:LASTEXITCODE = $null
+        $text = (& $script:Script -InfrastructureFile $file 6>&1 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $LASTEXITCODE | Should -Be 2
+        $text | Should -Match 'source_path is empty'
     }
     It 'says nothing is to import when the file declares the package not applicable' {
         $file = New-InfraFile "    requirement: not_applicable`n    not_applicable_reason: No SBE exists for this model"
         $plan = & $script:Script -InfrastructureFile $file 6>&1
         ($plan | Out-String) | Should -Match 'not applicable'
     }
-    It 'an unreadable share is an error with the reason' {
+    It 'an unreadable share is exit code 1 with the reason' {
         $file = New-InfraFile "    source_path: '$(Join-Path $TestDrive 'nowhere')'"
-        { & $script:Script -InfrastructureFile $file 6>$null } | Should -Throw '*could not be read from this host*'
+        $global:LASTEXITCODE = $null
+        $text = (& $script:Script -InfrastructureFile $file 6>&1 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $LASTEXITCODE | Should -Be 1
+        $text | Should -Match 'could not be read from this host'
     }
 }

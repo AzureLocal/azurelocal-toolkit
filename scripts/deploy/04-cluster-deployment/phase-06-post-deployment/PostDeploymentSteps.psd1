@@ -14,7 +14,7 @@
 #   Title         What the step does, for the summary.
 #   Script        The PowerShell script, relative to the repository root. AzureCliScript is its Azure CLI twin (the other tab of the page), run with -Route AzureCli;
 #                 absent when the page has none (or when the twin is only part of what the script does).
-#   ScriptOnPage  false when the page does not name the script (task 10 describes the steps by hand; the script does them; sdn-test runs Test-ArcSdn.ps1, which the page does not name yet).
+#   ScriptOnPage  false when the page does not name the script (sdn-test runs Test-ArcSdn.ps1, which the page does not name yet).
 #   Plan          WhatIf: Plan mode passes -WhatIf (the script reads Azure and the cluster and changes nothing).
 #                 Run: the script changes nothing at all and has no -WhatIf, so Plan runs it as it is (the SBE import plan only prints commands).
 #   NeedsCluster  true when the script connects to the machines: the orchestrator probes once, before the first step, that the cluster answers.
@@ -107,15 +107,15 @@
         @{
             Id = 'external-storage'; Task = 'task-10-enable-external-storage-hybrid'; Title = 'Attach the external SAN (hybrid S2D plus SAN)'
             Script = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1'
-            ScriptOnPage = $false
             Plan = 'WhatIf'; NeedsCluster = $true
             Applies = @(@{ Key = 'scenario.storage_architecture'; Is = 'hybrid' })
             Arguments = @(@{ Name = 'RollingRestart'; When = @{ Key = 'operations.post_cluster.allow_node_restarts'; Is = $true } })
         }
         @{
-            Id = 'sbe-import-plan'; Task = 'task-11-sbe-update-import'; Title = 'List the SBE files and print the import commands (changes nothing)'
+            Id = 'sbe-import-plan'; Task = 'task-11-sbe-update-import'; Title = 'Import the SBE files into the update service when an update needs them (Plan: print the commands)'
             Script = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1'
-            Plan = 'Run'; NeedsCluster = $false
+            Plan = 'WhatIf'; NeedsCluster = $true
+            Arguments = @(@{ Name = 'Execute' })
             Applies = @(
                 @{ Key = 'hardware.sbe.requirement'; IsNot = 'not_applicable' }
                 @{ Keys = @('hardware.sbe.source_path', 'hardware.sbe.bundle_path'); AnyNotEmpty = $true }

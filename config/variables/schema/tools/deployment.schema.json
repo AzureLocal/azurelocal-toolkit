@@ -1748,12 +1748,12 @@
                   }
                 },
                 "jumbo_packet": {
-                  "description": "Schema 5.6.10. Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). Use the same frame size on the whole iSCSI path. ARM iScsiNetworkConfig.adapterProperties.jumboPacket.",
+                  "description": "Schema 5.6.10. Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). Use the same frame size on the whole iSCSI path. ARM iScsiNetworkConfig.adapterProperties.jumboPacket. Since schema 5.6.38 the OS configuration (Mpio step, hybrid attachment of phase 06 task 10) also sets it on the iSCSI ports when the key is in the file; without the key the port keeps the frame size it has.",
                   "type": "integer",
                   "default": 1514
                 },
                 "networks": {
-                  "description": "Schema 5.6.10. The iSCSI networks, one per path. The iSCSI ports are dedicated physical ports outside the network intents; a port belongs to a path by its role iscsi:a or iscsi:b (nodes[].network_adapters[].roles). The iSCSI deployment reads this (ARM iScsiNetworkConfig.adapterIPConfig).",
+                  "description": "Schema 5.6.10. The iSCSI networks, one per path. Since 5.6.38 the OS configuration (Mpio step) also reads vlan_id, subnet and next_hop: the VLAN of an iSCSI port that has none of its own, the prefix length of a port that has none, and the next hop of the persistent /32 routes to the target portals. The iSCSI ports are dedicated physical ports outside the network intents; a port belongs to a path by its role iscsi:a or iscsi:b (nodes[].network_adapters[].roles). The iSCSI deployment reads this (ARM iScsiNetworkConfig.adapterIPConfig).",
                   "type": "array",
                   "items": {
                     "type": "object",

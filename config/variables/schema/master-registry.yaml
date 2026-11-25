@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.74
+# Version: 5.0.75
 # Schema: infrastructure.schema.json (generated from this file)
 # Last Updated: 2026-11-24
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.75 (2026-11-24):
+#     - External storage, hybrid (owner directive D151; infrastructure schema 5.6.38; the new keys are optional, so a file of any 5.6 version stays valid). New keys: storage.san.iscsi.qos.enabled and storage.san.iscsi.qos.priority (Learn step 3.5, opt-in, default off). The OS configuration (Mpio step) now also does Learn step 3 for a hybrid iSCSI attachment from keys the file already had: a static address and no default gateway on each iSCSI port (nodes[].network_adapters roles iscsi:a / iscsi:b), the frame size (storage.san.iscsi.jumbo_packet), the VLAN (the port's vlan_id and vlan_mode, else storage.san.iscsi.networks[].vlan_id), a persistent /32 route to every target portal (storage.san.iscsi.networks[].next_hop, else the portal itself) and the check that the port is outside Network ATC. Invoke-ExternalStorageHybrid-Orchestrated.ps1 reads operations.post_cluster.allow_node_restarts itself and runs Test-Cluster -Include Storage by default; Get-AzureLocalSbeImportPlan.ps1 imports the SBE files with -Execute.
 #   v5.0.74 (2026-11-24):
 #     - Network values come from the variables the file already has, not from typed copies (owner directive D150; infrastructure schema 5.6.37; no key added or removed, and every change is a relaxation, so a file of any 5.6 version stays valid). (1) sdn.prefix is optional with a derivation rule: when it is not set, Enable-ArcSdn.ps1 and Test-ArcSdn.ps1 (Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1) take cluster.name, make it lower case, remove every character that is not a letter or a digit and keep the first eight characters, then apply the Microsoft Learn prefix rules; the plan prints 'prefix (derived from cluster.name)' or 'prefix (sdn.prefix)'. (2) networking.network_security_groups[].rules[].source_address_prefixes and destination_address_prefixes accept, besides *, an IPv4 address or a CIDR, a reference to a network of the file: management (networking.management.subnet), oob, automation, compute or storage (every networking.vlans[] entry with that purpose), vlan:<name> (that VLAN's subnet) and logical-network:<name> (that logical network's address_prefix). New-NetworkSecurityGroup.ps1 and its Azure CLI twin, Set-NetworkSecurityGroupRule.azcli.ps1 and Test-NetworkSecurityGroupRule.azcli.ps1 replace the reference by the subnet (Resolve-AzlNsgAddressPrefix) and print which variable it came from; a reference the file cannot answer stops the script with exit 2. (3) operations.post_cluster.skip_steps takes the new value sdn-test: the step of Invoke-AzureLocalPostDeployment.ps1 that runs Test-ArcSdn.ps1 right after the sdn step when sdn.enabled is true.
 #   v5.0.73 (2026-11-24):
@@ -263,15 +265,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.74"
+  version: "5.0.75"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.37"
+  infrastructure_schema_version: "5.6.38"
   last_updated: "2026-11-24"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-24"
+      version: "5.0.75"
+      change: "External storage, hybrid (owner directive D151; infrastructure schema 5.6.38; the new keys are optional). New keys: storage.san.iscsi.qos.enabled and storage.san.iscsi.qos.priority. storage.san.iscsi.jumbo_packet and storage.san.iscsi.networks[] are now also read by the OS configuration (Mpio step): the iSCSI ports get a static address without a gateway, the frame size and VLAN when the file names them, persistent /32 routes to the target portals and a check that they are outside Network ATC (Learn step 3). Invoke-ExternalStorageHybrid-Orchestrated.ps1 reads operations.post_cluster.allow_node_restarts itself, runs Test-Cluster -Include Storage by default and prints the initiator identifiers of the nodes; Get-AzureLocalSbeImportPlan.ps1 gets -Execute, -WhatIf, -LogPath, -ComputerName and -Credential."
+      reason: "Owner directive D151: every post-deployment step is written, tested and runs from the registry keys, alone or together. Task 10 of phase 06 did not do Learn step 3 (the iSCSI network) and Task 11 only printed the import commands."
     - date: "2026-11-24"
       version: "5.0.74"
       change: "Network values come from the variables the file already has, not from typed copies (owner directive D150; infrastructure schema 5.6.37; no key added or removed, and every change is a relaxation, so a file of any 5.6 version stays valid). (1) sdn.prefix is optional with a derivation rule: when it is not set, Enable-ArcSdn.ps1 and Test-ArcSdn.ps1 (Resolve-AzlSdnPrefix in scripts/common/sdn/AzlSdn.psm1) take cluster.name, make it lower case, remove every character that is not a letter or a digit and keep the first eight characters, then apply the Microsoft Learn prefix rules; the plan prints 'prefix (derived from cluster.name)' or 'prefix (sdn.prefix)'. (2) networking.network_security_groups[].rules[].source_address_prefixes and destination_address_prefixes accept, besides *, an IPv4 address or a CIDR, a reference to a network of the file: management (networking.management.subnet), oob, automation, compute or storage (every networking.vlans[] entry with that purpose), vlan:<name> (that VLAN's subnet) and logical-network:<name> (that logical network's address_prefix). New-NetworkSecurityGroup.ps1 and its Azure CLI twin, Set-NetworkSecurityGroupRule.azcli.ps1 and Test-NetworkSecurityGroupRule.azcli.ps1 replace the reference by the subnet (Resolve-AzlNsgAddressPrefix) and print which variable it came from; a reference the file cannot answer stops the script with exit 2. (3) operations.post_cluster.skip_steps takes the new value sdn-test: the step of Invoke-AzureLocalPostDeployment.ps1 that runs Test-ArcSdn.ps1 right after the sdn step when sdn.enabled is true."
@@ -17210,19 +17216,45 @@ storage:
                   example: false
                   used_by: [deployment]
             jumbo_packet:
-              description: "Schema 5.6.10. Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). Use the same frame size on the whole iSCSI path. ARM iScsiNetworkConfig.adapterProperties.jumboPacket."
+              description: "Schema 5.6.10. Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). Use the same frame size on the whole iSCSI path. ARM iScsiNetworkConfig.adapterProperties.jumboPacket. Since schema 5.6.38 the OS configuration (Mpio step, hybrid attachment of phase 06 task 10) also sets it on the iSCSI ports when the key is in the file; without the key the port keeps the frame size it has."
               type: integer
               required: false
               default: 1514
               since: "5.6.10"
               example: 9014
-              used_by: [deployment]
+              used_by: [os_configuration, deployment]
+            qos:
+              description: "Schema 5.6.38. Optional QoS for the iSCSI traffic of a hybrid attachment (Microsoft Learn, Connect an external storage array to Azure Local, step 3.5: only when iSCSI shares Ethernet infrastructure with other traffic). With enabled true the OS configuration (Mpio step, run by phase 06 task 10) makes the three policies Learn lists when they are not there: iSCSI (TCP port 3260, priority 4 by default), CSV-LiveMigration (cluster, priority 3) and ClusterHeartbeat (UDP port 3343, priority 7). It does not change the ETS bandwidth reservation of the switches. Absent or enabled false: no QoS policy is made."
+              type: object
+              since: "5.6.38"
+              required: false
+              additionalProperties: false
+              used_by: [os_configuration]
+              properties:
+                enabled:
+                  description: "Schema 5.6.38. true to make the QoS policies of Learn step 3.5. Default false."
+                  type: boolean
+                  since: "5.6.38"
+                  required: false
+                  default: false
+                  example: false
+                  used_by: [os_configuration]
+                priority:
+                  description: "Schema 5.6.38. The 802.1p priority of the iSCSI policy (Learn: 4), 0 to 7. The CSV-LiveMigration (3) and ClusterHeartbeat (7) policies are fixed by Microsoft."
+                  type: integer
+                  since: "5.6.38"
+                  required: false
+                  minimum: 0
+                  maximum: 7
+                  default: 4
+                  example: 4
+                  used_by: [os_configuration]
             networks:
-              description: "Schema 5.6.10. The iSCSI networks, one per path. The iSCSI ports are dedicated physical ports outside the network intents; a port belongs to a path by its role iscsi:a or iscsi:b (nodes[].network_adapters[].roles). The iSCSI deployment reads this (ARM iScsiNetworkConfig.adapterIPConfig)."
+              description: "Schema 5.6.10. The iSCSI networks, one per path. Since 5.6.38 the OS configuration (Mpio step) also reads vlan_id, subnet and next_hop: the VLAN of an iSCSI port that has none of its own, the prefix length of a port that has none, and the next hop of the persistent /32 routes to the target portals. The iSCSI ports are dedicated physical ports outside the network intents; a port belongs to a path by its role iscsi:a or iscsi:b (nodes[].network_adapters[].roles). The iSCSI deployment reads this (ARM iScsiNetworkConfig.adapterIPConfig)."
               type: array
               required: false
               since: "5.6.10"
-              used_by: [deployment]
+              used_by: [os_configuration, deployment]
               items:
                 type: object
                 additionalProperties: false
@@ -17234,7 +17266,7 @@ storage:
                     enum: ["A", "B"]
                     since: "5.6.10"
                     example: "A"
-                    used_by: [deployment]
+                    used_by: [os_configuration, deployment]
                   vlan_id:
                     description: "VLAN of this iSCSI network, 0 to 4094. 0 means untagged (the switch port is an access port)."
                     type: integer
@@ -17244,21 +17276,21 @@ storage:
                     default: 0
                     since: "5.6.10"
                     example: 0
-                    used_by: [deployment]
+                    used_by: [os_configuration, deployment]
                   subnet:
                     description: "Subnet of this iSCSI network in CIDR form."
                     type: string
                     required: true
                     since: "5.6.10"
                     example: "198.51.100.0/24"
-                    used_by: [deployment]
+                    used_by: [os_configuration, deployment]
                   next_hop:
                     description: "Only when the target portals of this path are in another subnet: the router address on this network. The deployment then reaches each portal of the path through it. Leave it out when the portals are in the subnet: each portal is then sent as its own next hop, as in the template of Microsoft. The iSCSI ports never get a default gateway."
                     type: string
                     required: false
                     since: "5.6.10"
                     example: "198.51.100.1"
-                    used_by: [deployment]
+                    used_by: [os_configuration, deployment]
         infra_volume_lun_id:
           description: "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId."
           type: string
@@ -22586,10 +22618,22 @@ tools:
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1"
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. The master infrastructure.yml (schema 5)."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. The machine for the read only checks and for Test-Cluster, instead of the first node of nodes[] that answers."}
                 Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. The account for the remoting sessions to the nodes. Without it the account of the file is used (see above)."}
-                RollingRestart: {"name":"RollingRestart","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Restart the nodes one at a time (drain, restart, resume) after the MPIO step, as page step 6 asks, then run the MPIO step again."}
-                ValidateStorage: {"name":"ValidateStorage","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Run Test-Cluster -Include Storage on a node after the volumes are created (page step 9)."}
+                RollingRestart: {"name":"RollingRestart","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Restart the nodes one at a time (drain, restart, resume) after the MPIO step, as page step 6 asks, then run the MPIO step again. The file approves the same with operations.post_cluster.allow_node_restarts true; this switch approves it for one run."}
+                ValidateStorage: {"name":"ValidateStorage","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Kept for older callers: Test-Cluster -Include Storage runs by default now (page step 9), so this switch changes nothing."}
+                SkipStorageValidation: {"name":"SkipStorageValidation","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Leave Test-Cluster -Include Storage out (page step 9)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-enable-external-storage-hybrid/powershell/Invoke-ExternalStorageHybrid-Orchestrated.ps1","description":"Invoke-ExternalStorageHybrid-Orchestrated.ps1. Optional. Passed to the steps that take it; the progress lines of this script are appended to it. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_11_sbe_update_import_powershell_Get_AzureLocalSbeImportPlan_ps1_generated:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1"
+              properties:
+                Execute: {"name":"Execute","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Execute switch (no help text for this parameter)."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Computer name (no help text for this parameter)."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Credential (no help text for this parameter)."}
+                MaxWaitMinutes: {"name":"MaxWaitMinutes","type":"integer","declared_type":"int","default":"30","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Max wait minutes (no help text for this parameter)."}
+                PollSeconds: {"name":"PollSeconds","type":"integer","declared_type":"int","default":"30","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Poll seconds (no help text for this parameter)."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-11-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Log path (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_01_sdn_deployment_task_01_validate_sdn_prerequisites_powershell_Invoke_SdnPrerequisites_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-01-validate-sdn-prerequisites/powershell/Invoke-SdnPrerequisites-Orchestrated.ps1"
