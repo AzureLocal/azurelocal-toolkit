@@ -17,6 +17,9 @@
     Idempotent. A storage path that exists is reported as AlreadyExists and left alone (a different folder is reported; a storage path cannot be
     moved). -WhatIf changes nothing.
 
+    The check after (the validation of the guide page): a storage path that was just created is read back and must read Succeeded; an existing one in
+    the Failed or Canceled state is a failure (exit code 1), one still being made is reported.
+
     The script reads Azure (read only) and writes only with New-AzStackHCIVMStoragePath, behind -WhatIf. It does not sign in: run
     Connect-AzAccount to the tenant in azure.tenant_id first.
 
@@ -135,6 +138,10 @@ try {
             if ($existing) {
                 $row.Action = 'AlreadyExists'
                 Write-Line "[exists]  '$($plan.Name)' is already there, nothing changed."
+                # The validation of the guide page: the storage path reads Succeeded. A state that is not Succeeded is reported; Failed or Canceled fails the run.
+                $existingState = if ($existing.PSObject.Properties['ProvisioningState'] -and $existing.ProvisioningState) { [string]$existing.ProvisioningState } else { '' }
+                if ($existingState -in 'Failed', 'Canceled') { $row.Action = 'Failed'; $row.Detail = "The storage path is in the $existingState state. Delete it in the portal and run the script again." }
+                elseif ($existingState -and $existingState -ne 'Succeeded') { $row.Detail = "The storage path is $existingState, not Succeeded yet; run the script again later." }
                 $existingPath = if ($existing.PSObject.Properties['Path'] -and $existing.Path) { ([string]$existing.Path).TrimEnd('\') } else { '' }
                 # Azure Local keeps the files of a storage path in a folder it makes inside the folder asked for (<path>\<generated id>, seen on 2610), and reports that folder.
                 $existingParent = if ($existingPath -match '\\') { $existingPath.Substring(0, $existingPath.LastIndexOf('\')) } else { '' }
@@ -149,6 +156,11 @@ try {
                 $null = New-AzStackHCIVMStoragePath @arguments
                 $row.Action = 'Created'
                 Write-Line "[created] '$($plan.Name)' ($($plan.Path))."
+                # The check after: read it back; it must read Succeeded (a state the cmdlet does not report is not judged).
+                $back = $null
+                try { $back = Get-AzStackHCIVMStoragePath -Name $plan.Name -ResourceGroupName $group -SubscriptionId $subscriptionId -ErrorAction Stop } catch { Write-Verbose "The storage path could not be read back: $($_.Exception.Message)" }
+                $backState = if ($back -and $back.PSObject.Properties['ProvisioningState'] -and $back.ProvisioningState) { [string]$back.ProvisioningState } else { '' }
+                if ($backState -and $backState -ne 'Succeeded') { $row.Action = 'Failed'; $row.Detail = "The storage path was created but reads $backState, not Succeeded." }
             }
             else {
                 $row.Action = 'WouldCreate'

@@ -21,6 +21,10 @@
       3. sets the size of the CSV in-memory read cache when storage.csv.read_cache_size_mib is in the file;
       4. sets the thin provisioning alert threshold of the pool when storage.pool.thin_provisioning_alert_threshold_percent is in the file.
 
+      5. checks the result (the validation of the guide page, read only, also under -WhatIf for the volumes that exist): the pool is Healthy with
+         operational status OK, and every volume of the file has a Healthy virtual disk of the size (within 1 GiB or 1 percent), the provisioning type and the resiliency the file
+         says, and an Online cluster shared volume (rows 'check ...': Verified or Failed, and exit code 1 for a Failed one).
+
     A setting that is not in the file is not touched. The script never deletes, resizes or changes a volume that exists, never touches a volume the
     deployment made (Infrastructure_1, UserStorage_<n>) and refuses those names in the file.
 
@@ -165,6 +169,24 @@ $Remote = @{
             Set-ReFSDedupSchedule -Volume $Path -Start ([datetime]::Today.Add([timespan]::Parse($Schedule.StartTime))) -Days $Schedule.Days -Duration (New-TimeSpan -Hours $Schedule.Hours) -ErrorAction Stop
         }
     }
+    # Read only. The validation of the guide page: pool health, the virtual disks, the cluster shared volumes.
+    Verify      = {
+        param($Step, $PoolName)
+        $pool = Get-StoragePool -FriendlyName $PoolName -ErrorAction Stop
+        @{
+            PoolHealth      = [string]$pool.HealthStatus
+            PoolOperational = [string](@($pool.OperationalStatus) -join ',')
+            VirtualDisks    = @(Get-VirtualDisk -ErrorAction Stop | ForEach-Object {
+                    $disk = $_
+                    @{
+                        Name = [string]$disk.FriendlyName; Health = [string]$disk.HealthStatus; Operational = [string](@($disk.OperationalStatus) -join ',')
+                        Size = [long]$disk.Size; Provisioning = [string]$disk.ProvisioningType; Setting = [string]$disk.ResiliencySettingName; Redundancy = [int]$disk.PhysicalDiskRedundancy
+                        Tiers = @(Get-StorageTier -VirtualDisk $disk -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.ResiliencySettingName })
+                    }
+                })
+            Csvs            = @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } })
+        }
+    }
     SetCache    = { param($Step, $SizeMib) (Get-Cluster).BlockCacheSize = $SizeMib }
     SetThreshold = { param($Step, $PoolName, $Percent) Set-StoragePool -FriendlyName $PoolName -ThinProvisioningAlertThresholds $Percent -ErrorAction Stop }
 }
@@ -276,7 +298,7 @@ foreach ($volume in $volumeList) {
     }
     elseif ($null -ne $scheduleMap) { Exit-InputProblem "$at.deduplication.schedule is set but deduplication.type is none." }
 
-    $plans.Add([pscustomobject]@{ Name = $name; Parameters = $parameters; TierProvisioning = $tierProvisioning; Dedup = if ($dedupKey -ne 'none') { $DedupType[$dedupKey] } else { '' }; Schedule = $schedule; Summary = "$sizeGib GiB, $(if ($resiliency) { $resiliency } else { 'default resiliency' }), $fileSystem" })
+    $plans.Add([pscustomobject]@{ Name = $name; Parameters = $parameters; TierProvisioning = $tierProvisioning; Dedup = if ($dedupKey -ne 'none') { $DedupType[$dedupKey] } else { '' }; Schedule = $schedule; Summary = "$sizeGib GiB, $(if ($resiliency) { $resiliency } else { 'default resiliency' }), $fileSystem"; SizeBytes = $sizeBytes; Provisioning = $provisioningName; Resiliency = $resiliency; Rule = $rule })
 }
 
 # ---- the cluster as it is (read only)
@@ -350,6 +372,40 @@ foreach ($setting in $settings) {
         else { Add-Row $setting.Item 'WouldSet' "$($setting.Wanted) $($setting.Unit), is $($setting.Current)" }
     }
     catch { Add-Row $setting.Item 'Failed' $_.Exception.Message }
+}
+
+# ---- the check after (the validation of the guide page, read only; also under -WhatIf, for the volumes that exist): the pool is Healthy and OK, and each
+# volume of the file has a Healthy virtual disk and an Online cluster shared volume.
+$createdNow = @($rows | Where-Object { $_.Action -eq 'Created' } | ForEach-Object { $_.Item })
+$toCheck = @($plans | Where-Object { (@($state.Volumes) -contains $_.Name) -or ($createdNow -contains "volume $($_.Name)") })
+if ($toCheck.Count -gt 0) {
+    $check = $null
+    try { $check = Invoke-Cluster 'Verify' @($poolName) }
+    catch { Add-Row 'storage check' 'Failed' "the pool, the virtual disks and the cluster shared volumes could not be read on '$target': $($_.Exception.Message)" }
+    if ($check) {
+        $poolOk = ([string]$check['PoolHealth'] -eq 'Healthy' -and [string]$check['PoolOperational'] -eq 'OK')
+        Add-Row "check storage pool $poolName" $(if ($poolOk) { 'Verified' } else { 'Failed' }) "health $($check['PoolHealth']), operational status $($check['PoolOperational']); the page expects Healthy and OK"
+        foreach ($plan in $toCheck) {
+            $disk = @(@($check['VirtualDisks']) | Where-Object { [string]$_['Name'] -eq $plan.Name }) | Select-Object -First 1
+            $csv = @(@($check['Csvs']) | Where-Object { [string]$_['Name'] -eq "Cluster Virtual Disk ($($plan.Name))" }) | Select-Object -First 1
+            $problems = @()
+            if (-not $disk) { $problems += 'no virtual disk of that name' }
+            else {
+                if ([string]$disk['Health'] -ne 'Healthy') { $problems += "virtual disk health $($disk['Health']) ($($disk['Operational']))" }
+                # What the file asks for against what the volume is (a value the cluster did not report is not judged). The script never changes a volume that exists.
+                if ($null -ne $disk['Size'] -and [math]::Abs([long]$disk['Size'] - $plan.SizeBytes) -gt [math]::Max([double]1GB, 0.01 * $plan.SizeBytes)) { $problems += "size is $([math]::Round([long]$disk['Size'] / 1GB, 1)) GiB, the file says $([math]::Round($plan.SizeBytes / 1GB, 1)) GiB" }
+                if ($plan.Provisioning -and $disk['Provisioning'] -and [string]$disk['Provisioning'] -ne $plan.Provisioning) { $problems += "provisioning is $($disk['Provisioning']), the file says $($plan.Provisioning)" }
+                if ($plan.Rule.ContainsKey('Setting') -and $disk['Setting'] -and ([string]$disk['Setting'] -ne $plan.Rule.Setting -or ($null -ne $disk['Redundancy'] -and [int]$disk['Redundancy'] -ne $plan.Rule.Redundancy))) {
+                    $problems += "resiliency is $($disk['Setting']) with redundancy $($disk['Redundancy']), the file says $($plan.Resiliency) ($($plan.Rule.Setting) with redundancy $($plan.Rule.Redundancy))"
+                }
+                elseif ($plan.Rule.ContainsKey('Tiers') -and $plan.Rule.Tiers.Count -eq 2 -and @($disk['Tiers']).Count -gt 0 -and (@($disk['Tiers']) -notcontains 'Mirror' -or @($disk['Tiers']) -notcontains 'Parity')) {
+                    $problems += "the volume has the tiers $(@($disk['Tiers']) -join ', '), the file says $($plan.Resiliency) (a mirror and a parity tier)"
+                }
+            }
+            if (-not $csv) { $problems += 'not a cluster shared volume' } elseif ([string]$csv['State'] -ne 'Online') { $problems += "cluster shared volume state $($csv['State'])" }
+            Add-Row "check volume $($plan.Name)" $(if ($problems) { 'Failed' } else { 'Verified' }) $(if ($problems) { "$($problems -join '; '). The script does not change a volume that exists." } else { 'virtual disk Healthy, size, provisioning and resiliency as the file says, cluster shared volume Online' })
+        }
+    }
 }
 
 $rows

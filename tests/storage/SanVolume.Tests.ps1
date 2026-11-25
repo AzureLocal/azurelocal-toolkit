@@ -78,6 +78,7 @@ Describe 'New-SanVolume.ps1' {
                 'PrepareDisk' { @{ Number = 3 } }
                 'AddClusterDisk' { @{ Resource = [string]$ArgumentList[2] } }
                 'AddCsv' { @{ Path = "C:\ClusterStorage\$($ArgumentList[1])" } }
+                'VerifySan' { @{ MpioRead = $true; Disks = @(@($ArgumentList[1]) | ForEach-Object { @{ UniqueId = [string]$_; Health = 'Healthy'; Operational = 'OK'; Paths = 2 } }); Csvs = @(@($global:AzlSanState.Csvs) + @($global:AzlSanCalls | Where-Object Step -EQ 'AddCsv' | ForEach-Object { @{ Name = [string]$_.Arguments[0] } }) | ForEach-Object { @{ Name = [string]$_['Name']; State = 'Online' } }) } }
             }
         }
     }
@@ -89,7 +90,7 @@ Describe 'New-SanVolume.ps1' {
             $r.Rows[0].Action | Should -Be 'Created'
             $r.Rows[0].Detail | Should -Match 'GPT'
             $r.Rows[0].Detail | Should -Match 'NTFS, allocation unit 64 KB'
-            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'PrepareDisk', 'AddClusterDisk', 'AddCsv')
+            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'PrepareDisk', 'AddClusterDisk', 'AddCsv', 'VerifySan')
             $a = (Get-Call 'PrepareDisk')[0].Arguments
             $a[0] | Should -Be $script:IdA
             $a[1] | Should -Be 'Fibre Channel'
@@ -139,7 +140,8 @@ Describe 'New-SanVolume.ps1' {
             $global:AzlSanState.Disks = @((New-Disk $script:IdA -Number 3), (New-Disk $script:IdB -Number 4))
             $r = Invoke-San (New-InfraFile -Luns (New-Lun), (New-Lun @{ name = 'san-vol-02'; unique_id = $script:IdB }))
             $r.ExitCode | Should -Be 0 -Because $r.Text
-            @($r.Rows.Action) | Should -Be @('Created', 'Created')
+            @($r.Rows | Where-Object Item -NotLike 'check *').Action | Should -Be @('Created', 'Created')
+            @($r.Rows | Where-Object Item -Like 'check *').Action | Should -Be @('Verified', 'Verified')
             @((Get-Call 'PrepareDisk').ForEach({ $_.Arguments[0] })) | Should -Be @($script:IdA, $script:IdB)
         }
 
@@ -253,7 +255,7 @@ Describe 'New-SanVolume.ps1' {
             $r = Invoke-San (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Action | Should -Be 'AlreadyExists'
-            @($global:AzlSanCalls.Step) | Should -Be @('ReadState')
+            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'VerifySan')
         }
 
         It 'reports a CSV with another name and does not rename it (exit 1)' {
@@ -270,14 +272,14 @@ Describe 'New-SanVolume.ps1' {
             $r = Invoke-San (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Action | Should -Be 'AddedToCsv'
-            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'AddClusterDisk', 'AddCsv')
+            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'AddClusterDisk', 'AddCsv', 'VerifySan')
             (Get-Call 'AddClusterDisk')[0].Arguments | Should -Be @($script:IdA, 'san-vol-01', 'Cluster Disk 4')
         }
 
         It 'only adds the CSV when the cluster disk already has the right name' {
             $global:AzlSanState.Resources = @(@{ Name = 'san-vol-01'; Type = 'Physical Disk'; Group = 'Available Storage'; DiskIdGuid = $script:Guid })
             $null = Invoke-San (New-InfraFile)
-            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'AddCsv')
+            @($global:AzlSanCalls.Step) | Should -Be @('ReadState', 'AddCsv', 'VerifySan')
         }
 
         It 'does not touch a cluster disk that is in use in another cluster group (exit 1)' {

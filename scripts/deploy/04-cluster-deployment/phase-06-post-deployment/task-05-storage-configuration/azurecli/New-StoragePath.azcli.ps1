@@ -164,7 +164,7 @@ if ($extension.ExitCode -ne 0) { Exit-Failed 'The Azure CLI extension stack-hci-
 $rows = [System.Collections.Generic.List[object]]::new()
 function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
     $rows.Add([pscustomobject][ordered]@{ Item = $Item; Action = $Action; Detail = $Detail })
-    $tag = switch ($Action) { 'Failed' { '[failed]  ' } 'AlreadyExists' { '[exists]  ' } { $_ -like 'Would*' } { '[plan]    ' } default { '[created] ' } }
+    $tag = switch ($Action) { 'Failed' { '[failed]  ' } 'AlreadyExists' { '[exists]  ' } 'Info' { '[info]    ' } { $_ -like 'Would*' } { '[plan]    ' } default { '[created] ' } }
     Write-Line ("{0}{1}{2}" -f $tag, $Item, $(if ($Detail) { " ($Detail)" } else { '' }))
 }
 $common = @('--subscription', $subscriptionId, '--resource-group', $group)
@@ -182,6 +182,10 @@ foreach ($plan in $plans) {
                 Add-Row $item 'AlreadyExists' "differs from the file (the storage path points to $existingPath); left unchanged. A storage path cannot be moved: create one with another name."
             }
             else { Add-Row $item 'AlreadyExists' 'nothing changed' }
+            # The validation of the guide page: provisioningState Succeeded. Failed or Canceled is a failure; a state still moving is reported.
+            $existingState = [string](Get-Prop (ConvertFrom-AzJson $show.Output) @('properties', 'provisioningState'))
+            if ($existingState -in 'Failed', 'Canceled') { Add-Row "$item state" 'Failed' "the storage path is in the $existingState state. Delete it (az stack-hci-vm storagepath delete) and run the script again." }
+            elseif ($existingState -and $existingState -ne 'Succeeded') { Add-Row "$item state" 'Info' "$existingState, not Succeeded yet; run the script again later" }
         }
         elseif ($show.Detail -notmatch $NotFound) { throw "The lookup failed: $($show.Detail)" }
         elseif ($PSCmdlet.ShouldProcess("storage path '$($plan.Name)' in '$group'", "Create ($($plan.Path))")) {
@@ -190,6 +194,10 @@ foreach ($plan in $plans) {
             $result = Invoke-AzCli ($arguments + @('--output', 'none', '--only-show-errors'))
             if ($result.ExitCode -ne 0) { throw "The creation failed: $($result.Detail)" }
             Add-Row $item 'Created' $plan.Path
+            # The check after: read it back; it must read Succeeded (a read that fails, or a state not reported, is not judged).
+            $back = Invoke-AzCli (@('stack-hci-vm', 'storagepath', 'show') + $common + @('--name', $plan.Name, '--output', 'json', '--only-show-errors'))
+            $backState = if ($back.ExitCode -eq 0) { [string](Get-Prop (ConvertFrom-AzJson $back.Output) @('properties', 'provisioningState')) } else { '' }
+            if ($backState -and $backState -ne 'Succeeded') { Add-Row "$item state" 'Failed' "the storage path was created but reads $backState, not Succeeded" }
         }
         else { Add-Row $item 'WouldCreate' $plan.Path }
     }

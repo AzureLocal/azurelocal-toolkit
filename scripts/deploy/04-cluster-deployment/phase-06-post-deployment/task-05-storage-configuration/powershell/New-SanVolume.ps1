@@ -7,12 +7,16 @@
     the script connects to the cluster with PowerShell remoting and, for every LUN of storage.san.luns that is not a Cluster Shared Volume yet:
 
       1. finds the disk the LUN presents by its UniqueId (storage.san.luns[].unique_id), never by size or disk number;
+      1b. checks that every node of nodes[] sees the disk with that UniqueId (each node is rescanned with Update-HostStorageCache and read; Learn step 7: partial
+         presentation is not supported), and refuses the LUN when one node does not;
       2. checks, before it changes anything, that the disk is the right one (see Safety) and that MPIO reports it;
       3. brings the disk online and clears read-only;
       4. initializes it as GPT, creates one partition that uses the whole disk, and formats it NTFS with a 64 KB allocation unit
          (Microsoft Learn, Connect an external storage array to Azure Local, step 8: SAN volumes are GPT and NTFS; ReFS is not supported on a SAN LUN);
       5. adds the disk to the failover cluster and renames the cluster disk to storage.san.luns[].name;
-      6. adds it to Cluster Shared Volumes (step 9 of the same article).
+      6. adds it to Cluster Shared Volumes (step 9 of the same article);
+      7. checks the result (the SAN validation of the guide page, read only, also under -WhatIf for a LUN that is a CSV already): the disk is Healthy and the
+         cluster shared volume is Online (rows 'check LUN ...': Verified or Failed, and exit code 1 for a Failed one); fewer than two MPIO paths is a warning.
 
     This follows the Learn procedure with two differences. Learn adds every available disk with Get-ClusterAvailableDisk | Add-ClusterDisk; this script adds only
     the one disk it has checked (Add-ClusterDisk takes a single disk from Get-Disk, as its Example 3 shows), so a disk the file does not list can never be clustered
@@ -110,8 +114,15 @@ function ConvertTo-GuidKey($Value) { (([string]$Value) -replace '[{}\s]', '').To
 # PrepareDisk is the only one that writes to a disk. It looks at the disk again on the machine, because the state read earlier can be out of date, and it throws a
 # message that starts with REFUSED: before it writes anything when the disk is not the one the file describes or is not empty.
 $Remote = @{
+    # Read only (the rescan refreshes the host storage cache, as page step 1 asks): the SAN disks one node sees, by UniqueId. Run on every node of the file.
+    ReadDisks       = {
+        param($Step, $BusTypes)
+        Update-HostStorageCache -ErrorAction Stop
+        @{ Computer = [string]$env:COMPUTERNAME; UniqueIds = @(Get-Disk -ErrorAction Stop | Where-Object { [string]$_.BusType -in $BusTypes } | ForEach-Object { ([string]$_.UniqueId).Trim() }) }
+    }
     ReadState       = {
         param($Step)
+        Update-HostStorageCache -ErrorAction Stop
         $paths = @{}
         $mpioRead = $false
         try {
@@ -181,6 +192,21 @@ $Remote = @{
         else { $resource = @($found[0] | Add-ClusterDisk -ErrorAction Stop)[0] }
         if ([string]$resource.Name -ne $Name) { $resource.Name = $Name }
         @{ Resource = [string]$resource.Name }
+    }
+    # Read only. The SAN validation of the guide page: the health of each LUN disk, the MPIO path count, and the state of each CSV.
+    VerifySan       = {
+        param($Step, $UniqueIds)
+        $paths = @{}
+        try { foreach ($d in @((Get-CimInstance -Namespace root/wmi -ClassName MPIO_DISK_INFO -ErrorAction Stop).DriveInfo)) { $paths[([string]$d.SerialNumber).Trim()] = [int]$d.NumberPaths } }
+        catch { $paths = $null }
+        @{
+            MpioRead = ($null -ne $paths)
+            Disks    = @(Get-Disk -ErrorAction Stop | Where-Object { $UniqueIds -contains ([string]$_.UniqueId).Trim().ToLowerInvariant() } | ForEach-Object {
+                    $serial = ([string]$_.SerialNumber).Trim()
+                    @{ UniqueId = ([string]$_.UniqueId).Trim(); Health = [string]$_.HealthStatus; Operational = [string](@($_.OperationalStatus) -join ','); Paths = $(if ($paths -and $paths.ContainsKey($serial)) { [int]$paths[$serial] } else { 0 }) }
+                })
+            Csvs     = @(Get-ClusterSharedVolume -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; State = [string]$_.State } })
+        }
     }
     AddCsv          = {
         param($Step, $Name)
@@ -258,6 +284,13 @@ if (-not $readFrom) { Exit-Failed "The cluster '$target' did not say which machi
 $disks = @($state.Disks)
 $resources = @($state.Resources)
 $csvs = @($state.Csvs)
+# Page step 1: every node must see every LUN, with the same UniqueId (partial presentation is not supported). Each node of the file is rescanned and read.
+$peerView = [System.Collections.Generic.List[object]]::new()
+foreach ($fileNode in @(Get-AzlInfrastructureNode -Infrastructure $infra)) {
+    $address = if ($fileNode.ManagementIp) { $fileNode.ManagementIp } else { $fileNode.Name }
+    try { $view = Invoke-Cluster 'ReadDisks' @(, @($busType)) $address; $peerView.Add([pscustomobject]@{ Node = $fileNode.Name; Ids = @(@($view['UniqueIds']) | ForEach-Object { ([string]$_).ToLowerInvariant() }); Error = '' }) }
+    catch { $peerView.Add([pscustomobject]@{ Node = $fileNode.Name; Ids = @(); Error = $_.Exception.Message }) }
+}
 Write-Line "Seen from '$($state.Computer)': $($disks.Count) $busType disk(s), $(@($resources | Where-Object { $_.Type -eq 'Physical Disk' }).Count) cluster disk(s), $($csvs.Count) CSV(s)"
 
 $rows = [System.Collections.Generic.List[object]]::new()
@@ -299,6 +332,10 @@ foreach ($plan in $plans) {
         if ($plan.LunId -and [int]$disk.Lun -ge 0 -and [int]$disk.Lun -ne [int]$plan.LunId) { $problems.Add("the disk shows LUN $($disk.Lun), storage.san.luns[].lun_id is $($plan.LunId)") }
         if (-not $resource -and ([string]$disk.PartitionStyle -ne 'RAW' -or [int]$disk.Partitions -gt 0)) { $problems.Add("the disk has partition style $($disk.PartitionStyle) and $($disk.Partitions) partition(s); it is not empty") }
         $other = @($resources | Where-Object { $_.Name -eq $plan.Name -and (-not $resource -or $_.Name -ne $resource.Name) }) | Select-Object -First 1
+        foreach ($peer in $peerView) {
+            if ($peer.Error) { $problems.Add("node '$($peer.Node)' could not be read ($($peer.Error)), so it is not known that it sees the LUN") }
+            elseif ($peer.Ids -notcontains $plan.UniqueId.ToLowerInvariant()) { $problems.Add("node '$($peer.Node)' does not see a $busType disk with UniqueId $($plan.UniqueId) (present the LUN to every node and run Update-HostStorageCache; partial presentation is not supported)") }
+        }
         if ($other) { $problems.Add("the cluster already has a resource named '$($plan.Name)' that is not this disk") }
         if ($problems.Count) { Add-Row $item 'Refused' ("$($problems -join '; '). The disk is not initialized, formatted or changed."); continue }
         if ($disk.Paths -eq 1) { Write-Warning "$item : MPIO reports one path for disk #$($disk.Number). Azure Local expects redundant paths (two fabrics or two iSCSI networks)." }
@@ -341,6 +378,29 @@ foreach ($plan in $plans) {
         else { Add-Row $item $(if ($resource) { 'WouldAddToCsv' } else { 'WouldCreate' }) $summary }
     }
     catch { Add-Row $item 'Failed' $_.Exception.Message }
+}
+
+# ---- the check after (the SAN validation of the guide page, read only; also under -WhatIf, for the LUNs that are CSVs already): the disk is Healthy and the
+# cluster shared volume is Online (fewer than two MPIO paths is a warning, as it is before the change).
+$isCsvNow = @($plans | Where-Object { $name = $_.Name; @($rows | Where-Object { $_.Item -eq "LUN $name" -and $_.Action -in 'AlreadyExists', 'Created', 'AddedToCsv' }) })
+if ($isCsvNow.Count -gt 0) {
+    $check = $null
+    try { $check = Invoke-Cluster 'VerifySan' @(, @($isCsvNow | ForEach-Object { $_.UniqueId.ToLowerInvariant() })) $readFrom }
+    catch { Add-Row 'SAN check' 'Failed' "the disks and the cluster shared volumes could not be read on '$readFrom': $($_.Exception.Message)" }
+    if ($check) {
+        foreach ($plan in $isCsvNow) {
+            $disk = @(@($check['Disks']) | Where-Object { ([string]$_['UniqueId']) -ieq $plan.UniqueId }) | Select-Object -First 1
+            $csv = @(@($check['Csvs']) | Where-Object { [string]$_['Name'] -eq $plan.Name }) | Select-Object -First 1
+            $problems = @()
+            if (-not $disk) { $problems += 'the disk is not visible' }
+            else {
+                if ([string]$disk['Health'] -ne 'Healthy') { $problems += "disk health $($disk['Health']) ($($disk['Operational']))" }
+                if ($check['MpioRead'] -and [int]$disk['Paths'] -lt 2) { Write-Warning "check LUN $($plan.Name): MPIO reports $($disk['Paths']) path(s); the page expects 2 or more (two fabrics or two iSCSI networks)." }
+            }
+            if (-not $csv) { $problems += 'not a cluster shared volume' } elseif ([string]$csv['State'] -ne 'Online') { $problems += "cluster shared volume state $($csv['State'])" }
+            Add-Row "check LUN $($plan.Name)" $(if ($problems) { 'Failed' } else { 'Verified' }) $(if ($problems) { $problems -join '; ' } else { 'disk Healthy, cluster shared volume Online' })
+        }
+    }
 }
 
 $rows
