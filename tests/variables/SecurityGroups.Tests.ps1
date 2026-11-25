@@ -55,11 +55,20 @@ nodes:
     management:
       ip_address: 192.0.2.11
 '@ | Set-Content $cfg
-        $out = & pwsh -NoProfile -File $script:Task -InfrastructureFile $cfg -WhatIf -LogPath (Join-Path $TestDrive 'sg.log') 2>&1 | Out-String
+        # The plan reads the node (read only) and adds nothing: Invoke-Command is a fake that answers the read and counts the writes.
+        $global:AzlSgWrites = 0
+        Mock Invoke-Command {
+            if ([string]$ArgumentList[0] -eq 'AddMember') { $global:AzlSgWrites++; return 'Added' }
+            @{ Computer = 'n1'; Resolved = @{ 'IIC\sg-admins' = 'S-1-5-21-1-2-3-500' }; Members = @{ 'Administrators' = @() } }
+        }
+        $cred = [pscredential]::new('IIC\lcm', (ConvertTo-SecureString -String ([guid]::NewGuid().ToString()) -AsPlainText -Force))
+        $out = (& $script:Task -InfrastructureFile $cfg -Credential $cred -WhatIf -LogPath (Join-Path $TestDrive 'sg.log') 6>&1 3>&1 2>&1 | ForEach-Object { "$_" }) -join "`n"
         $out | Should -Match ([regex]::Escape('Will assign: IIC\sg-admins'))
         $out | Should -Match "Skipping 'sg-wac'"
         $out | Should -Match "Skipping 'sg-none'"
-        $out | Should -Match 'WhatIf complete'
+        $out | Should -Match 'WouldAdd'
+        $global:AzlSgWrites | Should -Be 0
+        Remove-Variable -Name AzlSgWrites -Scope Global -ErrorAction SilentlyContinue
     }
 
     It 'stops with exit code 2, before any remote call, when the file has no LCM user name and no -Credential is passed' {

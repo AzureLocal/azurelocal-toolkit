@@ -1,248 +1,218 @@
+<#
+.SYNOPSIS
+    Adds the Active Directory security groups of identity.active_directory.security_groups[] to the local groups of every cluster node
+    (Administrators, Remote Management Users, ...), from the local_groups of each entry. Idempotent. Checks the result.
+
+.DESCRIPTION
+    Phase 06 (post-deployment), Task 03 (security groups applied to nodes). Each entry of identity.active_directory.security_groups[] that lists
+    local_groups is added (as <netbios name>\<name>) to those local groups on every node of nodes[]. An entry with no local_groups is not applied to
+    the nodes (it is applied elsewhere, for example on a Windows Admin Center server). The groups must exist in Active Directory first (Phase 01
+    task 02).
+
+    It runs from a management host over PowerShell remoting, one node after the other, at the management address of the node (so NTLM works from a host
+    that is not in the domain). For every node:
+      1. reads (read only): the groups resolve on the node (a group that does not exist in the domain is a failure for that node, and nothing is
+         added there), and which of them are members of their local groups already;
+      2. adds each group that is not a member yet (Add-LocalGroupMember); a group that is a member is reported as AlreadyMember;
+      3. the check after (the validation of the guide page): reads the local groups again and confirms every group is in every local group the file
+         names. A group that is not confirmed fails the node.
+
+    Idempotent. -WhatIf does step 1 and shows what would be added; it adds nothing and does not read anything that changes.
+
+    The login for the nodes is -Credential, else the LCM account of the file (identity.active_directory.lcm_user, as <netbios name>\<user>; the
+    password is a secret reference read through scripts/common/secrets/AzlSecret.psm1). The script never asks. With neither, or without the domain
+    or the LCM user name, it stops with exit code 2 and nothing is changed (also under -WhatIf, because the plan reads the nodes).
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        identity.active_directory.netbios_name, identity.active_directory.security_groups[] (name, local_groups)
+        identity.active_directory.lcm_user (username, password)
+        nodes[].name, nodes[].management.ip_address
+
+    Exit codes: 0 every node is as the file says (done now, already so, or planned under -WhatIf); 1 a node failed (not reachable, a group not found or
+    not confirmed); 2 the file or the login is missing or not usable (nothing was changed).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required.
+
+.PARAMETER Credential
+    Optional. The account for the remoting to the nodes. Without it the LCM account of the file is used.
+
+.PARAMETER TargetNode
+    Optional. Limit the run to these nodes (node names of the file, or an address). Default: every node of the file.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
+
+.EXAMPLE
+    ./Invoke-ApplySecurityGroups-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
+
+    Reads the nodes and shows which groups would be added. Changes nothing.
+
+.EXAMPLE
+    ./Invoke-ApplySecurityGroups-Orchestrated.ps1 -InfrastructureFile ./infrastructure.yml
+
+    Adds the groups that are missing. Run it again: AlreadyMember.
+#>
 #Requires -Version 7.0
-# ==============================================================================
-# Script : Invoke-ApplySecurityGroups-Orchestrated.ps1
-# Purpose: Add AD security groups to local groups on every cluster node,
-#          driven by identity.active_directory.security_groups[].local_groups in
-#          infrastructure.yml. Skips entries where local_groups is empty
-#          (wac_admins, wac_users — those are applied on the WAC server only).
-# Run    : From management server — reads infrastructure.yml, uses PSRemoting
-# Prereqs: PSRemoting enabled on all nodes, infrastructure.yml accessible,
-#          powershell-yaml module installed
-# Login  : -Credential, else the LCM account of the file (identity.active_directory.lcm_user, the password a secret reference read
-#          through AzlSecret). The script never asks. With neither it stops with exit code 2.
-# Exit   : 0 done (or planned under -WhatIf); 1 a node failed; 2 the file or the login is missing or not usable (nothing was changed).
-# ==============================================================================
-
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][string]$InfrastructureFile,   # The master infrastructure.yml (schema 5)
-    [PSCredential]$Credential,     # The account for PSRemoting; without it the LCM account of the file is used
-    [string[]]$TargetNode = @(),   # Limit to specific nodes; empty = all nodes from config
-    [switch]$WhatIf,               # Dry-run — validate only, no changes
-    [string]$LogPath      = ""     # Override log file path
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [pscredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [string]$LogPath
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
+
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
-# ── Logging ───────────────────────────────────────────────────────────────────
-$scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
-$taskFolderName  = Split-Path (Split-Path $PSScriptRoot -Parent) -Leaf
-$logDir  = if ($LogPath -ne "") { Split-Path $LogPath -Parent } else { Join-Path (Get-Location).Path "logs\$taskFolderName" }
-$logFile = if ($LogPath -ne "") { $LogPath } else { Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd_HHmmss')_${scriptShortName}.log" }
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Get-Text([string]$Path) { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path)).Trim() }
 
-function Write-Log {
-    param([string]$Message, [string]$Level = "INFO")
-    $ts   = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $line = "[$ts] [$Level] $Message"
-    $line | Out-File -FilePath $script:logFile -Append -Encoding utf8
-    switch ($Level) {
-        "PASS"    { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
-        "FAIL"    { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
-        "WARN"    { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
-        "HEADER"  { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
-        "VERBOSE" { Write-Verbose "[$ts] $Message" }
-        "DEBUG"   { Write-Debug  "[$ts] $Message" }
-        default   { Write-Host "[$ts] [INFO] $Message" }
+# The commands that run on a node. Each takes the step name first, so one remoting call shape serves all of them (and a test can tell them apart).
+$Remote = @{
+    # Read only: does each group resolve on the node (to a SID), and who is in each local group.
+    ReadState = {
+        param($Step, $AdGroups, $LocalGroups)
+        $resolved = @{}
+        foreach ($group in @($AdGroups)) {
+            try { $resolved[[string]$group] = [string]([System.Security.Principal.NTAccount]::new([string]$group).Translate([System.Security.Principal.SecurityIdentifier])).Value }
+            catch { $resolved[[string]$group] = '' }
+        }
+        $members = @{}
+        foreach ($local in @($LocalGroups)) {
+            $list = @()
+            try { $list = @(Get-LocalGroupMember -Group ([string]$local) -ErrorAction Stop | ForEach-Object { @{ Name = [string]$_.Name; Sid = [string]$_.SID.Value } }) }
+            catch { $list = $null }
+            $members[[string]$local] = $list
+        }
+        @{ Computer = [string]$env:COMPUTERNAME; Resolved = $resolved; Members = $members }
+    }
+    # The only step that writes: adds one group to one local group (a member that is there already is not an error).
+    AddMember = {
+        param($Step, $LocalGroup, $AdGroup)
+        try { Add-LocalGroupMember -Group ([string]$LocalGroup) -Member ([string]$AdGroup) -ErrorAction Stop; 'Added' }
+        catch { if ($_.Exception.Message -match 'already a member') { 'AlreadyMember' } else { throw } }
     }
 }
+function Invoke-Node([string]$Computer, [string]$Step, [object[]]$Arguments = @()) {
+    Invoke-Command -ComputerName $Computer -Credential $script:remoteCredential -ScriptBlock $Remote[$Step] -ArgumentList (, $Step + $Arguments) -ErrorAction Stop
+}
 
-Write-Log "Invoke-ApplySecurityGroups-Orchestrated started"
-Write-Log "Log: $logFile"
+$rows = [System.Collections.Generic.List[object]]::new()
+function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
+    $rows.Add([pscustomobject][ordered]@{ Item = $Item; Action = $Action; Detail = $Detail })
+    $tag = switch -Wildcard ($Action) { 'Failed' { '[failed]  ' } 'Already*' { '[exists]  ' } 'Would*' { '[plan]    ' } default { '[done]    ' } }
+    Write-Line ("{0}{1}: {2}{3}" -f $tag, $Item, $Action, $(if ($Detail) { " ($Detail)" } else { '' }))
+}
 
-# ── Config loading ────────────────────────────────────────────────────────────
-try { $cfg = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
-catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" 'FAIL'; exit 2 }
-Write-Log "Loaded the infrastructure file: $InfrastructureFile"
-$script:SecretInfrastructure = $cfg
+Write-Line 'Invoke-ApplySecurityGroups-Orchestrated started'
 
-# ── Build the AD group -> local groups list ────────────────────────────────────
-# identity.active_directory.security_groups[] of infrastructure.yml: name, purpose, local_groups (registry 4.1.0).
-$domainNetbios = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.netbios_name'
-$sgValue       = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.security_groups'
-$sgConfig      = @(@($sgValue) | Where-Object { $null -ne $_ })
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+Write-Line "Loaded the infrastructure file: $InfrastructureFile"
 
-# Build assignment list: [ { AdGroup, LocalGroups } ... ] — skip where local_groups is empty
-$assignments = @()
-foreach ($group in $sgConfig) {
-    $key         = [string]$group['name']                                     # identity.active_directory.security_groups[].name
-    $localGroups = @($group['local_groups'] | Where-Object { $_ })            # identity.active_directory.security_groups[].local_groups
-    if ($localGroups.Count -eq 0) {
-        Write-Log "Skipping '$key' — local_groups is empty" 'WARN'
-        continue
-    }
-    $adGroupFqdn = "$domainNetbios\$key"
-    $assignments += [PSCustomObject]@{
-        Key         = $key
-        AdGroup     = $adGroupFqdn
-        LocalGroups = $localGroups
-    }
-    Write-Log "Will assign: $adGroupFqdn → [$($localGroups -join ', ')]"
+# identity.active_directory.security_groups[]: name, purpose, local_groups. An entry with no local_groups is not applied to the nodes.
+$domainNetbios = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.netbios_name')).Trim()
+$groupValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.security_groups'
+$groupList = @(@($groupValue) | Where-Object { $null -ne $_ })
+$assignments = [System.Collections.Generic.List[object]]::new()
+foreach ($group in $groupList) {
+    if ($group -isnot [System.Collections.IDictionary]) { continue }
+    $name = ([string]$group['name']).Trim()
+    $localGroups = @(@($group['local_groups']) | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    if ($localGroups.Count -eq 0) { Write-Warning "Skipping '$name' - local_groups is empty"; continue }
+    if (-not $name) { Exit-InputProblem 'An entry of identity.active_directory.security_groups has local_groups but no name.' }
+    if (-not $domainNetbios) { Exit-InputProblem 'identity.active_directory.netbios_name is missing. The groups are added as <netbios name>\<group name>.' }
+    $assignments.Add([pscustomobject]@{ Key = $name; AdGroup = "$domainNetbios\$name"; LocalGroups = $localGroups })
+    Write-Line "Will assign: $domainNetbios\$name -> [$($localGroups -join ', ')]"
 }
 if ($assignments.Count -eq 0) {
-    Write-Log "No groups with local_groups assignments found — nothing to do" 'WARN'
+    Write-Line 'No groups with local_groups assignments found - nothing to do'
     exit 0
 }
 
-# ── Determine target nodes ────────────────────────────────────────────────────
-# Use management_ip for PSRemoting so NTLM auth works from non-domain management machines.
-# Hostname-based Kerberos auth requires the management machine to be domain-joined.
-$nodes = if ($TargetNode.Count) {
-    $TargetNode
-} else {
-    Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.ManagementIp }    # nodes[].management.ip_address
-}
-
-Write-Log "Target nodes: $($nodes -join ', ')"
-
-# ── WhatIf guard ──────────────────────────────────────────────────────────────
-if ($WhatIf) {
-    foreach ($a in $assignments) {
-        Write-Log "[WhatIf] Would add '$($a.AdGroup)' to [$($a.LocalGroups -join ', ')] on: $($nodes -join ', ')" 'WARN'
+# ---- the nodes: management addresses (NTLM works from a host outside the domain)
+$fileNodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
+$targets = @(if ($TargetNode.Count -gt 0) {
+        foreach ($t in $TargetNode) {
+            $match = @($fileNodes | Where-Object { $_.Name -ieq $t.Trim() -or $_.ManagementIp -eq $t.Trim() } | Select-Object -First 1)
+            if ($match) { [pscustomobject]@{ Name = $match[0].Name; Address = $(if ($match[0].ManagementIp) { $match[0].ManagementIp } else { $match[0].Name }) } }
+            else { [pscustomobject]@{ Name = $t.Trim(); Address = $t.Trim() } }
+        }
     }
-    Write-Log "WhatIf complete — no changes made" 'WARN'
-    exit 0
+    else { $fileNodes | ForEach-Object { [pscustomobject]@{ Name = $_.Name; Address = $(if ($_.ManagementIp) { $_.ManagementIp } else { $_.Name }) } } })
+if ($targets.Count -eq 0) { Exit-InputProblem 'nodes[] is empty in the infrastructure file, and no -TargetNode was given.' }
+Write-Line "Target nodes: $(($targets | ForEach-Object { $_.Address }) -join ', ')"
+
+# ---- the login: -Credential, else the LCM account of the file. Nothing is asked.
+$remoteCredential = $Credential
+if (-not $remoteCredential) {
+    $lcmUser = Get-Text 'identity.active_directory.lcm_user.username'
+    $reference = Get-Text 'identity.active_directory.lcm_user.password'
+    if (-not $domainNetbios -or -not $lcmUser) { Exit-InputProblem 'No login: pass -Credential, or set identity.active_directory.netbios_name and identity.active_directory.lcm_user.username in the file.' }
+    if (-not $reference) { Exit-InputProblem 'No login: pass -Credential, or set identity.active_directory.lcm_user.username and password (a secret reference) in the file.' }
+    try { $secret = Get-AzlSecretValue -Reference $reference -Infrastructure $infra }
+    catch { Exit-InputProblem "The password of identity.active_directory.lcm_user could not be read: $($_.Exception.Message). Pass -Credential, or fix the secret reference." }
+    $account = if ($lcmUser -match '\\|@') { $lcmUser } else { "$domainNetbios\$lcmUser" }
+    $remoteCredential = [pscredential]::new($account, $secret)
+    Write-Line "Credentials resolved for '$account'."
 }
 
-# ── Credential resolution ─────────────────────────────────────────────────────
-function Resolve-KeyVaultRef {
-    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
-    # Returns a SecureString, or $null when it cannot be read; the caller then stops with exit code 2. No value is logged.
-    param([string]$KvUri)
-    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { Write-Log "  The value is not a secret reference." "WARN"; return $null }
+$adGroups = @($assignments | ForEach-Object { $_.AdGroup })
+$allLocalGroups = @($assignments | ForEach-Object { $_.LocalGroups } | Sort-Object -Unique)
+$readArguments = @(, $adGroups) + @(, $allLocalGroups)
+
+foreach ($target in $targets) {
+    $node = $target.Name
     try {
-        $value = Get-AzlSecretValue -Reference $KvUri -Infrastructure $script:SecretInfrastructure
-        Write-Log "  Secret retrieved." "PASS"
-        return $value
-    }
-    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" "WARN"; return $null }
-}
-
-# CREDENTIAL RESOLUTION ORDER:
-# 1. -Credential parameter (passed directly)
-# 2. The LCM account of the file (domain account for PSRemoting to domain-joined nodes); the password is a secret reference
-# Nothing is asked: with neither the script stops with exit code 2.
-if (-not $Credential) {
-    $netBios    = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.netbios_name'
-    $lcmUser    = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.username'
-    $lcmPassUri = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.password'
-    # Prefix with DOMAIN\ so NTLM resolves correctly when connecting via IP from a non-domain machine
-    $lcmUserFqn = "${netBios}\${lcmUser}"
-    Write-Log "Resolving LCM credentials from the secret reference..."
-    if ([string]::IsNullOrWhiteSpace([string]$netBios) -or [string]::IsNullOrWhiteSpace([string]$lcmUser)) {
-        Write-Log "No login: pass -Credential, or set identity.active_directory.netbios_name and identity.active_directory.lcm_user.username in the file." 'FAIL'
-        exit 2
-    }
-    $lcmPass = if ($lcmPassUri) { Resolve-KeyVaultRef -KvUri $lcmPassUri } else { $null }
-    if (-not $lcmPass) {
-        Write-Log "No login: pass -Credential, or set identity.active_directory.lcm_user.username and password (a secret reference) in the file." 'FAIL'
-        exit 2
-    }
-    $Credential = [pscredential]::new($lcmUserFqn, $lcmPass)
-    Write-Log "Credentials resolved for '$lcmUserFqn'." "PASS"
-}
-
-$credParam = @{ Credential = $Credential }
-
-$results = @()
-
-foreach ($node in $nodes) {
-    Write-Log "[$node] Applying security groups..."
-
-    try {
-        $nodeResult = Invoke-Command -ComputerName $node @credParam -ScriptBlock {
-        param($Assignments)
-
-        $log    = @()
-        $errors = @()
-
-        function Add-GroupMemberSafe {
-            param([string]$LocalGroup, [string]$Member)
-            try {
-                Add-LocalGroupMember -Group $LocalGroup -Member $Member -ErrorAction Stop
-                return "Added '$Member' to '$LocalGroup'"
-            } catch {
-                if ($_.Exception.Message -match 'already a member|is already a member') {
-                    return "'$Member' already in '$LocalGroup' — no change"
+        # 1. read (also under -WhatIf)
+        $state = Invoke-Node $target.Address 'ReadState' $readArguments
+        $resolved = $state['Resolved']
+        $members = $state['Members']
+        $unresolved = @($adGroups | Where-Object { -not $resolved[$_] })
+        if ($unresolved) {
+            Add-Row "$node groups" 'Failed' "not found in the domain (create them first, Phase 01 task 02): $($unresolved -join ', '). Nothing was added on this node."
+            continue
+        }
+        foreach ($a in $assignments) {
+            foreach ($local in $a.LocalGroups) {
+                $item = "$node $($a.AdGroup) in $local"
+                if ($null -eq $members[$local]) { Add-Row $item 'Failed' "the local group '$local' could not be read on the node"; continue }
+                $present = @($members[$local] | Where-Object { $_.Sid -eq $resolved[$a.AdGroup] -or $_.Name -ieq $a.AdGroup }).Count -gt 0
+                if ($present) { Add-Row $item 'AlreadyMember'; continue }
+                # 2. add
+                if ($PSCmdlet.ShouldProcess("$node ($($target.Address))", "Add $($a.AdGroup) to the local group $local")) {
+                    $null = Invoke-Node $target.Address 'AddMember' @($local, $a.AdGroup)
+                    Add-Row $item 'Added'
                 }
-                throw
+                else { Add-Row $item 'WouldAdd' }
             }
         }
-
-        $applied = @{}
-        foreach ($a in $Assignments) {
-            $ok = $true
-            foreach ($lg in $a.LocalGroups) {
-                try {
-                    $log += Add-GroupMemberSafe -LocalGroup $lg -Member $a.AdGroup
-                } catch {
-                    $errors += "[$($a.Key)] ${lg}: $($_.Exception.Message)"
-                    $ok = $false
+        # 3. the check after (not under -WhatIf: nothing was added)
+        if (-not $WhatIfPreference) {
+            $after = Invoke-Node $target.Address 'ReadState' $readArguments
+            $missing = foreach ($a in $assignments) {
+                foreach ($local in $a.LocalGroups) {
+                    $list = $after['Members'][$local]
+                    if ($null -eq $list -or @($list | Where-Object { $_.Sid -eq $after['Resolved'][$a.AdGroup] -or $_.Name -ieq $a.AdGroup }).Count -eq 0) { "$($a.AdGroup) in $local" }
                 }
             }
-            # Verify each local_group membership
-            $confirmed = @{}
-            foreach ($lg in $a.LocalGroups) {
-                $members = Get-LocalGroupMember -Group $lg -ErrorAction SilentlyContinue
-                $confirmed[$lg] = ($members | Where-Object { $_.Name -match [regex]::Escape($a.AdGroup) }).Count -gt 0
-            }
-            $applied[$a.Key] = [PSCustomObject]@{
-                AdGroup    = $a.AdGroup
-                Confirmed  = $confirmed
-                Errors     = ($errors | Where-Object { $_ -match $a.Key })
-            }
-        }
-
-        return [PSCustomObject]@{
-            Success  = ($errors.Count -eq 0)
-            Node     = $env:COMPUTERNAME
-            Applied  = $applied
-            Log      = $log
-            Errors   = $errors
-        }
-    } -ArgumentList (, $assignments)
-
-        foreach ($line in $nodeResult.Log)   { Write-Log "[$node] $line" }
-        foreach ($err  in $nodeResult.Errors) { Write-Log "[$node] $err" 'FAIL' }
-
-        foreach ($key in $nodeResult.Applied.Keys) {
-            $a = $nodeResult.Applied[$key]
-            foreach ($lg in $a.Confirmed.Keys) {
-                $status = if ($a.Confirmed[$lg]) { 'OK' } else { 'NOT CONFIRMED' }
-                Write-Log "[$node] $key → $lg : $status"
-            }
-        }
-
-        $results += [PSCustomObject]@{
-            Node    = $node
-            Status  = if ($nodeResult.Success) { 'Success' } else { 'Failed' }
-            Applied = $nodeResult.Applied
-            Errors  = $nodeResult.Errors -join '; '
-        }
-    } catch {
-        Write-Log "[$node] PSRemoting failed: $($_.Exception.Message)" 'FAIL'
-        $results += [PSCustomObject]@{
-            Node    = $node
-            Status  = 'Failed'
-            Applied = $null
-            Errors  = $_.Exception.Message
+            if ($missing) { Add-Row "$node check" 'Failed' "not confirmed in the local group after the run: $(@($missing) -join '; ')" }
+            else { Add-Row "$node check" 'Verified' 'every group is in every local group the file names' }
         }
     }
+    catch { Add-Row "$node" 'Failed' "PowerShell remoting failed: $($_.Exception.Message)" }
 }
 
-# ── Summary ───────────────────────────────────────────────────────────────────
-Write-Log "Security group application complete"
-$results | Format-Table Node, Status, Errors -AutoSize
-
-$failed = @($results | Where-Object Status -eq 'Failed')
-
-Write-Log "Invoke-ApplySecurityGroups-Orchestrated complete"
-$results
-if ($failed.Count -gt 0) {
-    Write-Log "$($failed.Count) node(s) failed — review log: $logFile" 'WARN'
-    exit 1
-}
+Write-Line 'Invoke-ApplySecurityGroups-Orchestrated complete'
+$rows
+if (@($rows | Where-Object Action -EQ 'Failed')) { exit 1 }
 exit 0
