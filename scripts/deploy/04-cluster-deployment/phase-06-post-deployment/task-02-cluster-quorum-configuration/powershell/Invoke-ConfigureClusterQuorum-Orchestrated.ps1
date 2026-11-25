@@ -33,6 +33,10 @@
 
     The access key is never printed, logged or returned. It goes to the node as a SecureString over the remoting session.
 
+    The check after (the validation of the guide page): once the witness is set, or found as the file says, the quorum is read again and the witness
+    resource must be Online (a row 'cluster quorum witness resource': Verified, or Failed with exit code 1). After -NoWitness the cluster must report no
+    witness. Under -WhatIf the cluster is read (and the state of an existing witness is checked) and nothing is set.
+
     -WhatIf reads Azure and the cluster and changes nothing: no account is created, no key is read, no quorum command runs.
 
     Sign-in and login. Azure: the script does not sign in; run Connect-AzAccount -Tenant <azure.tenant_id> first (only for a cloud witness). It
@@ -172,6 +176,14 @@ function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
     $tag = switch -Wildcard ($Action) { 'Failed' { '[failed]  ' } 'Already*' { '[exists]  ' } 'Would*' { '[plan]    ' } default { '[done]    ' } }
     Write-Line ("{0}{1}: {2}{3}" -f $tag, $Item, $Action, $(if ($Detail) { " ($Detail)" } else { '' }))
 }
+# The check after the witness is set (or found as the file says): the page validates that the witness resource is Online. A state the cluster does
+# not report is not judged; a state other than Online is a failure.
+function Add-WitnessStateRow($Quorum) {
+    $resourceState = [string]$Quorum.ResourceState
+    if (-not $resourceState) { return }
+    if ($resourceState -eq 'Online') { Add-Row 'cluster quorum witness resource' 'Verified' "Online ($($Quorum.ResourceName))" }
+    else { Add-Row 'cluster quorum witness resource' 'Failed' "the witness resource '$($Quorum.ResourceName)' is $resourceState, not Online. Check that the nodes reach the witness (TCP 443 to the storage account, or the share) and the storage account firewall." }
+}
 # Puts the Azure context back as it was, writes the rows and ends the run: exit 1 when a row failed.
 function Complete-Run {
     if ($script:originalContext -and $script:originalContext.PSObject.Properties['Subscription'] -and $script:originalContext.Subscription -and $script:originalContext.Subscription.PSObject.Properties['Id']) {
@@ -305,7 +317,7 @@ try {
         'cloud' {
             # The same account and, when the cluster reports it and the account is known, the same endpoint (a sovereign cloud has another suffix).
             $same = $haveType -eq $CloudWitnessType -and $state.AccountName -ieq $accountName -and (-not $endpoint -or -not $haveEndpoint -or $haveEndpoint -ieq $endpoint)
-            if ($same -and -not $UpdateAccessKey) { Add-Row $quorumItem 'AlreadyConfigured' "cloud witness on '$accountName'"; break }
+            if ($same -and -not $UpdateAccessKey) { Add-Row $quorumItem 'AlreadyConfigured' "cloud witness on '$accountName'"; Add-WitnessStateRow $state; break }
             $why = if ($same) { "set the cloud witness on '$accountName' again with $AccessKeyName" } else { "replace $current with a cloud witness on '$accountName' ($AccessKeyName)" }
             if (-not $storage) { Add-Row $quorumItem 'WouldConfigure' "$why, after the account is created"; break }
             if (-not $endpoint) { throw "The blob endpoint of '$accountName' could not be read, so the endpoint of the witness is not known." }
@@ -319,17 +331,19 @@ try {
                 $after = Invoke-Node $target 'ReadQuorum'
                 if ([string]$after.ResourceType -ne $CloudWitnessType -or $after.AccountName -ine $accountName) { throw "Set-ClusterQuorum finished, but the witness reads '$($after.ResourceType)' on '$($after.AccountName)'." }
                 Add-Row $quorumItem 'Configured' "cloud witness on '$accountName' ($AccessKeyName, endpoint $endpoint), resource state $($after.ResourceState)"
+                Add-WitnessStateRow $after
             }
             else { Add-Row $quorumItem 'WouldConfigure' $why }
         }
         'file_share' {
-            if ($haveType -eq $FileShareWitnessType -and $state.SharePath.TrimEnd('\') -ieq $sharePath.TrimEnd('\')) { Add-Row $quorumItem 'AlreadyConfigured' "file share witness '$sharePath'"; break }
+            if ($haveType -eq $FileShareWitnessType -and $state.SharePath.TrimEnd('\') -ieq $sharePath.TrimEnd('\')) { Add-Row $quorumItem 'AlreadyConfigured' "file share witness '$sharePath'"; Add-WitnessStateRow $state; break }
             $why = "replace $current with the file share witness '$sharePath'"
             if ($PSCmdlet.ShouldProcess("cluster of '$target'", "Set-ClusterQuorum -FileShareWitness: $why")) {
                 Invoke-Node $target 'SetFileShare' @($sharePath) | Out-Null
                 $after = Invoke-Node $target 'ReadQuorum'
                 if ([string]$after.ResourceType -ne $FileShareWitnessType) { throw "Set-ClusterQuorum finished, but the witness reads '$($after.ResourceType)'." }
                 Add-Row $quorumItem 'Configured' "file share witness '$sharePath', resource state $($after.ResourceState)"
+                Add-WitnessStateRow $after
             }
             else { Add-Row $quorumItem 'WouldConfigure' $why }
         }
@@ -338,6 +352,8 @@ try {
             Write-Warning "cluster.witness.type is none: the witness ($current) is removed. Microsoft Learn strongly recommends a witness for three or four machines."
             if ($PSCmdlet.ShouldProcess("cluster of '$target'", "Set-ClusterQuorum -NoWitness (remove $current)")) {
                 Invoke-Node $target 'SetNone' | Out-Null
+                $after = Invoke-Node $target 'ReadQuorum'
+                if ([string]$after.ResourceType) { throw "Set-ClusterQuorum -NoWitness finished, but the cluster still has the witness '$($after.ResourceType)'." }
                 Add-Row $quorumItem 'Configured' "no witness (was $current)"
             }
             else { Add-Row $quorumItem 'WouldConfigure' "remove $current" }
