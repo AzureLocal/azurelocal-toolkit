@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.38"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "full"
   # Your own version of this file.
@@ -139,7 +139,7 @@ azure:
     # Resource group that holds the identity.
     # used by: cicd_infra
     resource_group: "rg-iic-devops-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Roles of the automation identity at resource group scope, assigned by the Terraform identity module (the subscription roles are devops.auth...
     # used by: terraform
     resource_group_roles:
       # Name of the resource group.
@@ -164,35 +164,35 @@ key_vaults:
     # What the vault holds, for example management, deployment or backup.
     # used by: cicd_infra, trailwright, loadtools
     purpose: "management"
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview).
     # default: 90; used by: deployment, terraform
     soft_delete_retention_days: 90
-    # (since 5.6.28) 
+    # (since 5.6.28) Public IP addresses or CIDR ranges that may reach the vault.
     # used by: terraform
     allowed_ip_ranges: ["198.51.100.0/24"]
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) The provider New-AzlSecretReference uses for a new reference when the caller does not name one.
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -303,10 +303,10 @@ deployment:
   verification_max_clock_skew_seconds: 300
   # Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run look...
   # used by: deployment, monitoring
-  pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
-  # (since 5.6.29) 
+  pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\arm-report\\verification\\live"
+  # (since 5.6.29) The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-...
   # used by: os_configuration, deployment, monitoring, trailwright
-  events_directory: "D:\\Data\\azl-events\\iic-clus01"
+  events_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\events"
   # Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment...
   # default: false; used by: deployment
   register_resource_providers: false
@@ -422,7 +422,7 @@ nodes:
       # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
       ip_address: "198.51.100.11"
-      # (since 5.6.35) 
+      # (since 5.6.35) MAC address of the BMC's own network port (Redfish Manager EthernetInterface): the key of the DHCP reservation that gives the BMC its ip_ad...
       # used by: discovery
       mac_address: "00:00:5E:00:53:F1"
       # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
@@ -456,14 +456,14 @@ nodes:
     # used by: ztp, os_configuration
     bios:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provi...
     # used by: ztp, os_configuration
     bios_during_provisioning:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is kno...
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
-    # (since 5.3) 
+    # (since 5.3) This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storag...
     # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
@@ -472,16 +472,16 @@ nodes:
         # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
         # required; used by: ztp, deployment
         - slot: "Slot 2"
-          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or...
+          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offloa...
           # one of: fibre_channel | iscsi_offload; default: "fibre_channel"; used by: ztp, deployment
           type: "fibre_channel"
-          # (since 5.4) 
+          # (since 5.4) The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it.
           # used by: ztp, deployment
           bios_attribute: ""
-          # (since 5.4) 
+          # (since 5.4) The value of bios_attribute that turns the slot off for the OS install.
           # used by: ztp, deployment
           bios_disabled_value: "example"
-          # (since 5.4) 
+          # (since 5.4) The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crash...
           # used by: ztp, deployment
           bios_enabled_value: "example"
           # Model of the host bus adapter, as the machine reports it.
@@ -534,38 +534,38 @@ hardware:
     # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
     # required; used by: ztp, discovery, trailwright, ranger
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
-    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...
+    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtu...
     # used by: ztp, discovery
     rfs_write_attribute: true
-    # (since 5.4) 
+    # (since 5.4) Check the BMCs' TLS certificates.
     # default: false; used by: ztp, discovery, trailwright
     verify_certificate: false
-  # (since 5.6.14) 
+  # (since 5.6.14) Where Get-HardwareInventory.ps1 writes the hardware inventory it reads from the BMCs, in which format, and how long it waits for a BMC.
   # used by: discovery
   inventory:
-    # (since 5.6.14) 
+    # (since 5.6.14) The folder the inventory file is written to.
     # default: "hardware-inventory"; used by: discovery
     output_directory: "C:\\ProgramData\\iic-hardware-inventory"
-    # (since 5.6.14) 
+    # (since 5.6.14) The start of the file name.
     # default: "hardware-inventory"; used by: discovery
     file_name_prefix: "iic-azl-hardware"
-    # (since 5.6.14) 
+    # (since 5.6.14) The format of the inventory file: json or yaml.
     # one of: json | yaml; default: "json"; used by: discovery
     format: "json"
-    # (since 5.6.14) 
+    # (since 5.6.14) How long the script waits for one answer of a BMC, in seconds.
     # default: 60; used by: discovery
     timeout_seconds: 120
-  # (since 5.6.34) 
+  # (since 5.6.34) Where the hardware discovery (Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1) writes what it finds, so the dis...
   # used by: discovery, monitoring, beacon
   discovery:
-    # (since 5.6.34) 
+    # (since 5.6.34) The folder the discovery results (the Redfish inventory and the write-back report) are written to; it is created when it is missing.
     # used by: discovery, monitoring, beacon
     output_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence\\discovery"
   # BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios i...
   # used by: ztp
   bios:
     example_name: "value"
-  # (since 5.3) 
+  # (since 5.3) BIOS attributes that hold for the OS install only: TEMPORARY values.
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
@@ -678,7 +678,7 @@ hardware:
       # Size of one capacity drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 3.84
-      # (since 5.6.35) 
+      # (since 5.6.35) Model of the capacity drives, as the BMC reports it (Redfish Drive Model).
       # used by: discovery, trailwright
       model: "Example NVMe 3.84TB"
     # The cache drives in each machine (Storage Spaces Direct).
@@ -692,22 +692,22 @@ hardware:
       # Size of one cache drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 0
-      # (since 5.6.35) 
+      # (since 5.6.35) Model of the cache drives, as the BMC reports it (Redfish Drive Model).
       # used by: discovery, trailwright
       model: "Example NVMe 3.84TB"
-  # (since 5.6.35) 
+  # (since 5.6.35) The OS boot drives of every machine, for example a Dell BOSS card (two M.2 drives in RAID 1).
   # used by: discovery
   boot_drives:
     # (since 5.6.35) boss (a Dell BOSS card), raid (drives in a RAID volume of another controller), single (one drive, no RAID) or other.
     # one of: boss | raid | single | other; used by: discovery
     type: "boss"
-    # (since 5.6.35) 
+    # (since 5.6.35) Number of boot drives in each machine.
     # used by: discovery
     count: 2
-    # (since 5.6.35) 
+    # (since 5.6.35) Size of one boot drive in GB (decimal gigabytes, as drives are sold).
     # used by: discovery
     size_gb: 960
-    # (since 5.6.35) 
+    # (since 5.6.35) Model of the boot drives, as the BMC reports it.
     # used by: discovery
     model: "Example M.2 960GB"
 
@@ -746,10 +746,10 @@ networking:
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
     # one of: dhcp | static; default: "dhcp"; used by: ztp, os_configuration, trailwright
     provisioning_network: "dhcp"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (d...
     # one of: device | site; default: "device"; used by: ztp, os_configuration
     static_method: "device"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on).
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
       # First address of the DHCP pool of the provisioning network.
@@ -859,7 +859,7 @@ networking:
         # Needed when auto_ip is false.
         # used by: os_configuration, deployment, trailwright
         subnet: "192.0.2.0/24"
-  # (since 5.6.10) 
+  # (since 5.6.10) Disaggregated (SAN) only: the adapter properties of the cluster networks (ARM sanNetworkList.clusterNetworkConfig.adapterProperties).
   # when scenario.storage_architecture is san; used by: deployment
   cluster_network_properties:
     # Share of the bandwidth reserved for SMB traffic (CSV and live migration), 1 to 97 percent.
@@ -949,7 +949,7 @@ networking:
         # Last address of that pool.
         # required; used by: deployment, trailwright
         end: "203.0.113.200"
-  # (since 5.6.11) 
+  # (since 5.6.11) Network security groups (NSG) for Azure Local virtual machines and logical networks, with their rules.
   # used by: deployment
   network_security_groups:
     # Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit an...
@@ -1078,19 +1078,19 @@ identity:
     # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
     # used by: deployment
     dns_secure_dynamic_updates: false
-    # (since 5.6.23) 
+    # (since 5.6.23) Whether Set-ADConfiguration.ps1 creates the computer objects of the machines (nodes[].name) and of the cluster (cluster.name) in the OU bef...
     # default: false; used by: deployment, ansible
     precreate_computer_objects: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Whether Set-ADConfiguration.ps1 creates the parent OUs of ou_path that are missing, from the domain down, before it runs New-HciAdObjectsPr...
     # default: false; used by: deployment
     create_parent_ous: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry...
     # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
     forest_functional_level: "WinThreshold"
-    # (since 5.6.28) 
+    # (since 5.6.28) Domain functional level of that new forest's domain.
     # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
     domain_functional_level: "WinThreshold"
-    # (since 5.6.28) 
+    # (since 5.6.28) The DNS forwarders of the domain controllers that the toolkit's Ansible domain controller role promotes: the servers they ask for names out...
     # used by: ansible
     dns_forwarders: ["192.0.2.53"]
     # Groups created in the OU for administration of the instance.
@@ -1113,7 +1113,7 @@ storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
   # one of: express | infra_only | keep_storage; default: "express"; used by: deployment, trailwright
   configuration_mode: "express"
-  # (since 5.6.9) 
+  # (since 5.6.9) The Storage Spaces Direct pool of the instance.
   # used by: deployment
   pool:
     # Name of the storage pool the volumes are created in.
@@ -1122,7 +1122,7 @@ storage:
     # Share of the pool, in percent, at which Azure Local raises the thin provisioning alert (Set-StoragePool -ThinProvisioningAlertThresholds).
     # used by: deployment
     thin_provisioning_alert_threshold_percent: 70
-  # (since 5.6.9) 
+  # (since 5.6.9) Cluster shared volume settings of the instance.
   # used by: deployment
   csv:
     # Memory per machine, in MiB, for the CSV in-memory read cache (the cluster property BlockCacheSize).
@@ -1143,16 +1143,16 @@ storage:
       # (since 5.6.9) thin (space is taken from the pool as data is written) or fixed (all space is taken when the volume is created).
       # one of: thin | fixed; used by: deployment, trailwright
       provisioning_type: "thin"
-      # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or...
+      # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or ntfs.
       # one of: refs | ntfs; default: "refs"; used by: deployment
       file_system: "refs"
-      # (since 5.6.9) 
+      # (since 5.6.9) Only for mirror_accelerated_parity and nested_mirror_accelerated_parity: the share of the volume, in percent, that is parity; the rest is m...
       # default: 80; used by: deployment
       parity_percent: 80
       # (since 5.6.9) ssd or hdd: the capacity drives the volume goes on, when the machines have both kinds.
       # one of: ssd | hdd; used by: deployment
       media_type: "ssd"
-      # (since 5.6.9) 
+      # (since 5.6.9) ReFS deduplication and compression of the volume.
       # used by: deployment
       deduplication:
         # none (the default: the script does not touch deduplication), dedup, compress or dedup_and_compress (Enable-ReFSDedup -Type).
@@ -1170,7 +1170,7 @@ storage:
           # The longest one run may take, in hours.
           # used by: deployment
           duration_hours: 4
-  # (since 5.6.9) 
+  # (since 5.6.9) The Azure Local storage paths to create after deployment: the Azure resources that say where on a cluster shared volume the virtual machine...
   # used by: deployment
   paths:
     # Name of the storage path resource: 3 to 64 letters, digits or hyphens.
@@ -1179,7 +1179,7 @@ storage:
       # The folder on a cluster shared volume, for example C:\ClusterStorage\vol-workloads-01\vms for a volume of storage.volumes, or the folder of...
       # required; used by: deployment, loadtools
       path: "C:\\ClusterStorage\\vol-workloads-01\\vms"
-  # (since 5.6.11) 
+  # (since 5.6.11) The Azure Marketplace images to download to the instance as Azure Local VM images (Learn: Create Azure Local VM image using Azure Marketpla...
   # used by: deployment
   vm_images:
     # Name of the VM image resource, 1 to 80 characters: letters, digits, hyphen, period and underscore; it starts and ends with a letter or digi...
@@ -1191,7 +1191,7 @@ storage:
       # Publisher of the Marketplace image, as Learn's table gives it (lowercase).
       # required; used by: deployment
       publisher: "microsoftwindowsserver"
-      # Offer of the Marketplace image.
+      # Offer of the Marketplace image, lowercase.
       # required; used by: deployment
       offer: "windowsserver"
       # SKU of the Marketplace image.
@@ -1209,7 +1209,7 @@ storage:
     # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment, trailwright
     type: "fibre_channel"
-    # (since 5.3) 
+    # (since 5.3) The storage array that presents the LUNs.
     # used by: os_configuration, deployment
     array:
       # The array's name, for example its hostname in the array manager.
@@ -1223,7 +1223,7 @@ storage:
       model: "example"
       # The array's management address.
       management_address: "192.0.2.10"
-    # (since 5.3) 
+    # (since 5.3) Used when type is fibre_channel: the fabrics and the array's target ports, for zoning.
     # used by: deployment
     fibre_channel:
       # The Fibre Channel fabrics, for example A and B.
@@ -1245,7 +1245,7 @@ storage:
           # A name in fabrics.
           # required; used by: deployment
           fabric: "example"
-    # (since 5.3) 
+    # (since 5.3) Used when type is iscsi: the array's targets and CHAP.
     # used by: os_configuration, deployment
     iscsi:
       # The array's iSCSI targets.
@@ -1275,19 +1275,19 @@ storage:
         # (since 5.6.10) true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay).
         # default: false; used by: deployment
         mutual: false
-      # (since 5.6.10) 
+      # (since 5.6.10) Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
       # default: 1514; used by: os_configuration, deployment
       jumbo_packet: 9014
-      # (since 5.6.38) 
+      # (since 5.6.38) Optional QoS for the iSCSI traffic of a hybrid attachment (Microsoft Learn, Connect an external storage array to Azure Local, step 3.5: onl...
       # used by: os_configuration
       qos:
         # (since 5.6.38) true to make the QoS policies of Learn step 3.5.
         # default: false; used by: os_configuration
         enabled: false
-        # (since 5.6.38) 
+        # (since 5.6.38) The 802.1p priority of the iSCSI policy (Learn: 4), 0 to 7.
         # default: 4; used by: os_configuration
         priority: 4
-      # (since 5.6.10) 
+      # (since 5.6.10) The iSCSI networks, one per path.
       # used by: os_configuration, deployment
       networks:
         # The path: A for the ports with the role iscsi:a, B for iscsi:b.
@@ -1314,7 +1314,7 @@ storage:
       # Name of the LUN.
       # required; used by: deployment, trailwright
       - name: "iic-san-vol-01"
-        # (since 5.6.16) 
+        # (since 5.6.16) The UniqueId of the disk this LUN shows on the machines, as Get-Disk reports it (Learn: Connect an external storage array to Azure Local, s...
         # used by: deployment
         unique_id: "60000000000000000000000000000001"
         # Size of the LUN in GiB (binary units, as Windows counts).
@@ -1350,18 +1350,18 @@ security:
   # true turns Windows Defender Application Control on.
   # default: true; used by: deployment, trailwright
   wdac: true
-  # (since 5.6.21) 
+  # (since 5.6.21) Individual security baseline settings to change after the deployment, by Set-AzsSecurity (Azure Local 2610 or later).
   baseline_settings:
-    # (since 5.6.21) 
+    # (since 5.6.21) The policy type that owns the setting (the -Type parameter of Set-AzsSecurity): SecuritySettings (the OS security baseline: registry, secur...
     # required; one of: SecuritySettings | SecuredCore | DefenderAntivirus
     - type: "SecuritySettings"
-      # (since 5.6.21) 
+      # (since 5.6.21) The name of the setting exactly as the Name column of the security baseline CSV writes it (-SettingName); the cmdlet does not complete or c...
       # required
       name: "LanmanWorkstationEnableInsecureGuestLogons"
-      # (since 5.6.21) 
+      # (since 5.6.21) The value to set: a string, an integer (sent as a string) or a list of strings.
       # required
       value: "1"
-      # (since 5.6.21) true confirms that you understand a change that weakens the security posture, for the few settings where Set-AzsSecurity sho...
+      # (since 5.6.21) true confirms that you understand a change that weakens the security posture, for the few settings where Set-AzsSecurity shows a warning an...
       # default: false
       acknowledge_weaker_security: false
   # The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal.
@@ -1375,10 +1375,10 @@ security:
     # Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolon...
     # used by: terraform
     security_contact_email: "security@improbability.cloud"
-    # (since 5.6.28) 
+    # (since 5.6.28) Defender for Cloud sends security_contact_email the security alerts.
     # default: true; used by: terraform
     alert_notifications: true
-    # (since 5.6.28) 
+    # (since 5.6.28) Defender for Cloud sends the security alerts to the subscription owners too.
     # default: true; used by: terraform
     alerts_to_admins: true
   # What the cluster sends to Microsoft as diagnostic data. streaming_data, episodic_data_upload and eu_location are deployment settings (the A...
@@ -1393,7 +1393,7 @@ security:
     # true keeps the diagnostic data in the EU data boundary.
     # default: false; used by: deployment, trailwright
     eu_location: false
-    # (since 5.6.32) 
+    # (since 5.6.32) The desired level of diagnostic data the Azure Local instance sends to Microsoft: Off, Basic or Enhanced (the desiredProperties.diagnosticL...
     # one of: Off | Basic | Enhanced
     diagnostic_level: "Enhanced"
 
@@ -1420,7 +1420,7 @@ operations:
   # How updates are applied: portal or powershell.
   # one of: portal | powershell; used by: trailwright
   update_method: "portal"
-  # (since 5.6.20) 
+  # (since 5.6.20) Updates after the deployment and the monthly update.
   # used by: deployment
   updates:
     # true: after the deployment, start the solution update (Start-SolutionUpdate) and return.
@@ -1486,27 +1486,27 @@ operations:
     windows_server_subscription: false
     # true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits.
     azure_verification_for_vms: false
-  # (since 5.6.32) 
+  # (since 5.6.32) Collection of the Windows Security, System and Application event logs of the machines into the Log Analytics workspace of operations.monito...
   security_logging:
     # (since 5.6.32) true to collect the event logs. false or absent: Invoke-SecurityLogging-Orchestrated.ps1 does nothing and exits 0.
     # default: false
     enabled: true
-    # (since 5.6.32) 
+    # (since 5.6.32) Name of the data collection rule the script creates in operations.monitoring.workspace_resource_group, in the region of the workspace.
     data_collection_rule: "dcr-iic-azl-01-security"
-    # (since 5.6.32) 
+    # (since 5.6.32) Which Security log events the rule collects, as the portal offers them (Microsoft Learn, Collect Windows events): success_and_failure (Audi...
     # one of: success_and_failure | failure; default: "success_and_failure"
     security_audit: "success_and_failure"
-    # (since 5.6.32) 
+    # (since 5.6.32) The levels of the System and Application logs the rule collects (Microsoft Learn, Collect Windows events: Critical, Error, Warning, Informa...
     # default: ["critical", "error", "warning"]
     event_levels: ["critical", "error", "warning"]
-  # (since 5.6.36) 
+  # (since 5.6.36) How Invoke-AzureLocalPostDeployment.ps1 (scripts/deploy/04-cluster-deployment/phase-06-post-deployment) runs the tasks of phase 06 of the I...
   post_cluster:
-    # (since 5.6.36) false to make Invoke-AzureLocalPostDeployment.ps1 do nothing and exit 0 (the post-deployment tasks are run by hand, or by an...
+    # (since 5.6.36) false to make Invoke-AzureLocalPostDeployment.ps1 do nothing and exit 0 (the post-deployment tasks are run by hand, or by another route).
     # default: true
     enabled: true
-    # (since 5.6.36) 
+    # (since 5.6.36) Steps of Invoke-AzureLocalPostDeployment.ps1 to leave out even though the file enables them: sdn, sdn-test, quorum, security-groups, ssh, s...
     skip_steps: ["ssh"]
-    # (since 5.6.36) true to let the external storage step (task 10, hybrid S2D plus SAN) restart the nodes one at a time (drain, restart, resume...
+    # (since 5.6.36) true to let the external storage step (task 10, hybrid S2D plus SAN) restart the nodes one at a time (drain, restart, resume) after the MPI...
     # default: false
     allow_node_restarts: false
   # Azure Monitor for the instance.
@@ -1532,7 +1532,7 @@ operations:
     # Name of the Azure Monitor action group that tells the operations team about alerts.
     # used by: terraform
     action_group: "ag-iic-azl-01"
-    # (since 5.6.31) 
+    # (since 5.6.31) What Deploy-ActionGroup.ps1 (and its Azure CLI twin) does with an action group that exists but is disabled (a disabled group sends nothing...
     # default: false; used by: deployment
     action_group_enable_if_disabled: false
     # Address that receives the alerts (a team mailbox).
@@ -1550,7 +1550,7 @@ provisioning:
     # microsoft (the Azure portal download) or oem (the OEM's image).
     # one of: microsoft | oem; used by: trailwright
     image_source: "microsoft"
-    # (since 5.6.19) 
+    # (since 5.6.19) Where each machine's BMC fetches the OS ISO from, as the address you give the virtual media of the BMC (Redfish VirtualMedia.InsertMedia):...
     image_uri: "http://192.0.2.50/images/azure-local.iso"
   # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
   # when scenario.os_install is simplified; used by: ztp
@@ -1576,7 +1576,7 @@ provisioning:
       # At least 12 characters with lowercase, uppercase, a digit and a special character.
       # required; used by: ztp, trailwright
       password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
-    # (since 5.3) 
+    # (since 5.3) The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configu...
     # used by: ztp
     maintenance_password: "keyvault://kv-example-01/maintenance-password"
     # The SMB share the BMCs mount the images from.
@@ -1591,49 +1591,49 @@ provisioning:
       # Instead of host: the local adapter whose IPv4 address the BMCs reach.
       # used by: ztp, trailwright
       host_adapter: ""
-      # (since 5.4) 
+      # (since 5.4) The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and r...
       # default: "svc-ztp-media"; used by: ztp
       account_name: "svc-ztp-media"
-      # (since 5.4) 
+      # (since 5.4) Keep the share, its firewall rule and the account after the vouchers are collected (azurelocal-ztp removes them by default).
       # default: false; used by: ztp
       keep: false
-    # (since 5.2) 
+    # (since 5.2) Folder on the management host for the run's downloads and data: the maintenance ISO cache, the SBE copy and its unpacked drivers, the per-n...
     # used by: ztp
     media_path: "D:\\Data\\azl-ztp\\iic-azl-01\\media"
-    # (since 5.2) 
+    # (since 5.2) Folder on the management host for the run's evidence: the event log monitors follow (ztp-events.jsonl), the BIOS and other Redfish change l...
     # used by: ztp, monitoring, beacon
     evidence_path: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"
-    # (since 5.4) 
+    # (since 5.4) While the OS installs, turn off the PCIe slots that hold the SAN adapters listed in nodes[].san.hbas[], so the maintenance environment can'...
     # used by: ztp
     isolate_san_adapters: true
-    # (since 5.4) 
+    # (since 5.4) When a node's management or provisioning port has slot Embedded (an onboard LOM), make sure the embedded NICs are enabled in the BIOS (Dell...
     # default: true; used by: ztp
     enable_embedded_nics: true
-    # (since 5.4) 
+    # (since 5.4) Create the resource group of the site and edge machines (azure.resource_group, or provisioning.simplified.resource_group) when it does not...
     # default: true; used by: ztp
     create_resource_group: true
-    # (since 5.4) 
+    # (since 5.4) Name of the Microsoft.Edge/configurations resource (the site configuration).
     # default: "default"; used by: ztp
     configuration_name: "default"
-    # (since 5.4) 
+    # (since 5.4) Name for the managed resource group of the site configuration, which holds the Arc machines.
     # used by: ztp, deployment
     managed_resource_group_name: ""
-    # (since 5.4) 
+    # (since 5.4) Create the site's network, time, connectivity and security settings (Microsoft.Edge/configurations child resources).
     # default: true; used by: ztp
     apply_site_settings: true
-    # (since 5.4) 
+    # (since 5.4) Reference the Key Vault in the site's security settings, which the provisioning administrator secret needs.
     # default: true; used by: ztp
     use_key_vault_configuration: true
-    # (since 5.4) 
+    # (since 5.4) Give each edge machine its constrained role delegations on the resource group and on the Key Vault.
     # default: true; used by: ztp
     assign_provisioning_roles: true
-    # (since 5.4) 
+    # (since 5.4) Give the Azure Local resource provider its Azure Connected Machine Resource Manager role on the resource group.
     # default: true; used by: ztp
     assign_hci_rp_role: true
-    # (since 5.4) 
+    # (since 5.4) Kind of the site's network setting: LAN or WLAN.
     # one of: LAN | WLAN; default: "LAN"; used by: ztp
     network_kind: "LAN"
-    # (since 5.4) 
+    # (since 5.4) The time setting of the site configuration, used while the machines are provisioned.
     # used by: ztp
     ntp:
       # Automatic or Manual.
@@ -1645,25 +1645,25 @@ provisioning:
       # The alternate NTP server when configuration is Manual.
       # used by: ztp
       alternate_server: "example"
-    # (since 5.4) 
+    # (since 5.4) Auto (create the site and configuration when missing), Create (they must not exist) or Reuse (they must exist).
     # one of: Auto | Create | Reuse; default: "Auto"; used by: ztp
     site_mode: "Auto"
-    # (since 5.4) 
+    # (since 5.4) Name of the ARM deployment.
     # used by: ztp, deployment
     deployment_name: ""
-    # (since 5.4) 
+    # (since 5.4) Skip the Bootstrap stage's check of the Azure prerequisites (the feature, the resource providers and the catalog).
     # default: false; used by: ztp
     skip_azure_check: false
-    # (since 5.4) 
+    # (since 5.4) Resolve stage: also consider preview trains when maintenance_iso is latest.
     # default: false; used by: ztp
     include_preview: false
-    # (since 5.4) 
+    # (since 5.4) Resolve stage: the highest train of the maintenance environment to consider when maintenance_iso is latest, to stay on a train you have tes...
     # used by: ztp
     max_train: ""
-    # (since 5.4) 
+    # (since 5.4) Resubmit a failed OS install job once.
     # default: true; used by: ztp
     retry_provision_os: true
-    # (since 5.4) 
+    # (since 5.4) The per-node virtual USB image that carries the maintenance ISO.
     # used by: ztp
     usb_image:
       # Image size in GiB.
@@ -1672,7 +1672,7 @@ provisioning:
       # File-name prefix of the images (<prefix><node>.img).
       # default: "ztp-usb-"; used by: ztp
       name_prefix: "ztp-usb-"
-    # (since 5.4) 
+    # (since 5.4) The maintenance environment's Configurator service, which the Device stage reaches before the claim.
     # used by: ztp
     maintenance_environment:
       # TCP port of the service (https://<address>:<port>/BootstrapOobeService).
@@ -1681,7 +1681,7 @@ provisioning:
       # The service's local user.
       # default: "edgeuser"; used by: ztp
       username: "edgeuser"
-    # (since 5.4) 
+    # (since 5.4) How long azurelocal-ztp waits at each stage, and how often it polls.
     # used by: ztp
     timeouts:
       # Bootstrap stage: overall budget until the maintenance environment is up and every node is ready for the portal.
@@ -1927,9 +1927,9 @@ landing_zone:
       # Management group the subscription is under.
       # used by: cicd_infra, terraform
       management_group: "mg-iic-platform"
-      # (since 5.6.19) 
+      # (since 5.6.19) The billing scope a new subscription is created under, when the entry has no id: an enrollment account (Enterprise Agreement), an invoice s...
       billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567/enrollmentAccounts/7654321"
-      # (since 5.6.19) 
+      # (since 5.6.19) The workload type of a new subscription: Production or DevTest (the Workload parameter of New-AzSubscriptionAlias).
       # one of: Production | DevTest; default: "Production"
       workload: "Production"
   # Resource groups of the landing zone.
@@ -1989,7 +1989,7 @@ landing_zone:
     required_tags: ["environment", "owner", "cost_center", "workload"]
     # Name (id) of the management group the tag policy is assigned at; the assignment cascades to everything under it.
     management_group: "mg-iic"
-    # (since 5.6.28) 
+    # (since 5.6.28) Azure Policy assignments at the scope of the Azure Local subscription (azure.subscription_id), made by the Terraform security module.
     # used by: terraform
     assignments:
       # Name of the assignment (its resource name, unique in its scope).
@@ -2010,7 +2010,7 @@ landing_zone:
         # Message shown when a resource is not compliant.
         # used by: terraform
         non_compliance_message: ""
-    # (since 5.6.28) 
+    # (since 5.6.28) Azure Policy assignments at the scope of a resource group of the landing zone, made by the Terraform security module.
     # used by: terraform
     resource_group_assignments:
       # Name of the assignment (its resource name, unique in its scope).
@@ -2075,52 +2075,52 @@ landing_zone:
           route_table: ""
       # Names of networks this one peers with.
       peer_with: ["vnet-iic-hub-01"]
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network accept traffic that was sent by a machine outside the peered network (Microsoft Learn: Virt...
       # default: true; used by: cicd_infra, terraform
       allow_forwarded_traffic: true
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network let the peer use the VPN or ExpressRoute gateway of this network (Microsoft Learn: Virtual...
       # default: false; used by: cicd_infra, terraform
       allow_gateway_transit: false
-      # (since 5.6.23) 
+      # (since 5.6.23) Whether the peerings that start in this network use the gateway of the peer (Microsoft Learn: Virtual network peering, Use remote gateways).
       # default: false; used by: cicd_infra
       use_remote_gateways: false
-  # (since 5.6.21) 
+  # (since 5.6.21) Network security groups (NSG) of the Azure landing zone networks, with their rules.
   # used by: terraform
   network_security_groups:
-    # (since 5.6.21) 
+    # (since 5.6.21) Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit an...
     # required; used by: terraform
     - name: "nsg-iic-mgmt-01"
-      # (since 5.6.21) 
+      # (since 5.6.21) The security rules of the group.
       # used by: terraform
       rules:
-        # (since 5.6.21) 
+        # (since 5.6.21) Name of the rule, 1 to 80 characters, with the same characters as the group name.
         # required; used by: terraform
         - name: "allow-rdp-from-hub"
-          # (since 5.6.21) 
+          # (since 5.6.21) Priority of the rule, 100 to 4096.
           # required; used by: terraform
           priority: 100
-          # (since 5.6.21) 
+          # (since 5.6.21) Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic.
           # required; one of: Inbound | Outbound; used by: terraform
           direction: "Inbound"
-          # (since 5.6.21) 
+          # (since 5.6.21) Allow or Deny the traffic the rule matches.
           # required; one of: Allow | Deny; used by: terraform
           access: "Allow"
-          # (since 5.6.21) 
+          # (since 5.6.21) Protocol the rule matches: * (any, the default), Tcp, Udp, Icmp, Esp or Ah (New-AzNetworkSecurityRuleConfig -Protocol).
           # one of: * | Tcp | Udp | Icmp | Esp | Ah; default: "*"; used by: terraform
           protocol: "*"
-          # (since 5.6.21) 
+          # (since 5.6.21) Source the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag such as VirtualNetwork or Internet...
           # used by: terraform
           source_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535.
           # used by: terraform
           source_port_ranges: ["*", "1024-2048"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Destination the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag.
           # used by: terraform
           destination_address_prefixes: ["203.0.113.0/24", "198.51.100.0/24"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535.
           # required; used by: terraform
           destination_port_ranges: ["443", "8000-8100"]
-          # (since 5.6.21) 
+          # (since 5.6.21) Optional text for the rule, at most 140 characters.
           # used by: terraform
           description: "Allow RDP from the hub network"
   # Gateways, bastion and firewall of the connectivity hub.
@@ -2140,13 +2140,13 @@ landing_zone:
       # SKU of the VPN gateway, for example VpnGw1AZ.
       # used by: terraform
       sku: "VpnGw1AZ"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the VPN gateway (of its first instance in active-active mode).
       # used by: terraform
       public_ip_name: "pip-iic-vpng-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the second instance; needed when active_active is true (Microsoft Learn: About active-active mode VPN gate...
       # used by: terraform
       secondary_public_ip_name: "pip-iic-vpng-hub-02"
-      # (since 5.6.28) 
+      # (since 5.6.28) Active-active mode: both gateway instances carry tunnels; it needs a route-based VPN, a SKU other than Basic and two Standard static public...
       # default: false; used by: terraform
       active_active: false
       # BGP autonomous system number of the gateway.
@@ -2183,11 +2183,11 @@ landing_zone:
         # How clients sign in: entra_id, certificate or radius.
         # one of: entra_id | certificate | radius
         authentication: "entra_id"
-        # (since 5.6.19) 
+        # (since 5.6.19) The tunnel types the gateway accepts: OpenVPN, IkeV2 or SSTP (the VpnClientProtocol of Set-AzVirtualNetworkGateway).
         protocols: ["OpenVPN", "IkeV2"]
-        # (since 5.6.19) 
+        # (since 5.6.19) The name of the root certificate on the gateway, for authentication certificate.
         root_certificate_name: "P2SRootCert"
-        # (since 5.6.19) 
+        # (since 5.6.19) A secret reference to the public certificate data of the root certificate (the base64 text of the .cer file, without the BEGIN and END line...
         root_certificate: "keyvault://kv-iic-mgmt-01/vpn-root-certificate"
     # Azure Bastion of the hub.
     # used by: terraform
@@ -2201,13 +2201,13 @@ landing_zone:
       # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
-      # (since 5.6.19) 
+      # (since 5.6.19) Name of the virtual network the Bastion host is in: an entry of landing_zone.networks with a subnet named AzureBastionSubnet of /26 or larg...
       # used by: terraform
       network: "vnet-iic-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the Bastion host (Standard SKU, static: Microsoft Learn, About Azure Bastion configuration settings).
       # used by: terraform
       public_ip_name: "pip-iic-bas-hub-01"
-    # (since 5.6.19) 
+    # (since 5.6.19) An Azure NAT gateway for the outbound traffic of subnets of a landing zone network.
     # used by: terraform
     nat_gateway:
       # Name of the NAT gateway.
@@ -2225,10 +2225,10 @@ landing_zone:
       # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
       # used by: terraform
       idle_timeout_minutes: 10
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the public IP address of the NAT gateway.
       # used by: terraform
       public_ip_name: "pip-iic-ng-hub-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) SKU of the NAT gateway and of its public IP: Standard or StandardV2 (zone redundant; it takes StandardV2 public IPs only).
       # one of: Standard | StandardV2; default: "Standard"; used by: terraform
       sku: "Standard"
     # Azure Firewall of the hub.
@@ -2273,7 +2273,7 @@ landing_zone:
       # Azure VM size, for example Standard_D2s_v5.
       # used by: terraform, trailwright
       size: "Standard_D2s_v5"
-      # (since 5.6.19) 
+      # (since 5.6.19) Operating system image of the machine: windows_server_2022 or windows_server_2025 (Windows Server Datacenter: Azure Edition) or ubuntu_2404...
       # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
       os: "windows_server_2025"
       # Local administrator user name of the machine.
@@ -2282,22 +2282,22 @@ landing_zone:
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # used by: terraform
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
-      # (since 5.6.28) 
+      # (since 5.6.28) For a machine with role domain_controller: new_forest (the first domain controller: it creates the forest of identity.active_directory.doma...
       # one of: new_forest | replica; used by: ansible
       dc_promotion: "new_forest"
-      # (since 5.6.28) 
+      # (since 5.6.28) For a machine with role domain_controller: a Key Vault secret reference (keyvault://<vault>/<secret>) to the Directory Services Restore Mod...
       # used by: ansible
       dsrm_password: "keyvault://kv-iic-mgmt-01/dsrm-password"
-      # (since 5.6.28) 
+      # (since 5.6.28) Size of the OS disk in GB (VMs in Azure).
       # default: 128; used by: terraform
       os_disk_size_gb: 128
-      # (since 5.6.28) 
+      # (since 5.6.28) Storage type of the OS disk (VMs in Azure).
       # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: terraform
       os_disk_type: "Premium_LRS"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the OS disk (VMs in Azure).
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: terraform
       os_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Version of the Marketplace image of os (VMs in Azure): latest, or a version such as 26100.1234.250101.
       # default: "latest"; used by: terraform
       image_version: "latest"
   # The Log Analytics workspace of the landing zone.
@@ -2332,19 +2332,19 @@ devops:
   # Name of the project or organization on the platform.
   # used by: cicd_infra
   project: "iic-azure-local"
-  # (since 5.5) 
+  # (since 5.5) Key Vault reference to a token with administrator rights on the organization or project.
   # used by: cicd_infra
   api_token: "keyvault://kv-iic-mgmt-01/devops-admin-token"
-  # (since 5.5) 
+  # (since 5.5) Name of the subscription in landing_zone.subscriptions that holds the runners (role devops).
   # used by: cicd_infra, terraform
   subscription: "sub-iic-devops"
-  # (since 5.5) 
+  # (since 5.5) Resource group of the runners, their identity and their network.
   # used by: cicd_infra, terraform
   resource_group: "rg-iic-runners-01"
-  # (since 5.5) 
+  # (since 5.5) Create devops.resource_group.
   # default: false; used by: cicd_infra, terraform
   create_resource_group: false
-  # (since 5.5) 
+  # (since 5.5) The deployment repository or project that task 02 creates.
   # used by: cicd_infra
   repository:
     # Repository name.
@@ -2359,7 +2359,7 @@ devops:
     # The protected default branch.
     # default: "main"; used by: cicd_infra
     default_branch: "main"
-  # (since 5.5) 
+  # (since 5.5) What task 03 sets on the repository: branch protection, approvals and security.
   # used by: cicd_infra
   settings:
     # Approvals a pull request needs before it merges. 0 for a sandbox.
@@ -2380,7 +2380,7 @@ devops:
     # Pipeline checks that must pass before a merge.
     # used by: cicd_infra
     required_status_checks: []
-  # (since 5.5) 
+  # (since 5.5) The deployment environments that task 04 creates, with their approval gate.
   # used by: cicd_infra
   environments:
     # Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.
@@ -2398,76 +2398,76 @@ devops:
       # The only branch that may deploy to the environment.
       # default: "main"; used by: cicd_infra
       deployment_branch: "main"
-  # (since 5.6.25) 
+  # (since 5.6.25) What the toolkit's own pipelines (the files under pipelines/) select: the runner label and the approval environment of each pipeline.
   # used by: cicd_infra
   pipelines:
-    # (since 5.6.25) 
+    # (since 5.6.25) The one label by which the pipelines choose the general runner: runs-on on GitHub (after self-hosted and linux) and tags on GitLab.
     # used by: cicd_infra
     runner_label: "azure-local"
-    # (since 5.6.25) 
+    # (since 5.6.25) The approval environment of each pipeline.
     # used by: cicd_infra
     environments:
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Apply job of the OS configuration pipelines (pipelines/github-actions/os-configuration.yml, pipelines/gitlab...
       # used by: cicd_infra
       os_configuration: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment of the second approval in front of a storage wipe (stage ConfirmStorageWipe of pipelines/azure-devops/os-configuration.yml).
       # used by: cicd_infra
       os_configuration_clear_storage: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Deploy job of the ARM deployment pipelines (pipelines/github-actions/arm-deployment.yml, pipelines/gitlab/st...
       # used by: cicd_infra
       arm_deployment: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Apply job of the CI/CD infrastructure pipelines (the runners; pipelines/github-actions/cicd-infra.yml, pipel...
       # used by: cicd_infra
       cicd_infra: "azr-prod-us"
-      # (since 5.6.25) 
+      # (since 5.6.25) The environment that gates the Terraform apply and the on-premises Ansible jobs of the Terraform and Ansible sample pipelines (pipelines/gi...
       # used by: cicd_infra
       terraform_deployment: "azr-prod-us"
-      # (since 5.6.28) 
+      # (since 5.6.28) The environment that gates every day 2 job that changes the cluster: the update (pipelines/github-actions/day2-update.yml, pipelines/gitlab...
       # used by: cicd_infra
       operations: "azr-prod-us"
-    # (since 5.6.28) 
+    # (since 5.6.28) When the toolkit's scheduled pipelines run.
     # used by: cicd_infra
     schedules:
-      # (since 5.6.28) 
+      # (since 5.6.28) When the day 2 check for updates runs (pipelines/github-actions/day2-check-updates.yml, pipelines/gitlab/stages/day2-check-updates.yml, pip...
       # default: "17 4 * * *"; used by: cicd_infra
       check_for_updates: "17 4 * * *"
-    # (since 5.6.27) 
+    # (since 5.6.27) Azure DevOps only.
     # used by: cicd_infra
     service_connection: "iic-azure-local"
-    # (since 5.6.27) 
+    # (since 5.6.27) Azure DevOps only.
     # used by: cicd_infra
     variable_group: "iic-azure-credentials"
-    # (since 5.6.28) 
+    # (since 5.6.28) The path, in the deployment repository, of the infrastructure file the toolkit's pipelines pass to the scripts (-InfrastructureFile).
     # default: "config/infrastructure.yml"; used by: cicd_infra
     infrastructure_file: "config/infrastructure.yml"
-    # (since 5.6.28) 
+    # (since 5.6.28) The repository path of the ZTP handoff files (a handoff file or a directory of *.ztp-handoff.json) the OS configuration pipelines pass to t...
     # default: "ztp-state"; used by: cicd_infra
     handoff_path: "ztp-state"
-    # (since 5.6.28) 
+    # (since 5.6.28) The tool versions every toolkit pipeline installs, the same on GitHub, GitLab and Azure DevOps.
     # used by: cicd_infra
     tool_versions:
-      # (since 5.6.28) 
+      # (since 5.6.28) The Terraform release the pipelines install (AZL_TERRAFORM_VERSION): hashicorp/setup-terraform, TerraformInstaller, or pipelines/gitlab/Use...
       # default: "1.16.3"; used by: cicd_infra
       terraform: "1.16.3"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Python minor version of the Ansible jobs (AZL_PYTHON_VERSION): actions/setup-python, UsePythonVersion, or the python<version> virtual e...
       # default: "3.12"; used by: cicd_infra
       python: "3.12"
-      # (since 5.6.28) 
+      # (since 5.6.28) The ansible-core release the Ansible jobs install with pip (AZL_ANSIBLE_CORE_VERSION).
       # default: "2.21.5"; used by: cicd_infra
       ansible_core: "2.21.5"
-      # (since 5.6.28) 
+      # (since 5.6.28) The ansible-lint release the lint jobs install with pip (AZL_ANSIBLE_LINT_VERSION).
       # default: "26.10.1"; used by: cicd_infra
       ansible_lint: "26.10.1"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Az PowerShell module version (AZL_AZ_POWERSHELL_VERSION): preferredAzurePowerShellVersion of AzurePowerShell@5 on Azure DevOps, Install...
       # default: "16.3.0"; used by: cicd_infra
       az_powershell: "16.3.0"
-      # (since 5.6.28) 
+      # (since 5.6.28) The powershell-yaml module version the pipelines install to read infrastructure.yml (AZL_POWERSHELL_YAML_VERSION).
       # default: "0.4.12"; used by: cicd_infra
       powershell_yaml: "0.4.12"
-      # (since 5.6.28) 
+      # (since 5.6.28) The Az.KeyVault module version the pipelines install to read keyvault:// secrets (AZL_AZ_KEYVAULT_VERSION).
       # default: "6.6.1"; used by: cicd_infra
       az_keyvault: "6.6.1"
-  # (since 5.5) 
+  # (since 5.5) How the pipelines sign in to Azure (tasks 01 and 05).
   # used by: cicd_infra
   authentication:
     # oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentic...
@@ -2485,7 +2485,7 @@ devops:
     # Register Microsoft.Compute and the EncryptionAtHost feature on each subscription.
     # default: true; used by: cicd_infra
     register_encryption_at_host: true
-  # (since 5.5) 
+  # (since 5.5) The self-hosted runners that task 06 deploys with Terraform.
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
@@ -2530,43 +2530,43 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
-      # (since 5.6.28) 
+      # (since 5.6.28) The SSH public key of the administrator of a Linux runner (a public key, not a secret): the key itself (ssh-ed25519, ssh-rsa or ecdsa-sha2-...
       # used by: cicd_infra
       admin_ssh_public_key: "file://runner-admin.pub"
-      # (since 5.6.28) 
+      # (since 5.6.28) Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner p...
       # default: "runneradmin"; used by: cicd_infra, terraform, ansible
       admin_username: "runneradmin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists.
       # used by: cicd_infra, ansible
       identity_client_id: "00000000-0000-0000-0000-000000000000"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the network security group of the runner subnet.
       # used by: cicd_infra, terraform
       nsg_name: "nsg-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the user-assigned managed identity the runner signs in to Azure as.
       # used by: cicd_infra, terraform
       managed_identity_name: "id-iic-runner-lnx-01"
-      # (since 5.6.28) 
+      # (since 5.6.28) Windows runners only: Key Vault reference to the secret task 06 writes the generated administrator password to.
       # used by: cicd_infra, terraform
       windows_admin_password_secret: "keyvault://kv-iic-mgmt-01/runner-ztp-local-admin"
-      # (since 5.6.28) 
+      # (since 5.6.28) Availability zones the runner machines are spread over (the VM scale set spans them).
       # used by: cicd_infra, terraform
       zones: ["1", "2"]
-      # (since 5.6.28) 
+      # (since 5.6.28) Size of the OS disk in GB.
       # used by: cicd_infra, terraform
       os_disk_size_gb: 128
-      # (since 5.6.28) 
+      # (since 5.6.28) Storage type of the OS disk and of the data disk.
       # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: cicd_infra, terraform
       os_disk_type: "Premium_LRS"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the OS disk.
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       os_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Caching of the data disk (data_disk_gb).
       # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
       data_disk_caching: "ReadWrite"
-      # (since 5.6.28) 
+      # (since 5.6.28) Encryption at host of the runner machines.
       # default: false; used by: cicd_infra, terraform
       encryption_at_host: false
-      # (since 5.6.28) 
+      # (since 5.6.28) Marketplace image of the runner machines.
       # used by: cicd_infra, terraform
       image:
         # Image publisher.
@@ -2581,7 +2581,7 @@ devops:
         # Image version.
         # default: "latest"; used by: cicd_infra, terraform
         version: "latest"
-  # (since 5.5) 
+  # (since 5.5) The VNet of the runners, the peering with the hub and the lab ranges they reach.
   # used by: cicd_infra
   runner_network:
     # Name of the virtual network the runners are placed in.
@@ -2611,10 +2611,10 @@ devops:
       # Create the hub half of the peering.
       # default: true; used by: cicd_infra, terraform
       create_hub_side: true
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the spoke half of the peering (on the runner VNet).
       # used by: cicd_infra, terraform
       spoke_name: "peer-vnet-iic-devops-01-to-hub"
-      # (since 5.6.28) 
+      # (since 5.6.28) Name of the hub half of the peering (on the hub VNet).
       # used by: cicd_infra, terraform
       hub_name: "peer-hub-to-vnet-iic-devops-01"
     # Lab networks the runners reach: management, storage, BMC.
@@ -2629,16 +2629,16 @@ devops:
     # Ranges that may reach SSH or RDP on the runners.
     # used by: cicd_infra, terraform
     admin_source_cidrs: []
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads.
     # default: true; used by: cicd_infra, terraform
     allow_internet_https: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata.
     # default: true; used by: cicd_infra, terraform
     allow_internet_http: true
-    # (since 5.6.28) 
+    # (since 5.6.28) The runner NSG allows ICMP outbound to reachable_cidrs and bmc_cidrs, for reachability checks.
     # default: true; used by: cicd_infra, terraform
     allow_icmp: true
-  # (since 5.5) 
+  # (since 5.5) What the runners may do in Azure (least privilege).
   # used by: cicd_infra
   runner_access:
     # Resource groups where the runners are Contributor.
@@ -2656,7 +2656,7 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra, terraform
     key_vaults: ["kv-iic-mgmt-01"]
-    # (since 5.6.28) 
+    # (since 5.6.28) Other role assignments of the runner identities, each with a short name, a scope (a resource ID) and a role name.
     # used by: cicd_infra, terraform
     additional_role_assignments:
       # Short name of the assignment (unique in the list).
@@ -2704,10 +2704,10 @@ devops:
   # Where the Terraform state is kept.
   # used by: cicd_infra
   state:
-    # (since 5.5) 
+    # (since 5.5) Subscription of the state storage account.
     # used by: cicd_infra, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
-    # (since 5.5) 
+    # (since 5.5) Blob name of the CI/CD runners state.
     # default: "cicd-infra.tfstate"; used by: cicd_infra, terraform
     key: "cicd-infra.tfstate"
     # Storage account that holds the state.
@@ -2719,28 +2719,28 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local).
     # default: "azure-local.tfstate"; used by: cicd_infra, terraform
     azure_local_key: "azure-local.tfstate"
-    # (since 5.6.28) 
+    # (since 5.6.28) Redundancy of the state storage account (Microsoft Learn: Azure Storage redundancy).
     # one of: LRS | ZRS | GRS | RAGRS | GZRS | RAGZRS; default: "GRS"; used by: terraform
     replication_type: "GRS"
-    # (since 5.6.28) 
+    # (since 5.6.28) Public network access of the state storage account. false (default): private endpoints only. allowed_ip_ranges needs true.
     # default: false; used by: terraform
     public_network_access: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Public IP addresses or CIDR ranges that may reach the state storage account (its IP network rules).
     # used by: terraform
     allowed_ip_ranges: ["203.0.113.0/24"]
-    # (since 5.6.28) 
+    # (since 5.6.28) Blob versioning of the state storage account: every overwrite of a state file keeps the earlier version.
     # default: true; used by: terraform
     versioning: true
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted state blob stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for blobs).
     # default: 30; used by: terraform
     blob_soft_delete_days: 30
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted state container stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for containers).
     # default: 30; used by: terraform
     container_soft_delete_days: 30
-    # (since 5.6.28) 
+    # (since 5.6.28) Traffic that passes the network rules of the state storage account: AzureServices (trusted Microsoft services), Logging, Metrics, or None.
     # default: ["AzureServices", "Logging", "Metrics"]; used by: terraform
     network_bypass: ["AzureServices", "Logging", "Metrics"]
 

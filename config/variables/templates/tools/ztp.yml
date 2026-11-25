@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.38"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "ztp"
   # Your own version of this file.
@@ -79,25 +79,25 @@ key_vaults:
     # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -177,14 +177,14 @@ nodes:
     # used by: ztp, os_configuration
     bios:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provi...
     # used by: ztp, os_configuration
     bios_during_provisioning:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is kno...
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
-    # (since 5.3) 
+    # (since 5.3) This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storag...
     # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
@@ -193,16 +193,16 @@ nodes:
         # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
         # required; used by: ztp, deployment
         - slot: "Slot 2"
-          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or...
+          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offloa...
           # one of: fibre_channel | iscsi_offload; default: "fibre_channel"; used by: ztp, deployment
           type: "fibre_channel"
-          # (since 5.4) 
+          # (since 5.4) The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it.
           # used by: ztp, deployment
           bios_attribute: ""
-          # (since 5.4) 
+          # (since 5.4) The value of bios_attribute that turns the slot off for the OS install.
           # used by: ztp, deployment
           bios_disabled_value: "example"
-          # (since 5.4) 
+          # (since 5.4) The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crash...
           # used by: ztp, deployment
           bios_enabled_value: "example"
           # Model of the host bus adapter, as the machine reports it.
@@ -226,17 +226,17 @@ hardware:
     # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
     # required; used by: ztp, discovery, trailwright, ranger
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
-    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...
+    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtu...
     # used by: ztp, discovery
     rfs_write_attribute: true
-    # (since 5.4) 
+    # (since 5.4) Check the BMCs' TLS certificates.
     # default: false; used by: ztp, discovery, trailwright
     verify_certificate: false
   # BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios i...
   # used by: ztp
   bios:
     example_name: "value"
-  # (since 5.3) 
+  # (since 5.3) BIOS attributes that hold for the OS install only: TEMPORARY values.
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
@@ -276,10 +276,10 @@ networking:
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
     # one of: dhcp | static; default: "dhcp"; used by: ztp, os_configuration, trailwright
     provisioning_network: "dhcp"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (d...
     # one of: device | site; default: "device"; used by: ztp, os_configuration
     static_method: "device"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on).
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
       # First address of the DHCP pool of the provisioning network.
@@ -331,7 +331,7 @@ provisioning:
       # At least 12 characters with lowercase, uppercase, a digit and a special character.
       # required; used by: ztp, trailwright
       password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
-    # (since 5.3) 
+    # (since 5.3) The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configu...
     # used by: ztp
     maintenance_password: "keyvault://kv-example-01/maintenance-password"
     # The SMB share the BMCs mount the images from.
@@ -346,49 +346,49 @@ provisioning:
       # Instead of host: the local adapter whose IPv4 address the BMCs reach.
       # used by: ztp, trailwright
       host_adapter: ""
-      # (since 5.4) 
+      # (since 5.4) The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and r...
       # default: "svc-ztp-media"; used by: ztp
       account_name: "svc-ztp-media"
-      # (since 5.4) 
+      # (since 5.4) Keep the share, its firewall rule and the account after the vouchers are collected (azurelocal-ztp removes them by default).
       # default: false; used by: ztp
       keep: false
-    # (since 5.2) 
+    # (since 5.2) Folder on the management host for the run's downloads and data: the maintenance ISO cache, the SBE copy and its unpacked drivers, the per-n...
     # used by: ztp
     media_path: "D:\\Data\\azl-ztp\\iic-azl-01\\media"
-    # (since 5.2) 
+    # (since 5.2) Folder on the management host for the run's evidence: the event log monitors follow (ztp-events.jsonl), the BIOS and other Redfish change l...
     # used by: ztp, monitoring, beacon
     evidence_path: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"
-    # (since 5.4) 
+    # (since 5.4) While the OS installs, turn off the PCIe slots that hold the SAN adapters listed in nodes[].san.hbas[], so the maintenance environment can'...
     # used by: ztp
     isolate_san_adapters: true
-    # (since 5.4) 
+    # (since 5.4) When a node's management or provisioning port has slot Embedded (an onboard LOM), make sure the embedded NICs are enabled in the BIOS (Dell...
     # default: true; used by: ztp
     enable_embedded_nics: true
-    # (since 5.4) 
+    # (since 5.4) Create the resource group of the site and edge machines (azure.resource_group, or provisioning.simplified.resource_group) when it does not...
     # default: true; used by: ztp
     create_resource_group: true
-    # (since 5.4) 
+    # (since 5.4) Name of the Microsoft.Edge/configurations resource (the site configuration).
     # default: "default"; used by: ztp
     configuration_name: "default"
-    # (since 5.4) 
+    # (since 5.4) Name for the managed resource group of the site configuration, which holds the Arc machines.
     # used by: ztp, deployment
     managed_resource_group_name: ""
-    # (since 5.4) 
+    # (since 5.4) Create the site's network, time, connectivity and security settings (Microsoft.Edge/configurations child resources).
     # default: true; used by: ztp
     apply_site_settings: true
-    # (since 5.4) 
+    # (since 5.4) Reference the Key Vault in the site's security settings, which the provisioning administrator secret needs.
     # default: true; used by: ztp
     use_key_vault_configuration: true
-    # (since 5.4) 
+    # (since 5.4) Give each edge machine its constrained role delegations on the resource group and on the Key Vault.
     # default: true; used by: ztp
     assign_provisioning_roles: true
-    # (since 5.4) 
+    # (since 5.4) Give the Azure Local resource provider its Azure Connected Machine Resource Manager role on the resource group.
     # default: true; used by: ztp
     assign_hci_rp_role: true
-    # (since 5.4) 
+    # (since 5.4) Kind of the site's network setting: LAN or WLAN.
     # one of: LAN | WLAN; default: "LAN"; used by: ztp
     network_kind: "LAN"
-    # (since 5.4) 
+    # (since 5.4) The time setting of the site configuration, used while the machines are provisioned.
     # used by: ztp
     ntp:
       # Automatic or Manual.
@@ -400,25 +400,25 @@ provisioning:
       # The alternate NTP server when configuration is Manual.
       # used by: ztp
       alternate_server: "example"
-    # (since 5.4) 
+    # (since 5.4) Auto (create the site and configuration when missing), Create (they must not exist) or Reuse (they must exist).
     # one of: Auto | Create | Reuse; default: "Auto"; used by: ztp
     site_mode: "Auto"
-    # (since 5.4) 
+    # (since 5.4) Name of the ARM deployment.
     # used by: ztp, deployment
     deployment_name: ""
-    # (since 5.4) 
+    # (since 5.4) Skip the Bootstrap stage's check of the Azure prerequisites (the feature, the resource providers and the catalog).
     # default: false; used by: ztp
     skip_azure_check: false
-    # (since 5.4) 
+    # (since 5.4) Resolve stage: also consider preview trains when maintenance_iso is latest.
     # default: false; used by: ztp
     include_preview: false
-    # (since 5.4) 
+    # (since 5.4) Resolve stage: the highest train of the maintenance environment to consider when maintenance_iso is latest, to stay on a train you have tes...
     # used by: ztp
     max_train: ""
-    # (since 5.4) 
+    # (since 5.4) Resubmit a failed OS install job once.
     # default: true; used by: ztp
     retry_provision_os: true
-    # (since 5.4) 
+    # (since 5.4) The per-node virtual USB image that carries the maintenance ISO.
     # used by: ztp
     usb_image:
       # Image size in GiB.
@@ -427,7 +427,7 @@ provisioning:
       # File-name prefix of the images (<prefix><node>.img).
       # default: "ztp-usb-"; used by: ztp
       name_prefix: "ztp-usb-"
-    # (since 5.4) 
+    # (since 5.4) The maintenance environment's Configurator service, which the Device stage reaches before the claim.
     # used by: ztp
     maintenance_environment:
       # TCP port of the service (https://<address>:<port>/BootstrapOobeService).
@@ -436,7 +436,7 @@ provisioning:
       # The service's local user.
       # default: "edgeuser"; used by: ztp
       username: "edgeuser"
-    # (since 5.4) 
+    # (since 5.4) How long azurelocal-ztp waits at each stage, and how often it polls.
     # used by: ztp
     timeouts:
       # Bootstrap stage: overall budget until the maintenance environment is up and every node is ready for the portal.

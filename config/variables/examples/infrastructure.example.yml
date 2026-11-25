@@ -46,7 +46,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.6.0"
+  schema_version: "5.6.38"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -254,6 +254,7 @@ networking:
     gateway: "192.0.2.1"
     vlan_id: 0 # 0 means untagged; can't change after deployment
     dns_servers: ["192.0.2.4", "192.0.2.5"] # can't change after deployment
+
     # How each machine's management port gets nodes[].management.ip_address
     # before deployment: static (set on the port with mac_address), dhcp
     # (reserve each address for its MAC) or preconfigured (left as it is).
@@ -298,6 +299,7 @@ networking:
     - name: "lnet-workloads"
       purpose: compute # management | oob | automation | compute | storage | other (5.6); management and oob make the subnet a remote management source in dev and production
       vlan_id: 2204
+      vm_switch_name: "ConvergedSwitch(compute_storage)" # the virtual switch of the compute_storage intent (Get-VMSwitch on a machine)
       address_prefix: "203.0.113.0/24"
       gateway: "203.0.113.1"
       dns_servers: ["192.0.2.4", "192.0.2.5"]
@@ -487,12 +489,14 @@ landing_zone:
     - { name: "mg-iic-management", parent: "mg-iic-platform", role: management }
     - { name: "mg-iic-security", parent: "mg-iic-platform", role: security }
     - { name: "mg-iic-landing-zones", display_name: "IIC Landing Zones", parent: "mg-iic", role: landing_zones }
+  # An entry with an id is a subscription that exists. An entry with an empty or all-zero id is created by Deploy-Subscriptions.ps1 under billing_scope
+  # (an enrollment account, an invoice section or a customer). Replace the placeholders before you use the file.
   subscriptions:
-    - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", role: connectivity, management_group: "mg-iic-platform" }
-    - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", role: identity, management_group: "mg-iic-platform" }
-    - { name: "sub-iic-management", id: "00000000-0000-0000-0000-000000000000", role: management, management_group: "mg-iic-platform" }
-    - { name: "sub-iic-devops", id: "00000000-0000-0000-0000-000000000000", role: devops, management_group: "mg-iic-platform" }
-    - { name: "sub-iic-azure-local", id: "00000000-0000-0000-0000-000000000000", role: azure_local, management_group: "mg-iic" }
+    - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567:aaaaaaaa-0000-0000-0000-000000000000_2019-05-31/billingProfiles/AAAA-BBBB-CCC-DDD/invoiceSections/EEEE-FFFF-GGG-HHH", role: connectivity, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567:aaaaaaaa-0000-0000-0000-000000000000_2019-05-31/billingProfiles/AAAA-BBBB-CCC-DDD/invoiceSections/EEEE-FFFF-GGG-HHH", role: identity, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-management", id: "00000000-0000-0000-0000-000000000000", billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567:aaaaaaaa-0000-0000-0000-000000000000_2019-05-31/billingProfiles/AAAA-BBBB-CCC-DDD/invoiceSections/EEEE-FFFF-GGG-HHH", role: management, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-devops", id: "00000000-0000-0000-0000-000000000000", billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567:aaaaaaaa-0000-0000-0000-000000000000_2019-05-31/billingProfiles/AAAA-BBBB-CCC-DDD/invoiceSections/EEEE-FFFF-GGG-HHH", role: devops, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-azure-local", id: "00000000-0000-0000-0000-000000000000", billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567:aaaaaaaa-0000-0000-0000-000000000000_2019-05-31/billingProfiles/AAAA-BBBB-CCC-DDD/invoiceSections/EEEE-FFFF-GGG-HHH", role: azure_local, management_group: "mg-iic" }
   resource_groups:
     - { name: "rg-iic-conn-01", subscription: "sub-iic-connectivity", location: "eastus", purpose: "hub network" }
     - { name: "rg-iic-mgmt-01", subscription: "sub-iic-management", location: "eastus", purpose: "management" }
@@ -540,14 +544,15 @@ landing_zone:
           peer_public_ip: "203.0.113.1"
           peer_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
           shared_key: "keyvault://kv-iic-mgmt-01/vpn-shared-key"
-    bastion: { name: "bas-iic-hub-01", resource_group: "rg-iic-conn-01", sku: "Standard", public_ip_name: "pip-iic-bas-hub-01" }
+    bastion: { name: "bas-iic-hub-01", resource_group: "rg-iic-conn-01", network: "vnet-iic-hub-01", sku: "Standard", public_ip_name: "pip-iic-bas-hub-01" }
+  policy: { required_tags: [environment, owner, cost_center], management_group: "mg-iic" } # Tier 1: one audit assignment of 'Require a tag on resources' for each tag name
   virtual_machines:
     - name: "vm-iic-dc-01"
       hostname: "iic-dc01"
       role: domain_controller
       deploy_target: azure
-      subscription: "sub-iic-management"
-      resource_group: "rg-iic-mgmt-01"
+      subscription: "sub-iic-connectivity" # the subscription of its network (AZL-075)
+      resource_group: "rg-iic-conn-01"
       network: "vnet-iic-hub-01"
       subnet: "snet-iic-hub-mgmt-01"
       private_ip: "10.20.0.134"
@@ -693,9 +698,11 @@ os_configuration:
 
 extensions: {}
 
-# Schema 5.6 (optional): how the ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks and recovers.
-# Every key has the default shown. Uncomment the section and set _metadata.schema_version to 5.6.0 to change one.
+# Schema 5.6: how the ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks and recovers, and where its feeds go.
+# Every key has the default shown. Uncomment the section to change one (it needs _metadata.schema_version 5.6 or later; this file names the current version).
 # deployment:
+#   events_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\events" # the one folder the runs write their event feeds to and Sonar reads (one site folder with evidence_path)
+#   pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\arm-report\\verification\\live"
 #   validate_timeout_minutes: 90
 #   deploy_timeout_minutes: 360
 #   poll_seconds: 15

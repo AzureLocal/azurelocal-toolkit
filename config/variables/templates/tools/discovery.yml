@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.38"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "discovery"
   # Your own version of this file.
@@ -35,28 +35,28 @@ key_vaults:
     # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) The provider New-AzlSecretReference uses for a new reference when the caller does not name one.
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -123,7 +123,7 @@ nodes:
       # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery, trailwright, ranger
       ip_address: "198.51.100.11"
-      # (since 5.6.35) 
+      # (since 5.6.35) MAC address of the BMC's own network port (Redfish Manager EthernetInterface): the key of the DHCP reservation that gives the BMC its ip_ad...
       # used by: discovery
       mac_address: "00:00:5E:00:53:F1"
       # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
@@ -170,31 +170,31 @@ hardware:
     # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
     # required; used by: ztp, discovery, trailwright, ranger
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
-    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...
+    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtu...
     # used by: ztp, discovery
     rfs_write_attribute: true
-    # (since 5.4) 
+    # (since 5.4) Check the BMCs' TLS certificates.
     # default: false; used by: ztp, discovery, trailwright
     verify_certificate: false
-  # (since 5.6.14) 
+  # (since 5.6.14) Where Get-HardwareInventory.ps1 writes the hardware inventory it reads from the BMCs, in which format, and how long it waits for a BMC.
   # used by: discovery
   inventory:
-    # (since 5.6.14) 
+    # (since 5.6.14) The folder the inventory file is written to.
     # default: "hardware-inventory"; used by: discovery
     output_directory: "C:\\ProgramData\\iic-hardware-inventory"
-    # (since 5.6.14) 
+    # (since 5.6.14) The start of the file name.
     # default: "hardware-inventory"; used by: discovery
     file_name_prefix: "iic-azl-hardware"
-    # (since 5.6.14) 
+    # (since 5.6.14) The format of the inventory file: json or yaml.
     # one of: json | yaml; default: "json"; used by: discovery
     format: "json"
-    # (since 5.6.14) 
+    # (since 5.6.14) How long the script waits for one answer of a BMC, in seconds.
     # default: 60; used by: discovery
     timeout_seconds: 120
-  # (since 5.6.34) 
+  # (since 5.6.34) Where the hardware discovery (Invoke-HardwareDiscovery.ps1 and Update-InfrastructureYml-FromDiscovery.ps1) writes what it finds, so the dis...
   # used by: discovery, monitoring, beacon
   discovery:
-    # (since 5.6.34) 
+    # (since 5.6.34) The folder the discovery results (the Redfish inventory and the write-back report) are written to; it is created when it is missing.
     # used by: discovery, monitoring, beacon
     output_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence\\discovery"
   # Drives per machine.
@@ -210,7 +210,7 @@ hardware:
       # Size of one capacity drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 3.84
-      # (since 5.6.35) 
+      # (since 5.6.35) Model of the capacity drives, as the BMC reports it (Redfish Drive Model).
       # used by: discovery, trailwright
       model: "Example NVMe 3.84TB"
     # The cache drives in each machine (Storage Spaces Direct).
@@ -224,21 +224,21 @@ hardware:
       # Size of one cache drive in TB (decimal terabytes).
       # used by: discovery, trailwright, surveyor
       size_tb: 0
-      # (since 5.6.35) 
+      # (since 5.6.35) Model of the cache drives, as the BMC reports it (Redfish Drive Model).
       # used by: discovery, trailwright
       model: "Example NVMe 3.84TB"
-  # (since 5.6.35) 
+  # (since 5.6.35) The OS boot drives of every machine, for example a Dell BOSS card (two M.2 drives in RAID 1).
   # used by: discovery
   boot_drives:
     # (since 5.6.35) boss (a Dell BOSS card), raid (drives in a RAID volume of another controller), single (one drive, no RAID) or other.
     # one of: boss | raid | single | other; used by: discovery
     type: "boss"
-    # (since 5.6.35) 
+    # (since 5.6.35) Number of boot drives in each machine.
     # used by: discovery
     count: 2
-    # (since 5.6.35) 
+    # (since 5.6.35) Size of one boot drive in GB (decimal gigabytes, as drives are sold).
     # used by: discovery
     size_gb: 960
-    # (since 5.6.35) 
+    # (since 5.6.35) Model of the boot drives, as the BMC reports it.
     # used by: discovery
     model: "Example M.2 960GB"

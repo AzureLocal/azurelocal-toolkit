@@ -48,6 +48,8 @@ $script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptR
 $script:SupportedMajor = 5
 # _metadata.scope values checked against the full schema; any other scope is a cut for one tool (schema/tools/<tool>.schema.json)
 $script:WholeFileScope = @('full', 'ztp', 'trailwright', 'surveyor')
+# true while a file under an examples folder is validated: a placeholder (the all-zero GUID) is a warning there, an error elsewhere
+$script:ValidatingExample = $false
 
 # HOOK remoting-profiles (schema 5.6): rules AZL-060 to AZL-068 live with the profile resolver, so the validator and the run agree.
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingProfile.psm1'))
@@ -869,6 +871,115 @@ function Get-SchemaFinding {
 # ---------------------------------------------------------------------------------------------------------------------
 # Checks a JSON schema can't express
 # ---------------------------------------------------------------------------------------------------------------------
+# AZL-071 to AZL-077 (schema 5.6.34): what the Azure foundation, post-deployment and OS-install scripts stop on, found before they run.
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Get-ScriptInputFinding {
+    param([System.Collections.IDictionary]$Infra)
+
+    $v = { param($p) Get-AzlInfrastructureValue -Infrastructure $Infra -Path $p }
+    $zero = [guid]::Empty.ToString()
+    $isZero = { param($x) -not [string]::IsNullOrWhiteSpace([string]$x) -and ([string]$x).Trim() -eq $zero }
+    # a warning everywhere: the all-zero GUID is the placeholder of every fixture and template, and Azure rejects it at the first call
+    $placeholderSeverity = 'warning'
+    $hint = if ($script:ValidatingExample) { 'A placeholder is fine in an example; replace it before you use the file.' } else { 'Set the real value: a script that sends it to Azure fails.' }
+
+    # AZL-071: the all-zero GUID is a placeholder.
+    foreach ($p in 'azure.subscription_id', 'azure.tenant_id') {
+        if (& $isZero (& $v $p)) { New-Finding 'AZL-071' $placeholderSeverity $p "$p is the all-zero GUID, the placeholder of the templates. $hint" }
+    }
+    $i = 0
+    foreach ($kv in @(Get-List (& $v 'key_vaults'))) {
+        if ($kv -is [System.Collections.IDictionary] -and (& $isZero $kv['subscription_id'])) { New-Finding 'AZL-071' $placeholderSeverity "key_vaults[$i].subscription_id" "key_vaults[$i].subscription_id is the all-zero GUID, the placeholder of the templates. $hint" }
+        $i++
+    }
+
+    # AZL-071 / AZL-072: landing_zone.subscriptions[] (an entry without a usable id is a subscription to create: it needs a billing scope).
+    $subs = @(Get-List (& $v 'landing_zone.subscriptions') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    for ($s = 0; $s -lt $subs.Count; $s++) {
+        $e = $subs[$s]
+        $id = [string]$e['id']
+        $scope = ([string]$e['billing_scope']).Trim()
+        $toCreate = [string]::IsNullOrWhiteSpace($id) -or (& $isZero $id)
+        if ($toCreate -and -not $scope) {
+            New-Finding 'AZL-071' $placeholderSeverity "landing_zone.subscriptions[$s]" "Subscription '$($e['name'])' has no usable id (empty or all zeros) and no billing_scope. Set id to the subscription that exists, or billing_scope (an enrollment account, invoice section or customer: /providers/Microsoft.Billing/billingAccounts/...) for the subscription Deploy-Subscriptions.ps1 creates. $hint"
+        }
+        if ($scope -and $scope -notmatch '^/providers/Microsoft\.Billing/|^/billingAccounts/') {
+            New-Finding 'AZL-072' error "landing_zone.subscriptions[$s].billing_scope" "billing_scope '$scope' is not a billing scope: it starts with /providers/Microsoft.Billing/billingAccounts/. Deploy-Subscriptions.ps1 stops on it."
+        }
+    }
+
+    # AZL-073: the Bastion host needs the virtual network of its AzureBastionSubnet.
+    $bastion = & $v 'landing_zone.connectivity.bastion'
+    $networks = @(Get-List (& $v 'landing_zone.networks') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    if ($bastion -is [System.Collections.IDictionary]) {
+        $bn = ([string]$bastion['network']).Trim()
+        if (-not $bn) {
+            New-Finding 'AZL-073' error 'landing_zone.connectivity.bastion.network' "landing_zone.connectivity.bastion has no network. Name the virtual network (an entry of landing_zone.networks) whose AzureBastionSubnet holds the host: New-AzureBastion.ps1 stops without it."
+        } elseif (-not @($networks | Where-Object { [string]$_['name'] -eq $bn }).Count) {
+            New-Finding 'AZL-073' error 'landing_zone.connectivity.bastion.network' "landing_zone.connectivity.bastion.network '$bn' is not an entry of landing_zone.networks."
+        }
+    }
+
+    # AZL-074: the Tier 1 tag policy needs the tag names.
+    $policy = & $v 'landing_zone.policy'
+    if ($policy -is [System.Collections.IDictionary] -and -not @(Get-List $policy['required_tags'] | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count) {
+        New-Finding 'AZL-074' error 'landing_zone.policy.required_tags' 'landing_zone.policy is set but required_tags is empty: Invoke-AzurePolicyTier1-Orchestrated.ps1 assigns one audit policy for each tag name and stops without any. List the tag names your tagging standard requires, or remove landing_zone.policy.'
+    }
+
+    # AZL-075: a virtual machine lives in the subscription of its network.
+    $vms = @(Get-List (& $v 'landing_zone.virtual_machines') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    for ($m = 0; $m -lt $vms.Count; $m++) {
+        $vm = $vms[$m]
+        $net = @($networks | Where-Object { [string]$_['name'] -eq [string]$vm['network'] }) | Select-Object -First 1
+        if ($net -and [string]$vm['subscription'] -and [string]$net['subscription'] -and [string]$vm['subscription'] -ne [string]$net['subscription']) {
+            New-Finding 'AZL-075' error "landing_zone.virtual_machines[$m].subscription" "The virtual machine '$($vm['name'])' is in subscription '$($vm['subscription'])' but its network '$($vm['network'])' is in '$($net['subscription'])'. The machine and its network interface are created from one subscription, so landing_zone.virtual_machines[].subscription must be the subscription of its network: change the machine's subscription or its network."
+        }
+    }
+
+    # AZL-076: an enabled logical network names the vSwitch of the cluster.
+    $lnets = @(Get-List (& $v 'networking.logical_networks') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    for ($n = 0; $n -lt $lnets.Count; $n++) {
+        $ln = $lnets[$n]
+        if ($ln.Contains('enabled') -and $ln['enabled'] -is [bool] -and -not $ln['enabled']) { continue }
+        if ([string]::IsNullOrWhiteSpace([string]$ln['vm_switch_name'])) {
+            New-Finding 'AZL-076' error "networking.logical_networks[$n].vm_switch_name" "Logical network '$($ln['name'])' has no vm_switch_name. New-LogicalNetwork.ps1 stops before it sends anything: name the virtual switch of the cluster the network attaches to (as Get-VMSwitch shows it on a machine), or set enabled to false."
+        }
+    }
+
+    # AZL-077: a version without the package it belongs to.
+    $sbe = & $v 'hardware.sbe'
+    if ($sbe -is [System.Collections.IDictionary] -and [string]$sbe['version'] -and ([string]::IsNullOrWhiteSpace([string]$sbe['family']) -or [string]::IsNullOrWhiteSpace([string]$sbe['publisher']))) {
+        New-Finding 'AZL-077' warning 'hardware.sbe.version' 'hardware.sbe.version names a package version without its publisher and family: the check against the solution version needs all three. Set publisher and family, or leave the version out and let the package folder (source_path or bundle_path) say it.'
+    }
+
+    # AZL-078: the maintenance environment asks for an address while the deployment is static.
+    $mgmt = & $v 'networking.management'
+    $osInstall = [string](& $v 'scenario.os_install')
+    if ($osInstall -eq 'simplified' -and $mgmt -is [System.Collections.IDictionary] -and $mgmt.Contains('use_dhcp') -and -not $mgmt['provisioning_dhcp_range'] -and $mgmt['use_dhcp'] -is [bool] -and -not $mgmt['use_dhcp'] -and (-not [string]$mgmt['provisioning_network'] -or [string]$mgmt['provisioning_network'] -eq 'dhcp')) {
+        New-Finding 'AZL-078' warning 'networking.management.provisioning_network' 'networking.management.use_dhcp is false (the deployment uses static addresses) while provisioning_network is left at its default, dhcp: the maintenance environment still gets its first address from a DHCP server on the provisioning network. Make sure one answers there, or set provisioning_network to static (with the provisioning port addresses).'
+    }
+
+    # AZL-079: a vault that the cluster deployment creates holds secrets that are read before it.
+    $kvc = & $v 'cluster.key_vault'
+    if ($kvc -is [System.Collections.IDictionary] -and [string]$kvc['name'] -and (-not $kvc.Contains('create_new') -or $kvc['create_new'] -ne $false)) {
+        $vault = [string]$kvc['name']
+        $before = [System.Collections.Generic.List[string]]::new()
+        $walk = $null
+        $walk = {
+            param($node, [string]$path)
+            if ($node -is [System.Collections.IDictionary]) { foreach ($k in $node.Keys) { & $walk $node[$k] $(if ($path) { "$path.$k" } else { [string]$k }) } }
+            elseif ($node -is [System.Collections.IList]) { for ($x = 0; $x -lt $node.Count; $x++) { & $walk $node[$x] "$path[$x]" } }
+            elseif ($node -is [string] -and $node -match '^keyvault://([^/]+)/' -and $Matches[1] -eq $vault -and $path -notlike 'cluster.key_vault*' -and $path -notlike 'key_vaults*') { $before.Add($path) }
+        }
+        foreach ($k in $Infra.Keys) { & $walk $Infra[$k] ([string]$k) }
+        if ($before.Count) {
+            New-Finding 'AZL-079' warning 'cluster.key_vault.create_new' "cluster.key_vault.create_new is true (the default): the cluster deployment creates the vault '$vault', but $($before.Count) secret reference(s) point into it and are read before that (for example $($before[0])). Keep those secrets in another vault (key_vaults[]), or create '$vault' yourself and set create_new to false."
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
 
 function Get-SemanticFinding {
     # -ReferencesOnly: only the secret reference rules (AZL-001, AZL-054). A cut for one tool holds that tool's keys only, so the
@@ -1137,6 +1248,7 @@ function Get-SemanticFinding {
     Get-OsConfigurationFinding -Infra $Infra
     Get-DeploymentOptionFinding -Infra $Infra
     Get-CicdFinding -Infra $Infra
+    Get-ScriptInputFinding -Infra $Infra # AZL-071 to AZL-079 (schema 5.6.34)
     Get-DomainJoinFinding -Infra $Infra -Nodes $nodes # AZL-050 to AZL-053 (domain join, schema 5.5)
     # HOOK remoting-profiles (schema 5.6): AZL-060 to AZL-068, the environment class and os_configuration.remoting.
     Get-AzlRemotingFinding -Infrastructure $Infra
@@ -2018,6 +2130,7 @@ function Test-AzlInfrastructure {
     $json = $infra | ConvertTo-Json -Depth 100
     Get-SchemaFinding -Json $json -SchemaText (Get-Content -LiteralPath $SchemaPath -Raw)
 
+    $script:ValidatingExample = ($Path -match '[\\/]examples[\\/]')
     # a cut holds one tool's keys: only the reference rules apply to it (the design rules run on the full file it was cut from)
     Get-SemanticFinding -Infra $infra -ReferencesOnly:$toolScope
 }

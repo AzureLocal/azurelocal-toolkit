@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.38"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "deployment"
   # Your own version of this file.
@@ -85,32 +85,32 @@ key_vaults:
     # Resource group that holds the vault.
     # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
-    # (since 5.6.28) 
+    # (since 5.6.28) Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview).
     # default: 90; used by: deployment, terraform
     soft_delete_retention_days: 90
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) The provider New-AzlSecretReference uses for a new reference when the caller does not name one.
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -218,10 +218,10 @@ deployment:
   verification_max_clock_skew_seconds: 300
   # Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run look...
   # used by: deployment, monitoring
-  pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
-  # (since 5.6.29) 
+  pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\arm-report\\verification\\live"
+  # (since 5.6.29) The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-...
   # used by: os_configuration, deployment, monitoring, trailwright
-  events_directory: "D:\\Data\\azl-events\\iic-clus01"
+  events_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\events"
   # Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment...
   # default: false; used by: deployment
   register_resource_providers: false
@@ -268,7 +268,7 @@ nodes:
     # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
     # used by: ztp, os_configuration, deployment, monitoring, trailwright, beacon
     arc_machine_name: "iic-azl-n01"
-    # (since 5.3) 
+    # (since 5.3) This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storag...
     # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
@@ -277,16 +277,16 @@ nodes:
         # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
         # required; used by: ztp, deployment
         - slot: "Slot 2"
-          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or...
+          # (since 5.4) fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offloa...
           # one of: fibre_channel | iscsi_offload; default: "fibre_channel"; used by: ztp, deployment
           type: "fibre_channel"
-          # (since 5.4) 
+          # (since 5.4) The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it.
           # used by: ztp, deployment
           bios_attribute: ""
-          # (since 5.4) 
+          # (since 5.4) The value of bios_attribute that turns the slot off for the OS install.
           # used by: ztp, deployment
           bios_disabled_value: "example"
-          # (since 5.4) 
+          # (since 5.4) The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crash...
           # used by: ztp, deployment
           bios_enabled_value: "example"
           # Model of the host bus adapter, as the machine reports it.
@@ -475,7 +475,7 @@ networking:
         # Needed when auto_ip is false.
         # used by: os_configuration, deployment, trailwright
         subnet: "192.0.2.0/24"
-  # (since 5.6.10) 
+  # (since 5.6.10) Disaggregated (SAN) only: the adapter properties of the cluster networks (ARM sanNetworkList.clusterNetworkConfig.adapterProperties).
   # when scenario.storage_architecture is san; used by: deployment
   cluster_network_properties:
     # Share of the bandwidth reserved for SMB traffic (CSV and live migration), 1 to 97 percent.
@@ -547,7 +547,7 @@ networking:
         # Last address of that pool.
         # required; used by: deployment, trailwright
         end: "203.0.113.200"
-  # (since 5.6.11) 
+  # (since 5.6.11) Network security groups (NSG) for Azure Local virtual machines and logical networks, with their rules.
   # used by: deployment
   network_security_groups:
     # Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit an...
@@ -640,10 +640,10 @@ identity:
     # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
     # used by: deployment
     dns_secure_dynamic_updates: false
-    # (since 5.6.23) 
+    # (since 5.6.23) Whether Set-ADConfiguration.ps1 creates the computer objects of the machines (nodes[].name) and of the cluster (cluster.name) in the OU bef...
     # default: false; used by: deployment, ansible
     precreate_computer_objects: false
-    # (since 5.6.28) 
+    # (since 5.6.28) Whether Set-ADConfiguration.ps1 creates the parent OUs of ou_path that are missing, from the domain down, before it runs New-HciAdObjectsPr...
     # default: false; used by: deployment
     create_parent_ous: false
 
@@ -652,7 +652,7 @@ storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
   # one of: express | infra_only | keep_storage; default: "express"; used by: deployment, trailwright
   configuration_mode: "express"
-  # (since 5.6.9) 
+  # (since 5.6.9) The Storage Spaces Direct pool of the instance.
   # used by: deployment
   pool:
     # Name of the storage pool the volumes are created in.
@@ -661,7 +661,7 @@ storage:
     # Share of the pool, in percent, at which Azure Local raises the thin provisioning alert (Set-StoragePool -ThinProvisioningAlertThresholds).
     # used by: deployment
     thin_provisioning_alert_threshold_percent: 70
-  # (since 5.6.9) 
+  # (since 5.6.9) Cluster shared volume settings of the instance.
   # used by: deployment
   csv:
     # Memory per machine, in MiB, for the CSV in-memory read cache (the cluster property BlockCacheSize).
@@ -682,16 +682,16 @@ storage:
       # (since 5.6.9) thin (space is taken from the pool as data is written) or fixed (all space is taken when the volume is created).
       # one of: thin | fixed; used by: deployment, trailwright
       provisioning_type: "thin"
-      # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or...
+      # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or ntfs.
       # one of: refs | ntfs; default: "refs"; used by: deployment
       file_system: "refs"
-      # (since 5.6.9) 
+      # (since 5.6.9) Only for mirror_accelerated_parity and nested_mirror_accelerated_parity: the share of the volume, in percent, that is parity; the rest is m...
       # default: 80; used by: deployment
       parity_percent: 80
       # (since 5.6.9) ssd or hdd: the capacity drives the volume goes on, when the machines have both kinds.
       # one of: ssd | hdd; used by: deployment
       media_type: "ssd"
-      # (since 5.6.9) 
+      # (since 5.6.9) ReFS deduplication and compression of the volume.
       # used by: deployment
       deduplication:
         # none (the default: the script does not touch deduplication), dedup, compress or dedup_and_compress (Enable-ReFSDedup -Type).
@@ -709,7 +709,7 @@ storage:
           # The longest one run may take, in hours.
           # used by: deployment
           duration_hours: 4
-  # (since 5.6.9) 
+  # (since 5.6.9) The Azure Local storage paths to create after deployment: the Azure resources that say where on a cluster shared volume the virtual machine...
   # used by: deployment
   paths:
     # Name of the storage path resource: 3 to 64 letters, digits or hyphens.
@@ -718,7 +718,7 @@ storage:
       # The folder on a cluster shared volume, for example C:\ClusterStorage\vol-workloads-01\vms for a volume of storage.volumes, or the folder of...
       # required; used by: deployment, loadtools
       path: "C:\\ClusterStorage\\vol-workloads-01\\vms"
-  # (since 5.6.11) 
+  # (since 5.6.11) The Azure Marketplace images to download to the instance as Azure Local VM images (Learn: Create Azure Local VM image using Azure Marketpla...
   # used by: deployment
   vm_images:
     # Name of the VM image resource, 1 to 80 characters: letters, digits, hyphen, period and underscore; it starts and ends with a letter or digi...
@@ -730,7 +730,7 @@ storage:
       # Publisher of the Marketplace image, as Learn's table gives it (lowercase).
       # required; used by: deployment
       publisher: "microsoftwindowsserver"
-      # Offer of the Marketplace image.
+      # Offer of the Marketplace image, lowercase.
       # required; used by: deployment
       offer: "windowsserver"
       # SKU of the Marketplace image.
@@ -748,7 +748,7 @@ storage:
     # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment, trailwright
     type: "fibre_channel"
-    # (since 5.3) 
+    # (since 5.3) The storage array that presents the LUNs.
     # used by: os_configuration, deployment
     array:
       # The array's name, for example its hostname in the array manager.
@@ -760,7 +760,7 @@ storage:
       # Model of the storage array, for example PowerStore 1200T.
       # required; used by: os_configuration, deployment
       model: "example"
-    # (since 5.3) 
+    # (since 5.3) Used when type is fibre_channel: the fabrics and the array's target ports, for zoning.
     # used by: deployment
     fibre_channel:
       # The Fibre Channel fabrics, for example A and B.
@@ -778,7 +778,7 @@ storage:
           # A name in fabrics.
           # required; used by: deployment
           fabric: "example"
-    # (since 5.3) 
+    # (since 5.3) Used when type is iscsi: the array's targets and CHAP.
     # used by: os_configuration, deployment
     iscsi:
       # The array's iSCSI targets.
@@ -808,10 +808,10 @@ storage:
         # (since 5.6.10) true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay).
         # default: false; used by: deployment
         mutual: false
-      # (since 5.6.10) 
+      # (since 5.6.10) Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
       # default: 1514; used by: os_configuration, deployment
       jumbo_packet: 9014
-      # (since 5.6.10) 
+      # (since 5.6.10) The iSCSI networks, one per path.
       # used by: os_configuration, deployment
       networks:
         # The path: A for the ports with the role iscsi:a, B for iscsi:b.
@@ -838,7 +838,7 @@ storage:
       # Name of the LUN.
       # required; used by: deployment, trailwright
       - name: "iic-san-vol-01"
-        # (since 5.6.16) 
+        # (since 5.6.16) The UniqueId of the disk this LUN shows on the machines, as Get-Disk reports it (Learn: Connect an external storage array to Azure Local, s...
         # used by: deployment
         unique_id: "60000000000000000000000000000001"
         # Size of the LUN in GiB (binary units, as Windows counts).
@@ -907,7 +907,7 @@ sdn:
 
 # Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring.
 operations:
-  # (since 5.6.20) 
+  # (since 5.6.20) Updates after the deployment and the monthly update.
   # used by: deployment
   updates:
     # true: after the deployment, start the solution update (Start-SolutionUpdate) and return.
@@ -921,7 +921,7 @@ operations:
     # true when Azure Monitor is part of the design.
     # required; used by: trailwright, ansible
     enabled: true
-    # (since 5.6.31) 
+    # (since 5.6.31) What Deploy-ActionGroup.ps1 (and its Azure CLI twin) does with an action group that exists but is disabled (a disabled group sends nothing...
     # default: false; used by: deployment
     action_group_enable_if_disabled: false
 
@@ -961,10 +961,10 @@ provisioning:
       # Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens.
       # required; used by: ztp, trailwright
       name: "ztp-virtual-usb"
-    # (since 5.4) 
+    # (since 5.4) Name for the managed resource group of the site configuration, which holds the Arc machines.
     # used by: ztp, deployment
     managed_resource_group_name: ""
-    # (since 5.4) 
+    # (since 5.4) Name of the ARM deployment.
     # used by: ztp, deployment
     deployment_name: ""
 
@@ -974,7 +974,7 @@ devops:
   # The CI/CD platform: github, gitlab or azure_devops.
   # required; one of: github | gitlab | azure_devops; used by: cicd_infra, ansible, terraform, trailwright
   platform: "github"
-  # (since 5.5) 
+  # (since 5.5) The self-hosted runners that task 06 deploys with Terraform.
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.

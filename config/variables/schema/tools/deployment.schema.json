@@ -1593,7 +1593,7 @@
                 "type": "string"
               },
               "offer": {
-                "description": "Offer of the Marketplace image.",
+                "description": "Offer of the Marketplace image, lowercase. Learn's table (view azloc-2611) lists windowsserver for Windows Server 2025 and 2022 Datacenter: Azure Edition; the Edge Marketplace of a cluster (checked on an instance, 2026-11-23) offers the 2022 images, for example 2022-datacenter-azure-edition-core, under windowsserver2022 and the 2025 images under windowsserver. Take the offer from the Edge Marketplace of your instance (the portal list of images to download).",
                 "type": "string"
               },
               "sku": {

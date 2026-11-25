@@ -8,7 +8,7 @@ _metadata:
   # The schema version this file follows.
   # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.38"
-  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and t...
   # one of: full | ztp | trailwright | surveyor | os_configuration | deployment | cicd_infra | terraform | ansible | monitoring | discovery | ranger | beacon | s2d_cartographer | loadtools | draftsman; default: "full"; used by: ztp, trailwright
   scope: "os_configuration"
   # Your own version of this file.
@@ -83,28 +83,28 @@ key_vaults:
     # required; used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra, trailwright, terraform, ranger, s2d_cartographer
     resource_group: "rg-iic-mgmt-01"
 
-# (since 5.6.13) 
+# (since 5.6.13) Where the toolkit reads secrets from.
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
-  # (since 5.6.13) 
+  # (since 5.6.13) The provider New-AzlSecretReference uses for a new reference when the caller does not name one.
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the file provider (file://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
-    # (since 5.6.13) 
+    # (since 5.6.13) The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the...
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
-  # (since 5.6.13) 
+  # (since 5.6.13) Settings of the command provider (command://<name>).
   # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
-    # (since 5.6.13) 
+    # (since 5.6.13) The program to start: a command name found on the path, or an absolute path.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
-    # (since 5.6.13) 
+    # (since 5.6.13) The arguments, one list item each.
     # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
-    # (since 5.6.13) 
+    # (since 5.6.13) How long the command may run before it is stopped and the read fails.
     # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
@@ -132,9 +132,9 @@ deployment:
   # The solution version the nodes run (four numeric parts, for example 12.2611.1004.9).
   # used by: deployment, os_configuration, trailwright, ranger
   solution_version: "12.2611.1004.9"
-  # (since 5.6.29) 
+  # (since 5.6.29) The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-...
   # used by: os_configuration, deployment, monitoring, trailwright
-  events_directory: "D:\\Data\\azl-events\\iic-clus01"
+  events_directory: "D:\\Data\\azl-ztp\\iic-azl-01\\events"
 
 # The machines, one entry each.
 # used by: deployment, monitoring
@@ -248,14 +248,14 @@ nodes:
     # used by: ztp, os_configuration
     bios:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provi...
     # used by: ztp, os_configuration
     bios_during_provisioning:
       example_name: "value"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is kno...
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
-    # (since 5.3) 
+    # (since 5.3) This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storag...
     # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
@@ -390,10 +390,10 @@ networking:
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
     # one of: dhcp | static; default: "dhcp"; used by: ztp, os_configuration, trailwright
     provisioning_network: "dhcp"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (d...
     # one of: device | site; default: "device"; used by: ztp, os_configuration
     static_method: "device"
-    # (since 5.3) 
+    # (since 5.3) Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on).
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
       # First address of the DHCP pool of the provisioning network.
@@ -645,7 +645,7 @@ storage:
     # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment, trailwright
     type: "fibre_channel"
-    # (since 5.3) 
+    # (since 5.3) The storage array that presents the LUNs.
     # used by: os_configuration, deployment
     array:
       # The array's name, for example its hostname in the array manager.
@@ -657,7 +657,7 @@ storage:
       # Model of the storage array, for example PowerStore 1200T.
       # required; used by: os_configuration, deployment
       model: "example"
-    # (since 5.3) 
+    # (since 5.3) Used when type is iscsi: the array's targets and CHAP.
     # used by: os_configuration, deployment
     iscsi:
       # The array's iSCSI targets.
@@ -678,19 +678,19 @@ storage:
         # true when the iSCSI targets require CHAP.
         # required; default: false; used by: os_configuration, deployment
         enabled: false
-      # (since 5.6.10) 
+      # (since 5.6.10) Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
       # default: 1514; used by: os_configuration, deployment
       jumbo_packet: 9014
-      # (since 5.6.38) 
+      # (since 5.6.38) Optional QoS for the iSCSI traffic of a hybrid attachment (Microsoft Learn, Connect an external storage array to Azure Local, step 3.5: onl...
       # used by: os_configuration
       qos:
         # (since 5.6.38) true to make the QoS policies of Learn step 3.5.
         # default: false; used by: os_configuration
         enabled: false
-        # (since 5.6.38) 
+        # (since 5.6.38) The 802.1p priority of the iSCSI policy (Learn: 4), 0 to 7.
         # default: 4; used by: os_configuration
         priority: 4
-      # (since 5.6.10) 
+      # (since 5.6.10) The iSCSI networks, one per path.
       # used by: os_configuration, deployment
       networks:
         # The path: A for the ports with the role iscsi:a, B for iscsi:b.

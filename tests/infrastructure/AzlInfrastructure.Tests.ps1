@@ -880,9 +880,9 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
         function Get-ZtpFinding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp $Change }
     }
 
-    It 'validates both templates with no errors and no warnings' {
-        @(Test-AzlInfrastructure -Path $script:Full) | Should -BeNullOrEmpty
-        @(Test-AzlInfrastructure -Path $script:Ztp) | Should -BeNullOrEmpty
+    It 'validates both templates with no finding but the placeholder GUIDs (AZL-071, a warning in an example)' {
+        @(Test-AzlInfrastructure -Path $script:Full | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
+        @(Test-AzlInfrastructure -Path $script:Ztp | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
     }
     It 'reads the scope: full by default, ztp when set' {
         Get-AzlInfrastructureScope -Infrastructure (Import-AzlInfrastructure -Path $script:Full) | Should -Be 'full'
@@ -1059,10 +1059,10 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     }
 
     Context 'the templates' {
-        It 'are schema 5.6.0 and clean' {
+        It 'name a schema 5.6 version and are clean (but for the placeholder GUIDs, AZL-071)' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.6.0'
-                @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Match '^5\.6\.\d+$'
+                @(Test-AzlInfrastructure -Path $f | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
             }
         }
         It 'use the new keys with the values ZTP always used' {
@@ -1291,7 +1291,7 @@ Describe 'Schema 5.4.3: os_configuration.clear_storage' {
         $schema.properties.os_configuration.properties.clear_storage.type | Should -Be 'boolean'
     }
     It 'accepts true on a storage-spaces-direct design without a finding' {
-        @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $true }) | Should -BeNullOrEmpty
+        @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $true } | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
     }
     It 'rejects a value that is not a boolean' -ForEach @('yes', 'wipe', 1) {
         $v = $_
@@ -1319,7 +1319,7 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
         $ad.Contains('domain_join_account') | Should -BeFalse
         $ad.lcm_user.password | Should -Match '^keyvault://'
         $ad.join_options.allow_ou_move | Should -BeFalse
-        @(Test-AzlInfrastructure -Path $script:Full550) | Should -BeNullOrEmpty
+        @(Test-AzlInfrastructure -Path $script:Full550 | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
     }
     It 'the schema: domain_join_account is an optional override, allow_ou_move defaults to false, rename_after_join is not a key' {
         $schema = Get-Content -LiteralPath (Join-Path $repo 'config\variables\schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -1331,7 +1331,7 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
         $ad.properties.local_admin_members.type | Should -Be 'array'
     }
     It 'accepts the optional override and local_admin_members' {
-        @(Get-Dj550Finding { param($d) $d.identity.active_directory.domain_join_account = [ordered]@{ username = 'svc-azl-join'; password = 'keyvault://kv-iic-mgmt-01/join' }; $d.identity.active_directory.local_admin_members = @('sg-iic-azl-01-admins') }) | Should -BeNullOrEmpty
+        @(Get-Dj550Finding { param($d) $d.identity.active_directory.domain_join_account = [ordered]@{ username = 'svc-azl-join'; password = 'keyvault://kv-iic-mgmt-01/join' }; $d.identity.active_directory.local_admin_members = @('sg-iic-azl-01-admins') } | Where-Object Id -ne 'AZL-071') | Should -BeNullOrEmpty
     }
     It 'rejects rename_after_join true, an override password that is not a Key Vault reference, and an unknown key' {
         @(Get-Dj550Finding { param($d) $d.identity.active_directory.join_options.rename_after_join = $true } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
@@ -1397,7 +1397,7 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
     }
     Context 'AZL-053: a local identity design with join keys' {
         It 'warns for domain_join_account and for local_admin_members; the local identity file without them is clean' {
-            @(Get-FindingFor -From $script:Local550 { param($d) $null = $d } | Where-Object Severity -ne 'info') | Should -BeNullOrEmpty # AZL-032 (Info) says the file has no SBE
+            @(Get-FindingFor -From $script:Local550 { param($d) $null = $d } | Where-Object { $_.Severity -ne 'info' -and $_.Id -ne 'AZL-071' }) | Should -BeNullOrEmpty # AZL-032 (Info) says the file has no SBE
             $f = @(Get-FindingFor -From $script:Local550 { param($d) $d.identity.active_directory = [ordered]@{ domain_fqdn = 'improbability.cloud'; ou_path = 'OU=x,DC=improbability,DC=cloud'; lcm_user = [ordered]@{ username = 'lcm'; password = 'keyvault://kv-iic-edge-mgmt/lcm-password' }; domain_join_account = [ordered]@{ username = 'svc-j'; password = 'keyvault://kv-iic-edge-mgmt/join' }; local_admin_members = @('g1') } } | Where-Object Id -eq 'AZL-053')
             $f.Count | Should -Be 2
             $f[0].Severity | Should -Be 'warning'
@@ -1566,5 +1566,48 @@ Describe 'Schema 5.6.33: planning scopes and tool cuts (_metadata.scope)' {
         $out = Join-Path $TestDrive 'cut.os_configuration.yml'
         & (Join-Path $repo 'config\variables\scripts\New-InfrastructureArtifacts.ps1') -Cut os_configuration -From $script:Full -Out $out 6>$null
         { Import-AzlInfrastructure -Path $out } | Should -Not -Throw
+    }
+}
+
+Describe 'Schema 5.6.34: what the Azure foundation, post-deployment and OS-install scripts stop on (AZL-071 to AZL-079)' {
+    BeforeAll { $script:Full = Join-Path $repo 'config\variables\examples\infrastructure.example.yml' }
+
+    It 'AZL-071 reports the all-zero GUID of the subscription, the tenant and a vault, as a warning' {
+        $f = @(Get-FindingFor { param($d) })
+        foreach ($p in 'azure.subscription_id', 'azure.tenant_id', 'key_vaults[0].subscription_id') {
+            @($f | Where-Object { $_.Id -eq 'AZL-071' -and $_.Path -eq $p -and $_.Severity -eq 'warning' }).Count | Should -Be 1 -Because $p
+        }
+        @(Get-FindingFor { param($d) $d.azure.subscription_id = '11111111-1111-1111-1111-111111111111' } | Where-Object { $_.Id -eq 'AZL-071' -and $_.Path -eq 'azure.subscription_id' }) | Should -BeNullOrEmpty
+    }
+    It 'AZL-071 reports a subscription to create that has no billing_scope, and AZL-072 a billing_scope that is not one' {
+        @(Get-FindingFor { param($d) $d.landing_zone.subscriptions[0].Remove('billing_scope') } | Where-Object { $_.Id -eq 'AZL-071' -and $_.Path -eq 'landing_zone.subscriptions[0]' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) } | Where-Object { $_.Path -like 'landing_zone.subscriptions*' }) | Should -BeNullOrEmpty -Because 'an all-zero id with a billing_scope is a subscription to create'
+        @(Get-FindingFor { param($d) $d.landing_zone.subscriptions[1].billing_scope = 'enrollment' } | Where-Object { $_.Id -eq 'AZL-072' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+    }
+    It 'AZL-073 needs landing_zone.connectivity.bastion.network, and a network that exists' {
+        @(Get-FindingFor { param($d) $d.landing_zone.connectivity.bastion.Remove('network') } | Where-Object { $_.Id -eq 'AZL-073' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) $d.landing_zone.connectivity.bastion.network = 'vnet-nowhere' } | Where-Object { $_.Id -eq 'AZL-073' }).Count | Should -Be 1
+    }
+    It 'AZL-074 needs required_tags when landing_zone.policy is set' {
+        @(Get-FindingFor { param($d) $d.landing_zone.policy.required_tags = @() } | Where-Object { $_.Id -eq 'AZL-074' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) $d.landing_zone.Remove('policy') } | Where-Object { $_.Id -eq 'AZL-074' }) | Should -BeNullOrEmpty
+    }
+    It 'AZL-075 wants a virtual machine in the subscription of its network' {
+        @(Get-FindingFor { param($d) $d.landing_zone.virtual_machines[0].network = 'vnet-iic-mgmt-01' } | Where-Object { $_.Id -eq 'AZL-075' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+    }
+    It 'AZL-076 wants vm_switch_name on an enabled logical network' {
+        @(Get-FindingFor { param($d) $d.networking.logical_networks[0].Remove('vm_switch_name') } | Where-Object { $_.Id -eq 'AZL-076' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) $d.networking.logical_networks[0].Remove('vm_switch_name'); $d.networking.logical_networks[0].enabled = $false } | Where-Object { $_.Id -eq 'AZL-076' }) | Should -BeNullOrEmpty
+    }
+    It 'AZL-077 warns about hardware.sbe.version without publisher and family' {
+        @(Get-FindingFor { param($d) $d.hardware['sbe'] = [ordered]@{ source_path = '\\files.example.test\sbe'; version = '5.0.2609.1611' } } | Where-Object { $_.Id -eq 'AZL-077' -and $_.Severity -eq 'warning' }).Count | Should -Be 1
+    }
+    It 'AZL-078 warns when the deployment is static and nothing says the provisioning network has DHCP' {
+        @(Get-FindingFor { param($d) $d.networking.management.Remove('provisioning_dhcp_range') } | Where-Object { $_.Id -eq 'AZL-078' -and $_.Severity -eq 'warning' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) } | Where-Object { $_.Id -eq 'AZL-078' }) | Should -BeNullOrEmpty
+    }
+    It 'AZL-079 warns when the vault the cluster deployment creates holds secrets read before it' {
+        @(Get-FindingFor { param($d) $d.cluster.key_vault.name = 'kv-iic-mgmt-01' } | Where-Object { $_.Id -eq 'AZL-079' -and $_.Severity -eq 'warning' }).Count | Should -Be 1
+        @(Get-FindingFor { param($d) $d.cluster.key_vault.name = 'kv-iic-mgmt-01'; $d.cluster.key_vault.create_new = $false } | Where-Object { $_.Id -eq 'AZL-079' }) | Should -BeNullOrEmpty
     }
 }

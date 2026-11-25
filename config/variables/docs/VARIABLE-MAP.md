@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.76. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
+Registry version 5.0.77. Sources of the scan: toolkit (this repository), sonar d1b7423, trailwright 7e058b9, ztp 5b75c9a.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 787 | 533 | 87 | 5 | 160 | 2 |
-| Owned by a tool (`tools.*`) | 5045 | 4842 | 0 | 0 | 203 | 0 |
+| Keys of infrastructure.yml | 787 | 533 | 87 | 6 | 159 | 2 |
+| Owned by a tool (`tools.*`) | 5046 | 4843 | 0 | 0 | 203 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 7205 | 5377 | 98 | 5 | 1713 | 12 |
+| All registry leaves | 7206 | 5378 | 98 | 6 | 1712 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -95,10 +95,10 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | os-configuration | OS configuration | 88 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1099 |
-| sonar | Sonar | 19 | 0 | 267 |
+| sonar | Sonar | 19 | 0 | 268 |
 | cicd-infra | Outside the flow | 91 | 0 | 947 |
 | infrastructure-helpers | Outside the flow | 51 | 0 | 0 |
-| validator | Outside the flow | 111 | 0 | 0 |
+| validator | Outside the flow | 128 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 262 | 0 | 0 |
 
 ### trailwright
@@ -285,14 +285,15 @@ Where in the code (file, function, keys read by name; 18 places, the first 12):
 
 ### validator
 
-**Reads (111):**
-`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.domain_controllers`, `identity.local_admin.username`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.use_dhcp`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.management.provisioning_dhcp_range.start`, `networking.management.provisioning_dhcp_range.end`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.intents[].name`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.logical_networks[].address_prefix`, `devops.platform`, `devops.resource_group`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `devops.runner_network.address_space`, `devops.runner_network.hub_peering.enabled`, `devops.runner_network.hub_peering.hub_network`, `devops.runner_network.hub_peering.hub_vnet_id`, `devops.runner_network.bmc_cidrs`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `azure.location`, `key_vaults[].name`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `cluster.witness.type`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `deployment.poll_seconds`, `deployment.poll_max_seconds`, `deployment.approval`, `deployment.acknowledge_known_issues`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].bmc.password`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `hardware.bios_during_provisioning.*`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.volumes[].name`, `storage.volumes[].resiliency`, `storage.san.type`, `storage.san.fibre_channel.fabrics[].name`, `storage.san.fibre_channel.target_wwpns[].wwpn`, `storage.san.fibre_channel.target_wwpns[].fabric`, `storage.san.iscsi.targets[].iqn`, `provisioning.os_version`, `provisioning.simplified.isolate_san_adapters`, `provisioning.simplified.ntp.configuration`, `provisioning.simplified.ntp.server`, `provisioning.simplified.ntp.alternate_server`, `provisioning.simplified.timeouts.bootstrap_minutes`, `provisioning.simplified.timeouts.bootstrap_voucher_minutes`, `os_configuration.clear_storage`, `landing_zone.networks[].name`, `_metadata.schema_version`
+**Reads (128):**
+`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.domain_controllers`, `identity.local_admin.username`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.use_dhcp`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.management.provisioning_dhcp_range.start`, `networking.management.provisioning_dhcp_range.end`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.intents[].name`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].vm_switch_name`, `networking.logical_networks[].address_prefix`, `devops.platform`, `devops.resource_group`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `devops.runner_network.address_space`, `devops.runner_network.hub_peering.enabled`, `devops.runner_network.hub_peering.hub_network`, `devops.runner_network.hub_peering.hub_vnet_id`, `devops.runner_network.bmc_cidrs`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `cluster.witness.type`, `cluster.key_vault.name`, `cluster.key_vault.create_new`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `deployment.poll_seconds`, `deployment.poll_max_seconds`, `deployment.approval`, `deployment.acknowledge_known_issues`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].bmc.password`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `hardware.bios_during_provisioning.*`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.volumes[].name`, `storage.volumes[].resiliency`, `storage.san.type`, `storage.san.fibre_channel.fabrics[].name`, `storage.san.fibre_channel.target_wwpns[].wwpn`, `storage.san.fibre_channel.target_wwpns[].fabric`, `storage.san.iscsi.targets[].iqn`, `provisioning.os_version`, `provisioning.simplified.isolate_san_adapters`, `provisioning.simplified.ntp.configuration`, `provisioning.simplified.ntp.server`, `provisioning.simplified.ntp.alternate_server`, `provisioning.simplified.timeouts.bootstrap_minutes`, `provisioning.simplified.timeouts.bootstrap_voucher_minutes`, `os_configuration.clear_storage`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].billing_scope`, `landing_zone.policy.required_tags`, `landing_zone.networks[].name`, `landing_zone.networks[].subscription`, `landing_zone.connectivity.bastion.network`, `landing_zone.virtual_machines[].name`, `landing_zone.virtual_machines[].subscription`, `landing_zone.virtual_machines[].network`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 14 places, the first 12):
+Where in the code (file, function, keys read by name; 15 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SemanticFinding` | 37 |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-ScriptInputFinding` | 24 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-CicdFinding` | 22 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AdapterFinding` | 11 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-DomainJoinFinding` | 10 |
@@ -303,7 +304,6 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-ProvisioningNetworkFinding` | 5 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SbeDeliveryFinding` | 4 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-OsConfigurationFinding` | 2 |
-| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SiteRangeFinding` | 2 |
 
 ### toolkit-legacy-scripts
 
@@ -448,9 +448,9 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  |
 | `networking.management.gateway` | The one default gateway. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM defaultGateway; OS Dns; Network; NicNames; UnusedAdapters; Gate NW-004; NW-015 |
 | `nodes[].network_adapters[].ip_assignment` | How the installed OS gets this port's host address before deployment. | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; sonar; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement |
+| `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; sonar; ztp | Sonar provisioningRoute |
 | `scenario.outbound_path` | How the machines reach Azure. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 |
 | `nodes[].network_adapters[].name` | The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) |
-| `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; sonar; ztp | Sonar provisioningRoute |
 | `networking.management.vlan_id` | 0 means untagged. | operator by hand; Trailwright questionnaire | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; ztp |  |
 | `nodes[].arc_machine_name` | Name of the machine's Arc resource (Microsoft.HybridCompute/machines). | operator by hand; Trailwright questionnaire | infrastructure-helpers; sonar; toolkit-legacy-scripts; ztp | OS Network |
@@ -469,7 +469,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (160)
+### Placeholder: documented, not read by any tool in the scan (159)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -590,7 +590,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `network_devices[].ha.mode` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `network_devices[].ports.uplinks` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.management_groups[].role` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.subscriptions[].billing_scope` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.subscriptions[].workload` |  | operator by hand; default | documented in the registry; no tool in the scan reads it |
 | `landing_zone.policy.assignments[].name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.policy.assignments[].policy_definition_id` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -634,7 +633,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `_metadata.generated_by` | trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `_metadata.notes` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 
-### Validated only: the validator names it, nothing consumes it (5)
+### Validated only: the validator names it, nothing consumes it (6)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -643,6 +642,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.fabrics[].name` | deployment | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.target_wwpns[].wwpn` | deployment | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.target_wwpns[].fabric` | deployment | operator by hand | only the validator names it |
+| `landing_zone.subscriptions[].billing_scope` |  | operator by hand | only the validator names it |
 
 ### Read as part: no tool names the key; a tool reads the section or list that holds it (87)
 
@@ -1348,7 +1348,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.subscriptions[].id` | string (guid) | operator | cicd_infra; trailwright; terraform | cicd-infra; toolkit-legacy-scripts |  | read |
 | `landing_zone.subscriptions[].role` | string, required, one of `connectivity`, `identity`, `management`, `security`, `devops`, `workload`, ... (7) | operator | cicd_infra; trailwright; terraform | cicd-infra |  | read |
 | `landing_zone.subscriptions[].management_group` | string | operator | cicd_infra; terraform | toolkit-legacy-scripts |  | read |
-| `landing_zone.subscriptions[].billing_scope` | string | operator |  |  |  | placeholder |
+| `landing_zone.subscriptions[].billing_scope` | string | operator |  |  |  | validated-only |
 | `landing_zone.subscriptions[].workload` | string, default `Production`, one of `Production`, `DevTest` | operator; default |  |  |  | placeholder |
 | `landing_zone.resource_groups[].name` | string (resource_group), required | operator | cicd_infra; terraform; trailwright | toolkit-legacy-scripts |  | read |
 | `landing_zone.resource_groups[].subscription` | string | operator | cicd_infra; trailwright | toolkit-legacy-scripts |  | read |
@@ -1943,7 +1943,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | ranger | parameters | 116 | 116 | 0 |
 | s2d_cartographer | config_keys | 29 | 29 | 0 |
 | s2d_cartographer | parameters | 67 | 67 | 0 |
-| sonar | config_keys | 61 | 61 | 0 |
+| sonar | config_keys | 62 | 62 | 0 |
 | sonar | env_vars | 3 | 3 | 0 |
 | sonar | event_fields | 114 | 114 | 0 |
 | sonar | parameters | 72 | 72 | 0 |

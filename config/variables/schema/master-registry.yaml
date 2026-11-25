@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.76
+# Version: 5.0.77
 # Schema: infrastructure.schema.json (generated from this file)
 # Last Updated: 2026-11-24
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.77 (2026-11-24):
+#     - The validator agrees with the scripts and the generated files describe themselves (owner directive D145, items R10 to R13; no infrastructure key is added or removed, so infrastructure schema stays 5.6.38). The generator keeps the sentence of a description that starts with Schema x.y.z. in the comment of a template (deployment.events_directory had an empty comment) and stamps the current schema version into _metadata.schema_version; the examples of deployment.events_directory, deployment.pre_cluster_verification_report_directory and provisioning.simplified.evidence_path name one site folder (iic-azl-01). The offer of a Windows Server 2022 Azure Edition image is windowsserver2022 in the Edge Marketplace of a cluster (checked on an instance, 2026-11-23; Learn lists windowsserver), so the 2022 example of storage.vm_images and the description of storage.vm_images[].offer say so. Sonar: the config key azureConnected (set at start, false with no Azure sign-in) is registered. The validator rules AZL-071 to AZL-079 are in scripts/common/infrastructure/AzlInfrastructure.psm1 (placeholder GUIDs, billing scope, the Bastion network, required tags, a machine in the subscription of its network, vm_switch_name, an SBE version without publisher and family, DHCP on the provisioning network, a vault the deployment creates).
 #   v5.0.76 (2026-11-24):
 #     - The post-deployment pipelines (owner directive D150: the post-cluster deployment is one automated run; no infrastructure key added or removed, infrastructure schema stays 5.6.38). New pipeline files pipelines/github-actions/post-deployment.yml, pipelines/gitlab/stages/post-deployment.yml and pipelines/azure-devops/post-deployment.yml run Invoke-AzureLocalPostDeployment.ps1 on every platform (Test-InfrastructureFile.ps1, then a Plan with -Mode Plan, then, for the mode Apply and after approval, -Mode Apply), with the inputs mode, only, from, to and continue_on_warning. They read only existing keys: devops.pipelines.infrastructure_file, runner_label, tool_versions.powershell_yaml, az_powershell and az_keyvault, authentication.method, runners[].os_type and pool, service_connection, variable_group and environments.operations (the one environment of every change to the cluster, so its lock keeps the post-deployment from running beside an update). Their inputs, variables and environment variables are registered under tools.cicd_infra (env_vars, pipeline_inputs, pipeline_variables). The description of devops.pipelines.environments.operations names the post-deployment run. The orchestrator copies the events of its run to post-deployment-events.jsonl in -LogPath, so a pipeline that publishes the log folder publishes the feed; the feed in the events folder is unchanged.
 #   v5.0.75 (2026-11-24):
@@ -267,7 +269,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.76"
+  version: "5.0.77"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.38"
   last_updated: "2026-11-24"
@@ -277,6 +279,9 @@ _metadata:
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
     - date: "2026-11-24"
+      version: "5.0.77"
+      change: "The validator agrees with the scripts and the generated files describe themselves (owner directive D145, items R10 to R13; no infrastructure key is added or removed, so infrastructure schema stays 5.6.38). The generator keeps the sentence of a description that starts with Schema x.y.z. in the comment of a template (deployment.events_directory had an empty comment) and stamps the current schema version into _metadata.schema_version; the examples of deployment.events_directory, deployment.pre_cluster_verification_report_directory and provisioning.simplified.evidence_path name one site folder (iic-azl-01). The offer of a Windows Server 2022 Azure Edition image is windowsserver2022 in the Edge Marketplace of a cluster (checked on an instance, 2026-11-23; Learn lists windowsserver), so the 2022 example of storage.vm_images and the description of storage.vm_images[].offer say so. Sonar: the config key azureConnected (set at start, false with no Azure sign-in) is registered. The validator rules AZL-071 to AZL-079 are in scripts/common/infrastructure/AzlInfrastructure.psm1 (placeholder GUIDs, billing scope, the Bastion network, required tags, a machine in the subscription of its network, vm_switch_name, an SBE version without publisher and family, DHCP on the provisioning network, a vault the deployment creates)."
+      reason: "Owner directive D145: every script input the validator passes must work, and the generated templates must say what they are."
       version: "5.0.76"
       change: "The post-deployment pipelines (owner directive D150: the post-cluster deployment is one automated run; no infrastructure key added or removed, infrastructure schema stays 5.6.38). New pipeline files pipelines/github-actions/post-deployment.yml, pipelines/gitlab/stages/post-deployment.yml and pipelines/azure-devops/post-deployment.yml run Invoke-AzureLocalPostDeployment.ps1 on every platform (Test-InfrastructureFile.ps1, then a Plan with -Mode Plan, then, for the mode Apply and after approval, -Mode Apply), with the inputs mode, only, from, to and continue_on_warning. They read only existing keys: devops.pipelines.infrastructure_file, runner_label, tool_versions.powershell_yaml, az_powershell and az_keyvault, authentication.method, runners[].os_type and pool, service_connection, variable_group and environments.operations (the one environment of every change to the cluster, so its lock keeps the post-deployment from running beside an update). Their inputs, variables and environment variables are registered under tools.cicd_infra (env_vars, pipeline_inputs, pipeline_variables). The description of devops.pipelines.environments.operations names the post-deployment run. The orchestrator copies the events of its run to post-deployment-events.jsonl in -LogPath, so a pipeline that publishes the log folder publishes the feed; the feed in the events folder is unchanged."
       reason: "Owner directive D150: the post-deployment tasks were written and tested, but no pipeline on any platform ran them. A person had to run each script by hand."
@@ -12172,7 +12177,7 @@ marketplace_images:
       - name: "img-iic01-ws2022-azedition-hotpatch-v1"
         display_name: "Windows Server 2022 Datacenter Azure Edition Hotpatch"
         publisher: "microsoftwindowsserver"
-        offer: "windowsserver"
+        offer: "windowsserver2022"
         sku: "2022-datacenter-azure-edition-hotpatch"
         version: "latest"
         os_type: "Windows"
@@ -15787,7 +15792,7 @@ deployment:
       description: "Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run looks for the latest result. Default: arm-report\\verification\\live in the environment data folder (the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file). (since 5.6)"
       type: string
       required: false
-      example: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
+      example: "D:\\Data\\azl-ztp\\iic-azl-01\\arm-report\\verification\\live"
       used_by: [deployment, monitoring]
     events_directory:
       description: "Schema 5.6.29. The one folder where the toolkit's runs write their event feeds (os-configuration-events.jsonl of the OS configuration run, arm-deployment-events.jsonl of the ARM Validate and Deploy run) and where azurelocal-sonar reads them, so a plain run and a plain Sonar launch meet. Environment variables such as %ProgramData% are expanded; a relative path is relative to the folder of the infrastructure file. Default when not set: <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events (on Linux and macOS <temp>/AzureLocalToolkit/<cluster.name>/events); a run given -ReportDirectory then writes its feed into that report directory instead, so set this key when a pipeline or an operator passes -ReportDirectory and Sonar should still follow the run. -EventLogPath of the OS configuration run and osConfigEventsPath/armEventsPath of Sonar's own config still win. Lines are appended, so one folder keeps every run of the cluster; Sonar shows the latest. Keep it outside any git working tree."
@@ -15795,7 +15800,7 @@ deployment:
       since: "5.6.29"
       required: false
       minLength: 1
-      example: "D:\\Data\\azl-events\\iic-clus01"
+      example: "D:\\Data\\azl-ztp\\iic-azl-01\\events"
       used_by: [os_configuration, deployment, monitoring, trailwright]
     register_resource_providers:
       description: "Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment) that are not registered in the subscription, and waiting until they are Registered, when the precondition ResourceProviders runs in Mode Validate or Deploy. Default false: the run never changes Azure by itself and a mandatory provider that is not registered fails the precondition, with the Register-AzResourceProvider command for each. Needs Owner or Contributor on the subscription. Never done in Plan or with WhatIf. Set by the -RegisterResourceProviders switch. (since 5.6)"
@@ -17019,7 +17024,7 @@ storage:
             example: "microsoftwindowsserver"
             used_by: [deployment]
           offer:
-            description: "Offer of the Marketplace image."
+            description: "Offer of the Marketplace image, lowercase. Learn's table (view azloc-2611) lists windowsserver for Windows Server 2025 and 2022 Datacenter: Azure Edition; the Edge Marketplace of a cluster (checked on an instance, 2026-11-23) offers the 2022 images, for example 2022-datacenter-azure-edition-core, under windowsserver2022 and the 2025 images under windowsserver. Take the offer from the Edge Marketplace of your instance (the portal list of images to download)."
             type: string
             required: true
             since: "5.6.11"
@@ -26673,6 +26678,7 @@ tools:
                 osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"<events folder>/os-configuration-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory (all)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1, which writes it to the same events folder by default."}
                 armEventsPath: {"name":"armEventsPath","type":"string","declared_type":"string","default":"<events folder>/arm-deployment-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 Get-AzlSonarEventsDirectory (armmon)","description":"ARM Validate and Deploy event file from Invoke-AzureLocalArmDeployment.ps1, which writes it to the same events folder by default (-ReportDirectory moves it only when deployment.events_directory is not set)."}
                 updateEventsPath: {"name":"updateEventsPath","type":"string","declared_type":"string","default":"<events folder>/update-events.jsonl with the master file (events folder = deployment.events_directory, else <ProgramData>\\AzureLocalToolkit\\<cluster.name>\\events), else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; Infrastructure.ps1 Get-AzlSonarEventsDirectory","description":"Solution update event file written by the toolkit's update scripts (Start-AzureLocalSolutionUpdate.ps1), in the same events folder by default."}
+                azureConnected: {"name":"azureConnected","type":"boolean","declared_type":"boolean","default":"true","required":"no","read_at":"Config.ps1; AzurePoller.ps1; Server.ps1","description":"Set when Sonar starts, not in the configuration file: false when the Update monitor runs with no Azure sign-in (it then follows the toolkit's update events only and does not wait for Azure), true otherwise."}
                 verificationEventsPath: {"name":"verificationEventsPath","type":"string","declared_type":"string","default":"<gate report directory>/precluster-verification-events.jsonl with the master file (deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder: the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file; the toolkit rule Resolve-AzlPclReportDirectory), else none","enum":["non-empty text; relative to the config file; a folder is accepted (the file name is added)"],"required":"no","read_at":"Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)","description":"Event file of the pre-cluster verification gate (precluster-verification-events.jsonl, written next to report.json and summary.md in the gate report directory)."}
                 discoveryPath: {"name":"discoveryPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; a folder or one file; relative to the config file"],"required":"no","read_at":"Config.ps1; Discovery.ps1","description":"Folder written by the toolkit Invoke-HardwareDiscovery.ps1 -OutputPath (<ServiceTag>.json and discovery-summary.json). Master file: evidence_path + discovery."}
                 monitor: {"name":"monitor","type":"string","declared_type":"string","default":"Auto","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (case and dashes ignored)"],"required":"no","read_at":"Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan","description":"Stage to watch alone; -Monitor overrides. Documented in sonar-events docs/config.md and run.md only."}
