@@ -72,8 +72,11 @@ identity:
 Import-Module ./scripts/common/secrets/AzlSecret.psm1
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
 
-# Where a SecureString or a PSCredential is accepted:
-$secure = Get-AzlSecretValue -Reference (Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.password') -Infrastructure $infra
+# The reference is the value of a key of the file (Get-AzlInfrastructureValue takes -Infrastructure and -Path):
+$reference = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.password'
+
+# Where a SecureString or a PSCredential is accepted (Get-AzlSecretValue takes -Reference and -Infrastructure only):
+$secure = Get-AzlSecretValue -Reference $reference -Infrastructure $infra
 
 # Only where the value must go into a request body or a protected parameter:
 $plain = Get-AzlSecretPlainText -Reference $reference -Infrastructure $infra

@@ -24,7 +24,8 @@ Planning -> Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFIC
 
 | # | Step | Tool | Page |
 |--:|------|------|------|
-| 1 | Hardware discovery (optional): the inventory of every node from its BMC, any maker; Dell also proposes `nodes[]` | `Get-HardwareInventory.ps1`, `Invoke-HardwareDiscovery.ps1` | [docs/hardware-discovery.md](docs/hardware-discovery.md) |
+| 0 | Planning (optional): size the cluster and write the `infrastructure.yml` | [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) (sizing handoff), [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) (the file), [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) (cabling diagram) | below |
+| 1 | Hardware discovery (optional): the inventory of every node from its BMC, any maker; Dell also proposes `nodes[]`. `Update-InfrastructureYml-FromDiscovery.ps1` previews, and with `-Apply` writes, the serial numbers and port MACs into the file | `Get-HardwareInventory.ps1`, `Invoke-HardwareDiscovery.ps1`, `Update-InfrastructureYml-FromDiscovery.ps1` | [docs/hardware-discovery.md](docs/hardware-discovery.md) |
 | 2 | ZTP: install the OS from Azure and register the machines with Azure Arc | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | its README |
 | 3 | OS configuration | `Invoke-AzureLocalOsConfiguration.ps1` | [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) |
 | 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | `Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify`, watched by the Sonar Verification monitor | [docs/pre-cluster-verification.md](docs/pre-cluster-verification.md) |
@@ -32,21 +33,21 @@ Planning -> Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFIC
 | 6 | ARM Deploy | the same script, `-Mode Deploy` | same |
 | 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/deploy/07-validation-handover`, `scripts/deploy/08-day2-operations` | the Azure Local docs |
 
-[Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 2 to 6 read only. Its Discovery view also shows the results file of Beacon and the files of step 1.
+[Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 1 to 7 read only (hardware discovery, ZTP, OS configuration, the gate, ARM Validate and Deploy, and a solution update), from the one events folder (`deployment.events_directory`). Its Discovery view also shows the results file of Beacon and the files of step 1.
 
 ### The tools around the route
 
-Every tool reads or writes the same `infrastructure.yml` ([how](config/variables/docs/infrastructure-file.md)); none keeps a second copy of a variable. These are the tools that come before the route, beside it and after it.
+Every tool reads or writes the same `infrastructure.yml` ([how](config/variables/docs/infrastructure-file.md)); none keeps a second copy of a variable. These are the tools that come before the route, beside it and after it, with the file each one hands on.
 
 | When | Tool | What it does with the file |
 |------|------|----------------------------|
-| Planning | [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | Sizes the cluster. Writes no `infrastructure.yml`: it exports a sizing handoff (`azure-local-sizing-handoff-*.json`, "Sizing handoff for Trailwright") in the file's key names |
-| Planning | [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | Takes the sizing handoff and your answers and writes a draft `infrastructure.yml`. Check it with `Test-InfrastructureFile.ps1`; MAC addresses come from step 1 |
-| Planning | [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) | Draws the cabling, VLANs and Network ATC intents. A separate visual design: it does not read or write `infrastructure.yml` |
-| Before step 2 | [Beacon](https://azurelocal.cloud/azurelocal-beacon/) | Boots from the BMC or USB and checks network, DNS, Active Directory, Azure endpoints and Arc readiness. It has its own configuration file today and does not read `infrastructure.yml` yet; its results file is shown by Sonar |
-| Day 2 | [Ranger](https://azurelocal.cloud/azurelocal-ranger/) | Collects the as-built cluster and compares it with a design record (compare only, no write-back). It reads the older schema 4 layout, not schema 5, until its reader is updated |
-| Day 2 | [S2D Cartographer](https://azurelocal.cloud/azurelocal-s2d-cartographer/) | Reads the storage stack of a running cluster. Takes the cluster name as a parameter; does not read the file yet |
-| Day 2 | [LoadTools](https://azurelocal.cloud/azurelocal-loadtools/) | VMFleet, fio, iPerf, HammerDB and stress-ng. Reads its own `config/clusters/cluster.yml`, not the file yet |
+| Planning | [Surveyor](https://azurelocal.cloud/azurelocal-surveyor/) | Sizes the cluster. Writes no `infrastructure.yml`: it exports a sizing handoff (`azure-local-sizing-handoff-*.json`, schema 1.1, "Sizing handoff for Trailwright") in the file's key names. Reads the file back for the as-built comparison (pasted in the browser: `nodes[]`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.drives`, `scenario.topology`) |
+| Planning | [Trailwright](https://azurelocal.cloud/azurelocal-trailwright/) | **Writes the file.** Takes the sizing handoff and your answers and exports `infrastructure.yml` (`_metadata.scope: trailwright`, a planning scope: port MAC addresses may be missing until hardware discovery fills them). Check it with `Test-InfrastructureFile.ps1`. Its older environment file export is deprecated |
+| Planning | [Draftsman](https://azurelocal.cloud/azurelocal-draftsman/) | Draws the cabling, VLANs and Network ATC intents. Its wizard reads the file (`nodes[]`, `scenario.*`, `networking.intents[]`, `networking.vlans[]`, `hardware.model`, `network_devices[]`); it writes drawings and schedules, never the file |
+| Before step 2 | [Beacon](https://azurelocal.cloud/azurelocal-beacon/) | Boots from the BMC or USB and checks network, DNS, Active Directory, Azure endpoints and Arc readiness (not the hardware). Reads the file (`-InfrastructureFile`, `-Plan` shows each value and its key). Writes a results file (schema 1.2) to `<hardware.discovery.output_directory>\beacon`, else `<provisioning.simplified.evidence_path>\discovery\beacon`, which Sonar's Discovery view shows |
+| Day 2 | [Ranger](https://azurelocal.cloud/azurelocal-ranger/) | Collects the as-built cluster. Reads the file (`-InfrastructureFile` resolves the cluster, nodes, BMC endpoints and Azure scope) and compares the run with it (`Compare-RangerDesign`, schema 5). Compare only: the drift report is the output, nothing is written back |
+| Day 2 | [S2D Cartographer](https://azurelocal.cloud/azurelocal-s2d-cartographer/) | Reads the storage stack of a running cluster. `-InfrastructureFile` supplies the cluster name and the Key Vault secret of the LCM user; writes reports, not the file |
+| Day 2 | [LoadTools](https://azurelocal.cloud/azurelocal-loadtools/) | VMFleet, fio, iPerf, HammerDB and stress-ng. Reads the cluster, nodes, domain, volume, Azure scope and Key Vault from the file (`-InfrastructureFile`, or the file as `-ClusterConfigPath`); `config/variables/variables.yml` holds only its test settings |
 
 ### The pre-cluster verification gate
 
@@ -136,7 +137,7 @@ The repository is designed to be configuration-driven.
 |------|---------|
 | `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master file, one template per tool and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
 | `config/variables/schema/` | The registry, the generated `infrastructure.schema.json` and one schema per tool |
-| `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ansible, cicd-infra, deployment, discovery, monitoring, os-configuration, ranger, terraform, trailwright, ztp) |
+| `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ansible, beacon, cicd-infra, deployment, discovery, draftsman, loadtools, monitoring, os-configuration, ranger, s2d-cartographer, surveyor, terraform, trailwright, ztp) |
 | `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) |
 | `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |
 | `config/variables/scripts/` | Validators, the registry reader and the artifact generator |
