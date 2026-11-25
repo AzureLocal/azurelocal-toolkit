@@ -82,8 +82,8 @@ BeforeDiscovery {
         'scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion/powershell/Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1'
         'scripts/common/idrac-management/Enable-IdracVnc.ps1'
     ) | ForEach-Object { @{ Name = [IO.Path]::GetFileName($_); Relative = $_ } }
-    # These stop with exit code 2 when the file cannot be read (the SSH script throws, which a pipeline sees as 1).
-    $script:ExitTwo = @($script:Kept | Where-Object { $_.Name -ne 'Invoke-SSHConnectivity-Orchestrated.ps1' })
+    # These stop with exit code 2 when the file cannot be read.
+    $script:ExitTwo = @($script:Kept)
 }
 
 BeforeAll {

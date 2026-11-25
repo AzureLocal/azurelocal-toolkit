@@ -183,10 +183,10 @@ Describe 'The BIOS and iDRAC scripts read hardware.bios and nodes[].bios' {
 }
 
 Describe 'The SSH orchestrator' {
-    It 'the SSH orchestrator falls back to azure.location, not azure_platform.region' {
+    It 'the SSH orchestrator takes the region from the Arc machine in Azure, not from azure_platform.region' {
         $code = Get-CodeText $script:Ssh
-        $code | Should -Match '\$cfg\s*\.\s*azure\s*\.\s*location'
+        $code | Should -Match 'Get-AzConnectedMachine'
+        $code | Should -Match "Get-Property \`$info 'Location'"
         $code | Should -Not -Match 'azure_platform'
-        @($script:Registry | Where-Object Path -EQ 'azure.location').Count | Should -Be 1
     }
 }

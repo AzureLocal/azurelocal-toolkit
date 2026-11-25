@@ -223,6 +223,7 @@ foreach ($node in $nodes) {
         if ($ext.ExitCode -ne 0 -and $ext.Detail -notmatch $NotFound) { throw "The extension could not be read: $($ext.Detail)" }
         $extState = if ($ext.ExitCode -eq 0) { [string](Get-Prop (ConvertFrom-AzJson $ext.Output) @('properties', 'provisioningState')) } else { '' }
         if ($extState -eq 'Succeeded') { Add-Row "$item extension $OpenSshExtensionName" 'AlreadyDone' 'Succeeded' }
+        elseif ($extState -in 'Failed', 'Canceled') { throw "The extension $OpenSshExtensionName is in the $extState state. It is left in place: delete it (az connectedmachine extension delete) after you read its error, then run the script again." }
         elseif ($PSCmdlet.ShouldProcess("machine '$machine'", "Create the extension $OpenSshExtensionName")) {
             $create = Invoke-AzCli @('connectedmachine', 'extension', 'create', '--subscription', $subscriptionId, '--resource-group', $group, '--machine-name', $machine, '--name', $OpenSshExtensionName,
                 '--publisher', $OpenSshExtensionPublisher, '--type', $OpenSshExtensionType, '--location', $machineLocation, '--output', 'none', '--only-show-errors')
