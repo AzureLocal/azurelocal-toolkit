@@ -59,6 +59,16 @@ Describe 'Update-InfrastructureYml-FromDiscovery.ps1 with a hardware inventory' 
         (Get-Content -LiteralPath $script:File -Raw) | Should -Be $before
     }
 
+    It 'exits 1 and lists the entry when two entries claim the same port by MAC' {
+        $lines = @('nodes:', '  - name: n01', '    network_adapters:', '      - { name: Port1, mac_address: AA:BB:CC:00:00:01 }', '      - { name: PortX, mac_address: AA:BB:CC:00:00:01 }')
+        [System.IO.File]::WriteAllText($script:File, ($lines -join "`n"))
+        $inv = @{ kind = 'hardware-inventory'; collectedAt = '2026-11-24T00:00:00Z'; nodes = @(@{ name = 'n01'; status = 'read'; identity = @{ serialNumber = 'SN-0001' }; network = @{ ports = @(@{ mac = 'AA:BB:CC:00:00:01'; adapter = 'NIC.Slot.3'; portNumber = 1; name = 'Port1'; slot = 'Slot 3' }) } }) } | ConvertTo-Json -Depth 10
+        [System.IO.File]::WriteAllText((Join-Path $script:Dir 'disc' 'hardware-inventory-1.json'), $inv)
+        $r = Invoke-Updater @('-InfrastructureFile', $script:File, '-DiscoveryPath', (Join-Path $script:Dir 'disc'))
+        $r.Exit | Should -Be 1
+        $r.Output | Should -Match 'PortX'
+    }
+
     It 'exits 2 with a clear message when the folder holds no discovery file' {
         $r = Invoke-Updater @('-InfrastructureFile', $script:File, '-DiscoveryPath', (Join-Path $script:Dir 'disc'))
         $r.Exit | Should -Be 2

@@ -462,12 +462,14 @@ function Get-AzlDiscoveryChange {
             $free = { $ports | Where-Object { -not $taken.Contains((& $macOf $_)) } }
             for ($ai = 0; $ai -lt $adapters.Count; $ai++) {
                 $mac = ConvertTo-AzlMacAddress ([string]$adapters[$ai]['mac_address'])
-                $hit = if ($mac) { $ports | Where-Object { (& $macOf $_) -eq $mac } | Select-Object -First 1 }
+                $hit = if ($mac) { & $free | Where-Object { (& $macOf $_) -eq $mac } | Select-Object -First 1 }
                 if ($hit) { & $pair $ai $hit 'MAC' }
             }
             for ($ai = 0; $ai -lt $adapters.Count; $ai++) {
                 if ($pairOf.ContainsKey($ai)) { continue }
-                $hit = & $free | Where-Object { [string](Get-RfProp $_ 'Name') -eq [string]$adapters[$ai]['name'] } | Select-Object -First 1
+                $entryName = [string]$adapters[$ai]['name']
+                if ([string]::IsNullOrWhiteSpace($entryName)) { continue }
+                $hit = & $free | Where-Object { [string](Get-RfProp $_ 'Name') -eq $entryName } | Select-Object -First 1
                 if ($hit) { & $pair $ai $hit 'name' }
             }
             for ($ai = 0; $ai -lt $adapters.Count; $ai++) {
