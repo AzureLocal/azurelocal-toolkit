@@ -132,14 +132,15 @@ Describe 'Invoke-ExternalStorageHybrid-Orchestrated.ps1' {
         $global:AzlHybRemote | Should -Contain 'ValidateStore'
     }
 
-    It 'runs Test-Cluster -Include Storage by default, and leaves it out with -SkipStorageValidation' {
-        (Invoke-Hyb (New-InfraFile)).ExitCode | Should -Be 0
-        $global:AzlHybRemote | Should -Contain 'ValidateStore'
-        $global:AzlHybRemote.Clear()
-        (Invoke-Hyb (New-InfraFile) -Extra @{ SkipStorageValidation = $true }).ExitCode | Should -Be 0
+    It 'does not run Test-Cluster -Include Storage unless -ValidateStorage is given (it is opt-in: it can touch disks of a live cluster)' {
+        $r = Invoke-Hyb (New-InfraFile)
+        $r.ExitCode | Should -Be 0 -Because $r.Text
         $global:AzlHybRemote | Should -Not -Contain 'ValidateStore'
+        $r.Text | Should -Match 'not selected'
+        $global:AzlHybRemote.Clear()
+        (Invoke-Hyb (New-InfraFile) -Extra @{ ValidateStorage = $true }).ExitCode | Should -Be 0
+        $global:AzlHybRemote | Should -Contain 'ValidateStore'
     }
-
     It 'restarts the nodes one at a time when the file approves it (operations.post_cluster.allow_node_restarts), without -RollingRestart' {
         $global:AzlHybCodes['Set-AzureLocalNodeConfiguration.ps1|Mpio'] = @(1, 0)
         $doc = ConvertFrom-Yaml -Ordered (Get-Content -LiteralPath (New-InfraFile) -Raw)

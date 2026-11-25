@@ -30,7 +30,7 @@
       Step 7    Every node sees the same SAN disks: Set-AzureLocalNodeConfiguration.ps1 -Step SanVerify (read only).
       Steps 8-9 The LUNs of storage.san.luns become NTFS Cluster Shared Volumes: scripts/deploy/04-cluster-deployment/phase-06-post-deployment/
                 task-05-storage-configuration/powershell/New-SanVolume.ps1 (finds each disk by UniqueId and refuses any disk that is not exactly the LUN).
-                Test-Cluster -Include Storage then runs on a node (Learn, step 9) unless -SkipStorageValidation is given.
+                With -ValidateStorage, Test-Cluster -Include Storage then runs on a node (Learn, step 9). It is opt-in: the storage tests of Test-Cluster can touch disks of a live cluster.
       Step 10   The SAN CSVs become storage paths in Azure: .../task-05-storage-configuration/powershell/New-StoragePath.ps1.
 
     A step that ends with exit code 2 stops the run with 2; exit code 1 stops it with 1. -WhatIf is passed to every step, which then reads and changes
@@ -65,10 +65,7 @@
     the same with operations.post_cluster.allow_node_restarts true; this switch approves it for one run.
 
 .PARAMETER ValidateStorage
-    Optional. Kept for older callers: Test-Cluster -Include Storage runs by default now (page step 9), so this switch changes nothing.
-
-.PARAMETER SkipStorageValidation
-    Optional. Leave Test-Cluster -Include Storage out (page step 9).
+    Optional. Run Test-Cluster -Include Storage on a node after the volumes are created (page step 9). Off by default: the storage tests can touch disks of a live cluster. Under -WhatIf the step is listed as planned when this switch is given, and as not selected when it is not.
 
 .PARAMETER LogPath
     Optional. Passed to the steps that take it; the progress lines of this script are appended to it. Keep it out of the repository.
@@ -87,7 +84,6 @@ param(
     [pscredential]$Credential,
     [switch]$RollingRestart,
     [switch]$ValidateStorage,
-    [switch]$SkipStorageValidation,
     [string]$LogPath
 )
 Set-StrictMode -Version Latest
@@ -175,7 +171,7 @@ $nodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
 if ($nodes.Count -eq 0) { Exit-InputProblem 'nodes[] is empty.' }
 # The restarts of page step 6 need the approval of the file (or of this run): the nodes restart one at a time.
 $restartApproved = ($RollingRestart.IsPresent -or ((Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.post_cluster.allow_node_restarts') -eq $true))
-$validateStorage = ($ValidateStorage.IsPresent -or -not $SkipStorageValidation.IsPresent)
+$validateStorage = $ValidateStorage.IsPresent
 
 # ---- the login for the checks
 $remoteCredential = $Credential
@@ -260,7 +256,7 @@ if ($validateStorage) {
         catch { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Failed' $_.Exception.Message; Complete-Run 1 }
     }
 }
-else { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Skipped' '-SkipStorageValidation' }
+else { Add-Step 'Step 9: Test-Cluster -Include Storage' 'Skipped' 'not selected (give -ValidateStorage to run it)' }
 
 # ---- step 10: storage paths in Azure
 $pathArgs = @{ InfrastructureFile = $InfrastructureFile; WhatIf = [bool]$WhatIfPreference }

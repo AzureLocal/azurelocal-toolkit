@@ -83,7 +83,7 @@ Describe 'Invoke-ExternalStorageHybrid-Orchestrated.ps1 runs alone in Plan mode'
         $command.Parameters.ContainsKey('WhatIf') | Should -BeTrue
         $command.Parameters.ContainsKey('LogPath') | Should -BeTrue
         @($command.Parameters.Keys | Where-Object { $_ -notin [Management.Automation.Cmdlet]::CommonParameters -and $_ -notin [Management.Automation.Cmdlet]::OptionalCommonParameters -and $_ -notin 'InfrastructureFile', 'LogPath' } | Sort-Object) |
-            Should -Be @('ComputerName', 'Credential', 'RollingRestart', 'SkipStorageValidation', 'ValidateStorage')
+            Should -Be @('ComputerName', 'Credential', 'RollingRestart', 'ValidateStorage')
     }
 
     It 'plans against the toolkit example as it is, alone: the example is s2d, so there is no SAN to attach: exit 0, no node is asked, no step runs' {
@@ -114,11 +114,12 @@ Describe 'Invoke-ExternalStorageHybrid-Orchestrated.ps1 runs alone in Plan mode'
         @($global:AzlHybSteps | Where-Object Name -EQ 'Invoke-NodeMaintenanceReboot.ps1').Count | Should -Be 0
     }
 
-    It 'prints the initiator identifiers of the nodes for the storage administrator, and plans Test-Cluster -Include Storage by default (not under -SkipStorageValidation)' {
+    It 'prints the initiator identifiers of the nodes for the storage administrator, and lists Test-Cluster -Include Storage as not selected, or as planned with -ValidateStorage (never run in Plan mode)' {
         $r = Invoke-Alone @{} (New-PlanFile -Hybrid)
         $r.Text | Should -Match 'iSCSI IQN iqn\.1991-05\.com\.microsoft:iic-azl-n01'
-        $r.Text | Should -Match 'would run on'
-        (Invoke-Alone @{ SkipStorageValidation = $true } (New-PlanFile -Hybrid)).Text | Should -Not -Match 'would run on'
+        $r.Text | Should -Match 'not selected'
+        $r.Text | Should -Not -Match 'would run on'
+        (Invoke-Alone @{ ValidateStorage = $true } (New-PlanFile -Hybrid)).Text | Should -Match 'would run on'
         $global:AzlHybRemote | Should -Not -Contain 'ValidateStore'
     }
 
