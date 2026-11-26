@@ -15,7 +15,7 @@
     Remove-AzlStaleRunCommand   Deletes azl-osconfig-* run commands that are old and neither Succeeded nor Running.
     Send-AzlGuardEvent          The one adapter to the event feed: Write-AzlOsConfigurationEvent of AzlOsConfigurationEvents.psm1 writes the line (the same writer,
                                 timestamp format and fields as the wrapper's events); every event is also kept in the sink for the report. A state that is
-                                not in the feed's contract (os-configuration-design.md section 6) stays in the sink and is not written to the feed.
+                                not in the feed's contract (the event feed in docs/os-configuration-and-arm-deployment.md) stays in the sink and is not written to the feed.
     Get-AzlGuardSetting         networkRollbackMinutes (confirm window), networkStableSeconds, reconnectWaitMinutes, staleRunCommandMinutes, addressProbe.
 
     The clock is injected ({ Now; Sleep }) so a test needs no wait.

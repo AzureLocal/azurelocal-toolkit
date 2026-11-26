@@ -49,7 +49,7 @@
     NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged, NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying,
     StepApplied, StepFailed, StepSkipped, StepVerified. Each line has timestamp, node, stage ('OsConfiguration'), step, state, evidence, level
     (Info|Warning|Error), nextAction, method (Ztp|Iso), transport (ArcRunCommand|WinRM), payloadVersion and schemaVersion. The guarded network change adds
-    the NetworkChange* states (the guarded change of the management address and the other changes that can cut a node off). Contract: pmo/azure-local/os-configuration-design.md section 6. Writing it never fails the run.
+    the NetworkChange* states (the guarded change of the management address and the other changes that can cut a node off). Contract: docs/os-configuration-and-arm-deployment.md ("The event feed: what the run tells a viewer") in azurelocal-toolkit. Writing it never fails the run.
 .PARAMETER ReportDirectory
     Where plan-report.json, report.json, summary.md, wipe-list.txt and node-reports/ go. Default: a folder in the temp directory.
 .PARAMETER SettingsFile

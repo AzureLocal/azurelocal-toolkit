@@ -30,7 +30,7 @@
     Free text (evidence, nextAction and every text value in the extra fields) goes through a redaction pass before it is written: passwords, tokens, bearer headers,
     SAS signatures, account keys, private keys and node result lines become ***.
 
-    The contract is section 6 of pmo/azure-local/os-configuration-design.md. The one registry of states is Get-AzlOsConfigurationEventState (Test-AzlOsConfigurationEventState
+    The contract is docs/os-configuration-and-arm-deployment.md ("The event feed: what the run tells a viewer"). The one registry of states is Get-AzlOsConfigurationEventState (Test-AzlOsConfigurationEventState
     asks it); every state any module sends is in it. Run events (node '*'): RunStarted, PlanCompleted,
     WipeListPublished, WipeListApproved, WipeListRejected (the Apply was bound to the approved wipe list, or refused for it), RunCompleted.
     Transport (step Transport): StaleRunCommandDeleted, NodeCallAttempt (one per attempt of a call to a node: payload, durationSeconds, address, callState, error, timeoutSeconds), SbeDeliveryProgress (the SBE package copy, every 5 percent: file, percent, sentBytes, totalBytes). Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,

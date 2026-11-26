@@ -85,7 +85,7 @@ BMC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> <serial>.jso
 
 **`Invoke-HardwareDiscovery.ps1` supports Dell iDRAC only.** Any other BMC is reported for that node as `Unsupported vendor in this version`
 (with what was detected and why) and nothing else is read from it. HPE iLO, Lenovo XClarity, Supermicro/AMI (DataON and other
-OEM boxes) are planned in `pmo/azure-local/redfish-multivendor-discovery-plan.md` and are not built.
+OEM boxes) are planned and are not built.
 
 ## Parts
 

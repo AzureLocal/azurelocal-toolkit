@@ -87,7 +87,7 @@ Describe 'Write-AzlOsConfigurationEvent' {
     }
 }
 
-Describe 'The event contract (os-configuration-design.md section 6)' {
+Describe 'The event contract (docs/os-configuration-and-arm-deployment.md, the event feed)' {
     It 'has exactly the states of the contract, by level' {
         $c = Get-AzlOsConfigurationEventState
         $c.Run -join ',' | Should -Be 'RunStarted,PlanCompleted,WipeListPublished,WipeListApproved,WipeListRejected,RunCompleted'

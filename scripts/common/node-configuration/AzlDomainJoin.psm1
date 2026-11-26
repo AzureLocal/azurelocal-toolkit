@@ -7,7 +7,7 @@
 .DESCRIPTION
     With scenario.identity active_directory the OS configuration joins each node to identity.active_directory.domain_fqdn, in
     identity.active_directory.ou_path, with identity.active_directory.domain_join_account, before the cluster validation and the
-    deployment. The design is section 4.10 of pmo/azure-local/os-configuration-design.md; the user documentation is "Joining the
+    deployment. The user documentation is "Joining the
     domain" in docs/os-configuration-and-arm-deployment.md.
 
     Get-AzlDomainJoinSpec            The desired state from the master file (Applicable is false for a local identity design). The join credential is

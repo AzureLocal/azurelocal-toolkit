@@ -184,7 +184,7 @@ Get-AzlVerificationAdapterDefault    # optional: a table of read only scriptbloc
 
 ## The VLAN plan and the switch ports
 
-The file is the authority for the gate; the lab's `pmo/azure-local/vlan-inventory.md` is the human source the file is written from (the gate does not read it). The gate cannot read a switch, so it checks the plan inside the file and
+The file is the authority for the gate. The gate cannot read a switch, so it checks the plan inside the file and
 what it can read on the nodes, and lists what a person must verify on each switch.
 
 - **NW-015, the VLAN plan:** `networking.vlans[]` (name, id, subnet, purpose) has no VLAN id, name or subnet twice and no overlapping subnets; `networking.management.subnet` belongs to exactly one entry (its id is the management VLAN); the

@@ -1,7 +1,7 @@
 # ARM Validate and Deploy automation: design
 
 **Status:** Draft v1, implemented in this change. **Audit this answers:** [../arm-deployment-audit.md](../arm-deployment-audit.md).
-**Follows:** the principles and the event feed of the OS configuration design (`pmo/azure-local/os-configuration-design.md`).
+**Follows:** the principles and the event feed of OS configuration ([the event feed](../os-configuration-and-arm-deployment.md#the-event-feed-what-the-run-tells-a-viewer)).
 **Entry point:** `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1`.
 **Module:** `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1`.
 
