@@ -137,8 +137,8 @@ Describe 'Semantic rules' {
     It 'AZL-010 needs storage addresses on every node when auto_ip is off' {
         (Get-FindingFor { param($d) $d.networking.storage.auto_ip = $false }).Id | Should -Contain 'AZL-010'
     }
-    It 'AZL-013 warns when the OS version is not pinned' {
-        $f = Get-FindingFor { param($d) $d.provisioning.os_version = 'latest' }
+    It 'AZL-013 warns when the OS version is latest-preview' {
+        $f = Get-FindingFor { param($d) $d.provisioning.os_version = 'latest-preview' }
         $f | Where-Object { $_.Id -eq 'AZL-013' -and $_.Severity -eq 'warning' } | Should -Not -BeNullOrEmpty
     }
     It 'AZL-014 refuses public DNS servers' {
@@ -1468,13 +1468,12 @@ Describe 'The Solution Builder Extension is optional (AZL-013, AZL-015, AZL-032)
         $f = Get-FindingFor -From $script:ZtpExample { }
         @($f | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
     }
-    It 'AZL-013 about an unpinned OS version mentions the SBE only when an SBE is configured' {
+    It 'AZL-013 warns about os_version latest only when an SBE is configured' {
         $with = @(Get-FindingFor { param($d) $d.provisioning.os_version = 'latest' } | Where-Object { $_.Id -eq 'AZL-013' -and $_.Path -eq 'provisioning.os_version' })
         $without = @(Get-NoSbeFinding { param($d) $d.provisioning.os_version = 'latest' } | Where-Object { $_.Id -eq 'AZL-013' -and $_.Path -eq 'provisioning.os_version' })
         $with.Count | Should -Be 1
         $with[0].Message | Should -Match 'SBE'
-        $without.Count | Should -Be 1
-        $without[0].Message | Should -Not -Match 'SBE'
+        $without.Count | Should -Be 0
     }
     It 'the validator never adds a delivery setting to the file it reads' {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:ExamplePath -Raw) -Ordered

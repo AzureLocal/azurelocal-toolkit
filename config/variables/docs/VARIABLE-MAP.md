@@ -1707,7 +1707,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `provisioning.os_version` | string, required | operator; Trailwright | ztp; os_configuration; trailwright | os-configuration; pre-cluster-verification; ztp | Gate ND-004; SB-003; SB-005; SB-006 | read |
+| `provisioning.os_version` | string, required, default `latest` | operator; Trailwright; default | ztp; os_configuration; trailwright | os-configuration; pre-cluster-verification; ztp | Gate ND-004; SB-003; SB-005; SB-006 | read |
 | `provisioning.iso.image_source` | string, one of `microsoft`, `oem` | operator; Trailwright | trailwright |  |  | placeholder |
 | `provisioning.iso.image_uri` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `provisioning.simplified.site_name` | string, required | operator; Trailwright | ztp; monitoring; trailwright; beacon | infrastructure-helpers; sonar; ztp |  | read |

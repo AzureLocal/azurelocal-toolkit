@@ -17408,11 +17408,12 @@ provisioning:
   additionalProperties: false
   properties:
     os_version:
-      description: "The solution version the machines run: latest, latest-preview, or a version such as 12.2611.1004.9. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it."
+      description: "The solution version the machines run: latest (the default choice: the newest non-preview build in the HCI osImages catalog when the run starts), latest-preview (the newest build, previews included), or a version such as 12.2611.1004.9. Simplified provisioning installs it and records the build it resolved; the SBE must be validated with that build. Pin a version only when a run must be reproducible."
       type: string
       required: true
       pattern: "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
-      example: "12.2611.1004.9"
+      default: "latest"
+      example: "latest"
       used_by: [ztp, os_configuration, trailwright]
     iso:
       description: "OS installed from an ISO. There is no unattended install: the OS is installed, then the tools take over."
