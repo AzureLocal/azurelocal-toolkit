@@ -318,7 +318,7 @@ The pre-cluster verification checks the package (SB-001 to SB-006): source confi
 | AZL-010 | Storage networks use storage-intent adapters; with `auto_ip: false` every network has a subnet and every node an address on each |
 | AZL-011 | Intent adapters exist in `hardware.network_cards`, when the cards are described |
 | AZL-012 | Rack aware volumes are two-way or four-way mirror |
-| AZL-013 | Warnings: the OS version isn't pinned, simplified provisioning outside eastus |
+| AZL-013 | Warnings: os_version is latest-preview, or latest with an SBE configured; simplified provisioning outside eastus |
 | AZL-014 | No public DNS servers |
 | AZL-015 | Simplified provisioning has a BMC login for every machine. The SBE package is a requirement (AZL-033, SB-001); a `hardware.sbe` that is there needs `source_path` or `bundle_path` (publisher, family and version are read from the package), or `requirement` (`not_applicable` with a reason), or `publisher`, `family` and `version` for an SBE you placed in `C:\SBE` yourself; in a `ztp` file, `bundle_path` or `requirement` |
 | AZL-016 | Arc gateway (and the private path) isn't used with simplified provisioning or in Azure Government |

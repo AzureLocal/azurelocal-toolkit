@@ -1542,9 +1542,9 @@ operations:
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
 # when scenario.os_install is simplified
 provisioning:
-  # The solution version the machines run: latest, latest-preview, or a version such as 12.2611.1004.9.
-  # required; used by: ztp, os_configuration, trailwright
-  os_version: "12.2611.1004.9"
+  # The solution version the machines run: latest (the default choice: the newest non-preview build in the HCI osImages catalog when the run st...
+  # required; default: "latest"; used by: ztp, os_configuration, trailwright
+  os_version: "latest"
   # OS installed from an ISO.
   iso:
     # microsoft (the Azure portal download) or oem (the OEM's image).

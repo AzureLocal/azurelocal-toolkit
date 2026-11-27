@@ -1192,9 +1192,12 @@ function Get-SemanticFinding {
 
     # Provisioning.
     $osVersion = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'provisioning.os_version'
-    if ($osVersion -in @('latest', 'latest-preview')) {
-        $pinReason = if (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe') { 'so every run installs the same OS and the SBE can be checked against it' } else { 'so every run installs the same OS' }
-        New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is '$osVersion'. Pin a version $pinReason."
+    # latest is the registry default; warn only when the resolved build can surprise the run.
+    $hasSbe = [bool](Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe')
+    if ($osVersion -eq 'latest-preview') {
+        New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is 'latest-preview': the run can install a preview build. Use 'latest' or pin a version for anything but a preview test."
+    } elseif ($osVersion -eq 'latest' -and $hasSbe) {
+        New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is 'latest' and an SBE is configured. Check that the OEM has validated the SBE for the build 'latest' resolves to, or pin that build."
     }
     # Arc gateway (and the private path, which uses it): not with simplified provisioning, and only in the public cloud.
     if ($scenario['outbound_path'] -in @('arc_gateway', 'proxy_arc_gateway', 'private_path')) {

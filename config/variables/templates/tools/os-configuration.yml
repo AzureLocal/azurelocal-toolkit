@@ -715,9 +715,9 @@ storage:
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
 # when scenario.os_install is simplified
 provisioning:
-  # The solution version the machines run: latest, latest-preview, or a version such as 12.2611.1004.9.
-  # required; used by: ztp, os_configuration, trailwright
-  os_version: "12.2611.1004.9"
+  # The solution version the machines run: latest (the default choice: the newest non-preview build in the HCI osImages catalog when the run st...
+  # required; default: "latest"; used by: ztp, os_configuration, trailwright
+  os_version: "latest"
 
 # How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way...
 # used by: os_configuration
