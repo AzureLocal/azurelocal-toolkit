@@ -452,10 +452,20 @@ function Invoke-AzlVerReadinessDefault {
                     }
                     finally { foreach ($s in $sessions) { Remove-PSSession $s -ErrorAction SilentlyContinue } }
                 }
-                $raw = & $remote $first.Name $wrapper @($Validator, $param, $targets, $cred, $script:ValidatorScript.ToString())
+                # Run from the host that runs the gate when it has the module: Learn runs these validators from any machine that opens
+                # sessions to all the nodes, and a node cannot open them from inside a remote session (Credential Guard, on by default on
+                # Azure Local, refuses to sign in onward: 0x8009030e). Without the module here, the first node runs them.
+                if (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker) {
+                    $where = 'this host'
+                    $raw = & $wrapper $Validator $param $targets $cred $script:ValidatorScript.ToString()
+                }
+                else {
+                    $where = $first.Name
+                    $raw = & $remote $first.Name $wrapper @($Validator, $param, $targets, $cred, $script:ValidatorScript.ToString())
+                }
                 $r = & $convert '*' $raw
-                if (-not $r.Available) { return @{ Available = $false; Reason = "$($first.Name): $($r.Reason)" } }
-                if ($r.Error) { return @{ Available = $false; Reason = "$($first.Name): the validator stopped: $($r.Error)" } }
+                if (-not $r.Available) { return @{ Available = $false; Reason = "${where}: $($r.Reason)" } }
+                if ($r.Error) { return @{ Available = $false; Reason = "${where}: the validator stopped: $($r.Error)" } }
                 return @{ Available = $true; Results = $r.Rows }
             }
             'ActiveDirectory' { return @{ Available = $false; Reason = 'the Active Directory validator needs the LCM credential and a domain controller; the identity checks (IDN-*) cover the same facts without a credential on a node. Run it by hand where wanted: Invoke-AzStackHciExternalActiveDirectoryValidation -ADOUPath <ou> -DomainFQDN <domain> -NamingPrefix <prefix> -ActiveDirectoryServer <dc> -ActiveDirectoryCredentials (Get-Credential) -ClusterName <cluster> -PhysicalMachineNames <nodes>' } }
