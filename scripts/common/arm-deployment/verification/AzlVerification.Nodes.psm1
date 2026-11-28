@@ -445,7 +445,8 @@ function Invoke-AzlVerReadinessDefault {
                     param([string]$Validator, [string]$ParamJson, [object[]]$Targets, [pscredential]$Credential, [string]$InnerText)
                     $sessions = @()
                     try {
-                        foreach ($t in $Targets) { $sessions += Microsoft.PowerShell.Core\New-PSSession -ComputerName $t -Credential $Credential -ErrorAction Stop }
+                        # The targets are management addresses: Kerberos (the default) refuses an IP address, so ask for Negotiate explicitly.
+                        foreach ($t in $Targets) { $sessions += Microsoft.PowerShell.Core\New-PSSession -ComputerName $t -Credential $Credential -Authentication Negotiate -ErrorAction Stop }
                         $inner = [scriptblock]::Create($InnerText)
                         & $inner $Validator $ParamJson $sessions
                     }

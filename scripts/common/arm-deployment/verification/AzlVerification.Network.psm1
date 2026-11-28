@@ -21,6 +21,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.NodeCommon.psm1'))
+# NW-005 calls Format-AzlEndpointNotTested; without this import the check fails with "not recognized" when the module is loaded on its own.
+Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
 
 $script:Src = Get-AzlVerConstant Source
 # A port that runs below 0.9 of the speed the file gives it (nodes[].network_adapters[].speed_gbps) is reported as a warning. Not a choice of a deployment:
