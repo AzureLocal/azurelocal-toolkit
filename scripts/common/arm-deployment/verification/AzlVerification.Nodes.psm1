@@ -383,7 +383,7 @@ $script:ValidatorScript = {
             'Connectivity' { if ($P.proxy) { $rows = @(Invoke-AzStackHciConnectivityValidation -PassThru -Proxy $P.proxy) } else { $rows = @(Invoke-AzStackHciConnectivityValidation -PassThru) } }
             'Hardware' { $rows = @(Invoke-AzStackHciHardwareValidation -PassThru) }
             'Software' { $rows = @(Invoke-AzStackHciSoftwareValidation -PsSession $Sessions -Exclude Test-IsNotPartofDomain -PassThru) }
-            'Network' { $rows = @(Invoke-AzStackHciNetworkValidation -IpPools @($P.ipPools) -ManagementSubnetValue $P.managementSubnet -PSSession $Sessions -AtcHostIntents @($P.intents) -PassThru) }
+            'Network' { $rows = @(Invoke-AzStackHciNetworkValidation -IpPools @($P.ipPools) -ManagementSubnetValue $P.managementSubnet -PSSession $Sessions -NodesInCluster ([int16]@($Sessions).Count) -AtcHostIntents @($P.intents) -PassThru) }
         }
     }
     catch { return (@{ available = $true; reason = ''; error = $_.Exception.Message; results = @() } | ConvertTo-Json -Compress -Depth 6) }
