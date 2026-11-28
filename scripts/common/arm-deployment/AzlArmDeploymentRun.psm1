@@ -1120,6 +1120,7 @@ function Get-AzlArmArcMachineCached {
 # This is the one table: the node checks of the pre-cluster verification read it through Get-AzlArmSolutionOsBuild (they used to keep a copy).
 $script:SolutionOsBuilds = @(
     [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'lab run 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
+    [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2701.1004'; Evidence = 'lab run 2026-11-27: simplified provisioning installed 12.2701.1004.24; Azure edgeMachines reported vsrVersion 12.2701.1004.24 with osVersion 10.0.26100.33650 on both machines' }
     [pscustomobject]@{ OsBuild = '10.0.26100.33822'; Solution = '12.2611.1004'; Evidence = 'Microsoft Learn, Azure Local release information (view azloc-2611): 12.2611.1004.9 (2026-11-20, the default of new deployments) is OS build 26100.33822' }
     [pscustomobject]@{ OsBuild = '10.0.26100.33822'; Solution = '12.2610.1004'; Evidence = 'Microsoft Learn, Azure Local release information (view azloc-2611): 12.2610.1004.54 (2026-11-14) and 12.2610.1004.55 (2026-11-20) are OS build 26100.33822' }
 )

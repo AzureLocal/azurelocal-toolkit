@@ -116,7 +116,7 @@ Describe 'ND-003 and ND-004 OS build' {
     It 'ND-004 Failed for the 2611 target on the 2610 lab build 26100.33650' {
         $f = New-VerFresh
         $r = @(Invoke-VerRun 'ND-004' $f.World $f.Infra -Settings @{ solutionVersion = '12.2611.1004.9' })
-        $r[0].Status | Should -Be 'Failed'; $r[0].Message | Should -Match 'ships with solution 12\.2610\.1004, but the deployment targets 12\.2611\.1004\.9'
+        $r[0].Status | Should -Be 'Failed'; $r[0].Message | Should -Match 'ships with solution 12\.2610\.1004 or 12\.2701\.1004, but the deployment targets 12\.2611\.1004\.9'
     }
     It 'ND-004 NotApplicable without a target' { $f = New-VerFresh; $f.Infra.provisioning = @{}; (Invoke-VerRun 'ND-004' $f.World $f.Infra).Status | Should -Be 'NotApplicable' }
 }

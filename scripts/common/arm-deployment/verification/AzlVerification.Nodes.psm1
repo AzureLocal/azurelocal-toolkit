@@ -383,7 +383,7 @@ $script:ValidatorScript = {
             'Connectivity' { if ($P.proxy) { $rows = @(Invoke-AzStackHciConnectivityValidation -PassThru -Proxy $P.proxy) } else { $rows = @(Invoke-AzStackHciConnectivityValidation -PassThru) } }
             'Hardware' { $rows = @(Invoke-AzStackHciHardwareValidation -PassThru) }
             'Software' { $rows = @(Invoke-AzStackHciSoftwareValidation -PsSession $Sessions -Exclude Test-IsNotPartofDomain -PassThru) }
-            'Network' { $rows = @(Invoke-AzStackHciNetworkValidation -IpPools @($P.ipPools) -ManagementSubnetValue $P.managementSubnet -PSSession $Sessions -AtcHostIntents @($P.intents) -PassThru) }
+            'Network' { $rows = @(Invoke-AzStackHciNetworkValidation -IpPools @($P.ipPools) -ManagementSubnetValue $P.managementSubnet -PSSession $Sessions -NodesInCluster ([int16]@($Sessions).Count) -AtcHostIntents @($P.intents) -PassThru) }
         }
     }
     catch { return (@{ available = $true; reason = ''; error = $_.Exception.Message; results = @() } | ConvertTo-Json -Compress -Depth 6) }
@@ -445,16 +445,27 @@ function Invoke-AzlVerReadinessDefault {
                     param([string]$Validator, [string]$ParamJson, [object[]]$Targets, [pscredential]$Credential, [string]$InnerText)
                     $sessions = @()
                     try {
-                        foreach ($t in $Targets) { $sessions += Microsoft.PowerShell.Core\New-PSSession -ComputerName $t -Credential $Credential -ErrorAction Stop }
+                        # The targets are management addresses: Kerberos (the default) refuses an IP address, so ask for Negotiate explicitly.
+                        foreach ($t in $Targets) { $sessions += Microsoft.PowerShell.Core\New-PSSession -ComputerName $t -Credential $Credential -Authentication Negotiate -ErrorAction Stop }
                         $inner = [scriptblock]::Create($InnerText)
                         & $inner $Validator $ParamJson $sessions
                     }
                     finally { foreach ($s in $sessions) { Remove-PSSession $s -ErrorAction SilentlyContinue } }
                 }
-                $raw = & $remote $first.Name $wrapper @($Validator, $param, $targets, $cred, $script:ValidatorScript.ToString())
+                # Run from the host that runs the gate when it has the module: Learn runs these validators from any machine that opens
+                # sessions to all the nodes, and a node cannot open them from inside a remote session (Credential Guard, on by default on
+                # Azure Local, refuses to sign in onward: 0x8009030e). Without the module here, the first node runs them.
+                if (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker) {
+                    $where = 'this host'
+                    $raw = & $wrapper $Validator $param $targets $cred $script:ValidatorScript.ToString()
+                }
+                else {
+                    $where = $first.Name
+                    $raw = & $remote $first.Name $wrapper @($Validator, $param, $targets, $cred, $script:ValidatorScript.ToString())
+                }
                 $r = & $convert '*' $raw
-                if (-not $r.Available) { return @{ Available = $false; Reason = "$($first.Name): $($r.Reason)" } }
-                if ($r.Error) { return @{ Available = $false; Reason = "$($first.Name): the validator stopped: $($r.Error)" } }
+                if (-not $r.Available) { return @{ Available = $false; Reason = "${where}: $($r.Reason)" } }
+                if ($r.Error) { return @{ Available = $false; Reason = "${where}: the validator stopped: $($r.Error)" } }
                 return @{ Available = $true; Results = $r.Rows }
             }
             'ActiveDirectory' { return @{ Available = $false; Reason = 'the Active Directory validator needs the LCM credential and a domain controller; the identity checks (IDN-*) cover the same facts without a credential on a node. Run it by hand where wanted: Invoke-AzStackHciExternalActiveDirectoryValidation -ADOUPath <ou> -DomainFQDN <domain> -NamingPrefix <prefix> -ActiveDirectoryServer <dc> -ActiveDirectoryCredentials (Get-Credential) -ClusterName <cluster> -PhysicalMachineNames <nodes>' } }
